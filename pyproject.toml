@@ -1,12 +1,12 @@
 [project]
-name = "vibe-trading-ai"
+name = "hyper-trading-agent"
 version = "0.1.10"
-description = "Natural-language finance research AI agent with backtesting"
+description = "Commercial financial research agent platform with RAG and backtesting"
 requires-python = ">=3.11"
 license = "MIT"
 readme = "README.md"
 authors = [
-    {name = "HKUDS", email = "hkuds@connect.hku.hk"},
+    {name = "970thunder"},
 ]
 keywords = ["finance", "trading", "backtesting", "agent", "swarm", "quantitative"]
 classifiers = [
@@ -62,14 +62,14 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://vibetrading.wiki/"
-Documentation = "https://vibetrading.wiki/docs/"
-Repository = "https://github.com/HKUDS/Vibe-Trading"
-Issues = "https://github.com/HKUDS/Vibe-Trading/issues"
+Homepage = "https://github.com/970thunder/Hyper-Trading-Agent"
+Documentation = "https://github.com/970thunder/Hyper-Trading-Agent/tree/main/wiki/docs"
+Repository = "https://github.com/970thunder/Hyper-Trading-Agent"
+Issues = "https://github.com/970thunder/Hyper-Trading-Agent/issues"
 
 [project.scripts]
-vibe-trading = "cli:main"
-vibe-trading-mcp = "mcp_server:main"
+hyper-trading = "cli:main"
+hyper-trading-mcp = "mcp_server:main"
 
 [tool.setuptools]
 package-dir = {"" = "agent"}

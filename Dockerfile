@@ -14,10 +14,10 @@ RUN npm run build
 # ============================================================================
 FROM python:3.11-slim AS runtime
 
-LABEL org.opencontainers.image.title="Vibe-Trading" \
-    org.opencontainers.image.description="Natural-language finance research AI agent with backtesting" \
+LABEL org.opencontainers.image.title="Hyper Trading Agent" \
+    org.opencontainers.image.description="Commercial financial research agent platform with RAG and backtesting" \
     org.opencontainers.image.version="0.1.10" \
-    org.opencontainers.image.source="https://github.com/HKUDS/Vibe-Trading" \
+    org.opencontainers.image.source="https://github.com/970thunder/Hyper-Trading-Agent" \
     org.opencontainers.image.licenses="MIT"
 
 WORKDIR /app
@@ -68,4 +68,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8899/health')" || exit 1
 
 # Run API server (serves frontend/dist as static files)
-CMD ["vibe-trading", "serve", "--host", "0.0.0.0", "--port", "8899"]
+CMD ["hyper-trading", "serve", "--host", "0.0.0.0", "--port", "8899"]
