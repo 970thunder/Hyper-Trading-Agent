@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: vibe_trading
+      POSTGRES_USER: vibe
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - vibe-postgres:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vibe -d vibe_trading"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - vibe-redis:/data
+    command: redis-server --appendonly yes
+
+  api:
+    build: .
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
+      REDIS_URL: redis://redis:6379/0
+      VIBE_TRADING_COMMERCIAL_MODE: "1"
+    ports:
+      - "${API_BIND:-0.0.0.0}:8899:8899"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - vibe-runs:/app/agent/runs
+      - vibe-sessions:/app/agent/sessions
+      - vibe-home:/home/vibe/.vibe-trading
+      - vibe-uploads:/app/agent/uploads
+    restart: unless-stopped
+
+  worker:
+    build: .
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
+      REDIS_URL: redis://redis:6379/0
+      VIBE_TRADING_COMMERCIAL_MODE: "1"
+    command: ["python", "-m", "src.commercial.worker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - vibe-runs:/app/agent/runs
+      - vibe-sessions:/app/agent/sessions
+      - vibe-home:/home/vibe/.vibe-trading
+      - vibe-uploads:/app/agent/uploads
+    restart: unless-stopped
+
+volumes:
+  vibe-postgres:
+  vibe-redis:
+  vibe-runs:
+  vibe-sessions:
+  vibe-home:
+  vibe-uploads:
