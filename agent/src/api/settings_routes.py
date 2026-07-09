@@ -12,7 +12,7 @@ import sys as _sys
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 # Agent root (agent/) — resolved from this file's location (agent/src/api/).
@@ -135,6 +135,22 @@ def _host():
     values take effect.
     """
     return _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
+
+
+def _audit_settings_change(request: Request, action: str, metadata: dict[str, Any]) -> None:
+    """Write a commercial audit record when the request has a valid session."""
+    host = _host()
+    if host is None or not hasattr(host, "_commercial_principal_from_request"):
+        return
+    try:
+        principal = host._commercial_principal_from_request(request)
+        if principal is None:
+            return
+        from src.commercial.store import CommercialStore
+
+        CommercialStore().audit(principal, action, "settings", "", metadata)
+    except Exception:
+        return
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +331,7 @@ def register_settings_routes(
         response_model=LLMSettingsResponse,
         dependencies=[Depends(require_settings_write_auth)],
     )
-    async def update_llm_settings(payload: UpdateLLMSettingsRequest):
+    async def update_llm_settings(payload: UpdateLLMSettingsRequest, request: Request):
         """Persist project-local LLM settings and update the running process."""
         host_ref = _host()
         provider_name = payload.provider.strip().lower()
@@ -388,6 +404,21 @@ def register_settings_routes(
 
         host_ref._write_env_values(host_ref.ENV_PATH, updates)
         _sync_runtime_env(provider, updates)
+        _audit_settings_change(
+            request,
+            "settings.llm.update",
+            {
+                "provider": provider.name,
+                "model": model_name,
+                "base_url": base_url,
+                "temperature": payload.temperature,
+                "timeout_seconds": payload.timeout_seconds,
+                "max_retries": payload.max_retries,
+                "reasoning_effort": reasoning_effort,
+                "api_key_updated": bool(payload.api_key),
+                "api_key_cleared": bool(payload.clear_api_key),
+            },
+        )
         return _build_llm_settings_response(host_ref._read_env_values(host_ref.ENV_PATH))
 
     @app.get(
@@ -404,7 +435,7 @@ def register_settings_routes(
         response_model=DataSourceSettingsResponse,
         dependencies=[Depends(require_settings_write_auth)],
     )
-    async def update_data_source_settings(payload: UpdateDataSourceSettingsRequest):
+    async def update_data_source_settings(payload: UpdateDataSourceSettingsRequest, request: Request):
         """Persist project-local data source credentials and update the running process."""
         host_ref = _host()
         current_values = _read_settings_env_values()
@@ -425,6 +456,14 @@ def register_settings_routes(
             else:
                 os.environ.pop("TUSHARE_TOKEN", None)
 
+        _audit_settings_change(
+            request,
+            "settings.data_sources.update",
+            {
+                "tushare_token_updated": bool(payload.tushare_token),
+                "tushare_token_cleared": bool(payload.clear_tushare_token),
+            },
+        )
         return _build_data_source_settings_response(
             host_ref._read_env_values(host_ref.ENV_PATH)
         )

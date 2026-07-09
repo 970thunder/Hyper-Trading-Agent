@@ -23,12 +23,19 @@ import { toast } from "sonner";
 import {
   api,
   isAuthRequiredError,
+  type AuditLog,
   type ChannelRuntimeStatus,
+  type CommercialKnowledgeBase,
+  type CommercialKnowledgeDocument,
+  type CommercialKnowledgeSearchResult,
+  type CommercialPrincipal,
   type DataSourceSettings,
   type KnowledgeDocument,
+  type KnowledgeSearchResult,
   type KnowledgeStats,
   type LLMProviderOption,
   type LLMSettings,
+  type ModelUsage,
 } from "@/lib/api";
 import { getApiAuthKey, setApiAuthKey } from "@/lib/apiAuth";
 import { cn } from "@/lib/utils";
@@ -111,6 +118,13 @@ export function Settings() {
   const [dataSettings, setDataSettings] = useState<DataSourceSettings | null>(null);
   const [knowledgeStats, setKnowledgeStats] = useState<KnowledgeStats | null>(null);
   const [knowledgeDocuments, setKnowledgeDocuments] = useState<KnowledgeDocument[]>([]);
+  const [principal, setPrincipal] = useState<CommercialPrincipal | null>(null);
+  const [knowledgeBases, setKnowledgeBases] = useState<CommercialKnowledgeBase[]>([]);
+  const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
+  const [commercialDocuments, setCommercialDocuments] = useState<CommercialKnowledgeDocument[]>([]);
+  const [knowledgeSearchResults, setKnowledgeSearchResults] = useState<Array<CommercialKnowledgeSearchResult | KnowledgeSearchResult>>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [modelUsage, setModelUsage] = useState<ModelUsage[]>([]);
   const [channelStatus, setChannelStatus] = useState<ChannelRuntimeStatus | null>(null);
   const [form, setForm] = useState<LLMFormState | null>(null);
   const [apiKey, setApiKey] = useState("");
@@ -122,8 +136,13 @@ export function Settings() {
   const [saving, setSaving] = useState(false);
   const [dataSaving, setDataSaving] = useState(false);
   const [knowledgeSaving, setKnowledgeSaving] = useState(false);
+  const [knowledgeSearching, setKnowledgeSearching] = useState(false);
   const [knowledgePath, setKnowledgePath] = useState("");
   const [knowledgeTitle, setKnowledgeTitle] = useState("");
+  const [knowledgeUrl, setKnowledgeUrl] = useState("");
+  const [knowledgeQuery, setKnowledgeQuery] = useState("");
+  const [knowledgeFile, setKnowledgeFile] = useState<File | null>(null);
+  const [creatingKnowledgeBase, setCreatingKnowledgeBase] = useState(false);
   const [channelRefreshing, setChannelRefreshing] = useState(false);
   const [channelAction, setChannelAction] = useState<"start" | "stop" | null>(null);
   const [loadErrors, setLoadErrors] = useState<Record<string, string>>({});
@@ -134,6 +153,26 @@ export function Settings() {
     setSearchParams(next, { replace: true });
   };
 
+  const loadCommercialKnowledge = async (preferredKnowledgeBaseId = selectedKnowledgeBaseId) => {
+    const bases = await api.listKnowledgeBases();
+    setKnowledgeBases(bases);
+    const nextId = preferredKnowledgeBaseId && bases.some((kb) => kb.id === preferredKnowledgeBaseId)
+      ? preferredKnowledgeBaseId
+      : bases[0]?.id || "";
+    setSelectedKnowledgeBaseId(nextId);
+    if (nextId) {
+      setCommercialDocuments(await api.listCommercialKnowledgeDocuments(nextId));
+    } else {
+      setCommercialDocuments([]);
+    }
+  };
+
+  const loadAuditAndUsage = async () => {
+    const [logs, usage] = await Promise.all([api.listAuditLogs(50), api.listModelUsage(100)]);
+    setAuditLogs(logs);
+    setModelUsage(usage);
+  };
+
   useEffect(() => {
     let alive = true;
 
@@ -142,8 +181,9 @@ export function Settings() {
       api.getDataSourceSettings(),
       Promise.all([api.getKnowledgeStats(), api.listKnowledgeDocuments()]),
       api.getChannelStatus(),
+      api.getCommercialMe(),
     ])
-      .then(([llmResult, dataSourceResult, knowledgeResult, channelResult]) => {
+      .then(async ([llmResult, dataSourceResult, knowledgeResult, channelResult, principalResult]) => {
         if (!alive) return;
         const nextErrors: Record<string, string> = {};
 
@@ -179,6 +219,16 @@ export function Settings() {
           const message = channelResult.reason instanceof Error ? channelResult.reason.message : t("settings.unknownError");
           nextErrors.channels = message;
           toast.error(t("settings.channels.refreshFailedWithMessage", { message }));
+        }
+
+        if (principalResult.status === "fulfilled") {
+          setPrincipal(principalResult.value);
+          await Promise.allSettled([
+            loadCommercialKnowledge(),
+            loadAuditAndUsage(),
+          ]);
+        } else {
+          setPrincipal(null);
         }
 
         setLoadErrors(nextErrors);
@@ -305,22 +355,70 @@ export function Settings() {
   };
 
   const refreshKnowledge = async () => {
+    if (principal) {
+      await loadCommercialKnowledge(selectedKnowledgeBaseId);
+      return;
+    }
     const [stats, docs] = await Promise.all([api.getKnowledgeStats(), api.listKnowledgeDocuments()]);
     setKnowledgeStats(stats);
     setKnowledgeDocuments(docs);
   };
 
+  const createDefaultKnowledgeBase = async () => {
+    setCreatingKnowledgeBase(true);
+    try {
+      const kb = await api.createKnowledgeBase({
+        name: t("settings.knowledge.defaultKbName"),
+        description: t("settings.knowledge.defaultKbDescription"),
+      });
+      await loadCommercialKnowledge(kb.id);
+      toast.success(t("settings.knowledge.kbCreated"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.knowledge.kbCreateFailed", { message }));
+    } finally {
+      setCreatingKnowledgeBase(false);
+    }
+  };
+
   const submitKnowledge = async (event: FormEvent) => {
     event.preventDefault();
-    if (!knowledgePath.trim()) return;
     setKnowledgeSaving(true);
     try {
-      await api.addKnowledgeDocument({
-        path: knowledgePath.trim(),
-        title: knowledgeTitle.trim() || undefined,
-      });
+      if (principal) {
+        if (!selectedKnowledgeBaseId) {
+          throw new Error(t("settings.knowledge.noKnowledgeBase"));
+        }
+        if (knowledgeFile) {
+          const uploaded = await api.uploadFile(knowledgeFile);
+          await api.addCommercialKnowledgeDocument(selectedKnowledgeBaseId, {
+            path: uploaded.file_path,
+            title: knowledgeTitle.trim() || knowledgeFile.name,
+          });
+        } else if (knowledgeUrl.trim()) {
+          await api.addCommercialKnowledgeUrl(selectedKnowledgeBaseId, {
+            url: knowledgeUrl.trim(),
+            title: knowledgeTitle.trim() || undefined,
+          });
+        } else if (knowledgePath.trim()) {
+          await api.addCommercialKnowledgeDocument(selectedKnowledgeBaseId, {
+            path: knowledgePath.trim(),
+            title: knowledgeTitle.trim() || undefined,
+          });
+        } else {
+          throw new Error(t("settings.knowledge.sourceRequired"));
+        }
+      } else {
+        if (!knowledgePath.trim()) return;
+        await api.addKnowledgeDocument({
+          path: knowledgePath.trim(),
+          title: knowledgeTitle.trim() || undefined,
+        });
+      }
       setKnowledgePath("");
       setKnowledgeTitle("");
+      setKnowledgeUrl("");
+      setKnowledgeFile(null);
       await refreshKnowledge();
       toast.success(t("settings.knowledge.indexed"));
     } catch (error) {
@@ -328,6 +426,23 @@ export function Settings() {
       toast.error(t("settings.knowledge.indexFailed", { message }));
     } finally {
       setKnowledgeSaving(false);
+    }
+  };
+
+  const submitKnowledgeSearch = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!knowledgeQuery.trim()) return;
+    setKnowledgeSearching(true);
+    try {
+      const response = principal && selectedKnowledgeBaseId
+        ? await api.searchCommercialKnowledge(selectedKnowledgeBaseId, { query: knowledgeQuery.trim(), limit: 8 })
+        : await api.searchKnowledge({ query: knowledgeQuery.trim(), limit: 8 });
+      setKnowledgeSearchResults(response.results);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.knowledge.searchFailed", { message }));
+    } finally {
+      setKnowledgeSearching(false);
     }
   };
 
@@ -349,6 +464,29 @@ export function Settings() {
   const channelLoadedCount = channelRows.filter(([, item]) => item.loaded).length;
   const channelUnavailableCount = channelRows.filter(([, item]) => item.available === false).length;
   const channelBusy = channelRefreshing || channelAction !== null;
+  const totalTokens = modelUsage.reduce((sum, item) => sum + (item.total_tokens || 0), 0);
+  const totalCost = modelUsage.reduce((sum, item) => sum + (item.estimated_cost || 0), 0);
+  const usageByDate = modelUsage.reduce<Record<string, number>>((acc, item) => {
+    const date = item.created_at.slice(0, 10);
+    acc[date] = (acc[date] || 0) + (item.total_tokens || 0);
+    return acc;
+  }, {});
+  const usageBars = Object.entries(usageByDate).sort(([a], [b]) => a.localeCompare(b)).slice(-7);
+  const maxUsageBar = Math.max(1, ...usageBars.map(([, value]) => value));
+  const channelConfigHint = (name: string) => {
+    const key = name.toLowerCase();
+    if (key === "telegram") return "channels.telegram.enabled / botToken / allowUsers";
+    if (key === "discord") return "channels.discord.enabled / botToken / allowChannels";
+    if (key === "feishu") return "channels.feishu.enabled / appId / appSecret";
+    if (key === "dingtalk") return "channels.dingtalk.enabled / clientId / clientSecret";
+    if (key === "email") return "channels.email.enabled / imapHost / smtpHost";
+    if (key === "websocket") return "channels.websocket.enabled / host / port";
+    if (key === "wecom") return "channels.wecom.enabled / clientId / clientSecret";
+    if (key === "weixin") return "channels.weixin.enabled";
+    if (key === "whatsapp") return "channels.whatsapp.enabled";
+    if (key === "signal") return "channels.signal.enabled";
+    return `channels.${key}.enabled`;
+  };
 
   const renderOverview = () => (
     <section className={sectionCardClass}>
@@ -359,7 +497,7 @@ export function Settings() {
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label={t("settings.overview.model")} value={settings?.model_name || t("settings.unavailable")} />
         <MetricCard label={t("settings.overview.provider")} value={settings?.provider || t("settings.unavailable")} />
-        <MetricCard label={t("settings.overview.documents")} value={String(knowledgeStats?.document_count ?? 0)} />
+        <MetricCard label={t("settings.overview.documents")} value={String(principal ? commercialDocuments.length : (knowledgeStats?.document_count ?? 0))} />
         <MetricCard label={t("settings.overview.channels")} value={channelStatus?.running ? t("settings.channels.running") : t("settings.channels.stopped")} />
       </div>
     </section>
@@ -456,7 +594,7 @@ export function Settings() {
   };
 
   const renderKnowledge = () => (
-    <form onSubmit={submitKnowledge} className={sectionCardClass}>
+    <section className={sectionCardClass}>
       <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
@@ -471,39 +609,127 @@ export function Settings() {
         </button>
       </div>
 
-      {knowledgeStats ? (
+      {principal ? (
+        <>
+          <div className="mb-5 grid gap-3 md:grid-cols-4">
+            <MetricCard label={t("settings.knowledge.mode")} value={t("settings.knowledge.commercialMode")} />
+            <MetricCard label={t("settings.knowledge.knowledgeBases")} value={String(knowledgeBases.length)} />
+            <MetricCard label={t("settings.knowledge.documents")} value={String(commercialDocuments.length)} />
+            <MetricCard label={t("settings.knowledge.retrieval")} value={t("settings.knowledge.hybridRetrieval")} />
+          </div>
+
+          {knowledgeBases.length ? (
+            <div className="mb-5 grid gap-4 lg:grid-cols-[minmax(0,320px)_1fr]">
+              <label className="grid gap-2">
+                <span className={labelClass}>{t("settings.knowledge.selectKb")}</span>
+                <select
+                  value={selectedKnowledgeBaseId}
+                  onChange={(event) => {
+                    const nextId = event.target.value;
+                    setSelectedKnowledgeBaseId(nextId);
+                    api.listCommercialKnowledgeDocuments(nextId)
+                      .then(setCommercialDocuments)
+                      .catch((error) => toast.error(t("settings.knowledge.refreshFailed", { message: error instanceof Error ? error.message : t("settings.unknownError") })));
+                  }}
+                  className={fieldClass}
+                >
+                  {knowledgeBases.map((kb) => (
+                    <option key={kb.id} value={kb.id}>{kb.name}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
+                {t("settings.knowledge.pipelineDescription")}
+              </div>
+            </div>
+          ) : (
+            <div className="mb-5 rounded-md border bg-muted/20 p-4">
+              <p className="text-sm text-muted-foreground">{t("settings.knowledge.noKnowledgeBaseHint")}</p>
+              <button type="button" onClick={createDefaultKnowledgeBase} disabled={creatingKnowledgeBase} className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60">
+                {creatingKnowledgeBase ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+                {t("settings.knowledge.createDefaultKb")}
+              </button>
+            </div>
+          )}
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <form onSubmit={submitKnowledge} className="grid gap-4 rounded-md border bg-muted/10 p-4">
+              <TextField label={t("settings.knowledge.documentTitle")} value={knowledgeTitle} onChange={setKnowledgeTitle} placeholder={t("settings.optional")} />
+              <label className="grid gap-2">
+                <span className={labelClass}>{t("settings.knowledge.uploadFile")}</span>
+                <input
+                  type="file"
+                  onChange={(event) => setKnowledgeFile(event.target.files?.[0] ?? null)}
+                  className={fieldClass}
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.md,.txt,.html,.htm,.csv,.tsv,.json,.yaml,.yml"
+                />
+                <span className={hintClass}>{t("settings.knowledge.fileTypes")}</span>
+              </label>
+              <TextField label={t("settings.knowledge.documentPath")} value={knowledgePath} onChange={setKnowledgePath} placeholder="uploads/research-notes.md" />
+              <TextField label={t("settings.knowledge.url")} value={knowledgeUrl} onChange={setKnowledgeUrl} placeholder="https://example.com/research.html" />
+              <PrimaryButton type="submit" disabled={knowledgeSaving || !selectedKnowledgeBaseId || (!knowledgeFile && !knowledgePath.trim() && !knowledgeUrl.trim())} loading={knowledgeSaving} label={t("settings.knowledge.index")} />
+            </form>
+
+            <div className="rounded-md border bg-muted/10 p-4">
+              <form onSubmit={submitKnowledgeSearch} className="grid gap-3">
+                <TextField label={t("settings.knowledge.searchTest")} value={knowledgeQuery} onChange={setKnowledgeQuery} placeholder={t("settings.knowledge.searchPlaceholder")} />
+                <PrimaryButton type="submit" disabled={knowledgeSearching || !knowledgeQuery.trim() || !selectedKnowledgeBaseId} loading={knowledgeSearching} label={t("settings.knowledge.search")} />
+              </form>
+              <SearchResults results={knowledgeSearchResults} emptyLabel={t("settings.knowledge.noSearchResults")} />
+            </div>
+          </div>
+
+          {commercialDocuments.length ? (
+            <KnowledgeDocumentTable
+              rows={commercialDocuments.map((doc) => ({
+                id: doc.id,
+                title: doc.title,
+                chunkCount: doc.chunk_count,
+                source: doc.source_uri,
+                status: doc.status,
+              }))}
+              titleLabel={t("settings.knowledge.documentTitle")}
+              chunksLabel={t("settings.knowledge.chunks")}
+              sourceLabel={t("settings.knowledge.source")}
+              statusLabel={t("settings.status")}
+            />
+          ) : (
+            <div className="mt-5 rounded-md border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
+              {t("settings.knowledge.empty")}
+            </div>
+          )}
+        </>
+      ) : knowledgeStats ? (
         <>
           <div className="mb-5 grid gap-3 md:grid-cols-3">
             <MetricCard label={t("settings.knowledge.documents")} value={String(knowledgeStats.document_count)} />
             <MetricCard label={t("settings.knowledge.chunks")} value={String(knowledgeStats.chunk_count)} />
             <MetricCard label={t("settings.knowledge.storage")} value={knowledgeStats.db_path} title={knowledgeStats.db_path} />
           </div>
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.45fr)_auto]">
+          <form onSubmit={submitKnowledge} className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.45fr)_auto]">
             <TextField label={t("settings.knowledge.documentPath")} value={knowledgePath} onChange={setKnowledgePath} placeholder="uploads/research-notes.md" />
             <TextField label={t("settings.knowledge.documentTitle")} value={knowledgeTitle} onChange={setKnowledgeTitle} placeholder={t("settings.optional")} />
             <PrimaryButton type="submit" disabled={knowledgeSaving || !knowledgePath.trim()} loading={knowledgeSaving} label={t("settings.knowledge.index")} className="self-end" />
-          </div>
+          </form>
+          <form onSubmit={submitKnowledgeSearch} className="mt-5 grid gap-4 rounded-md border bg-muted/10 p-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+            <TextField label={t("settings.knowledge.searchTest")} value={knowledgeQuery} onChange={setKnowledgeQuery} placeholder={t("settings.knowledge.searchPlaceholder")} />
+            <PrimaryButton type="submit" disabled={knowledgeSearching || !knowledgeQuery.trim()} loading={knowledgeSearching} label={t("settings.knowledge.search")} className="self-end" />
+          </form>
+          <SearchResults results={knowledgeSearchResults} emptyLabel={t("settings.knowledge.noSearchResults")} />
           {knowledgeDocuments.length ? (
-            <div className="mt-5 overflow-hidden rounded-md border">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/40 text-xs text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium">{t("settings.knowledge.documentTitle")}</th>
-                    <th className="px-3 py-2 text-left font-medium">{t("settings.knowledge.chunks")}</th>
-                    <th className="px-3 py-2 text-left font-medium">{t("settings.knowledge.source")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {knowledgeDocuments.slice(0, 8).map((doc) => (
-                    <tr key={doc.id} className="border-t">
-                      <td className="px-3 py-2 align-top font-medium">{doc.title}</td>
-                      <td className="px-3 py-2 align-top text-muted-foreground">{doc.chunk_count}</td>
-                      <td className="max-w-md truncate px-3 py-2 align-top text-xs text-muted-foreground" title={doc.source_path}>{doc.source_path}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <KnowledgeDocumentTable
+              rows={knowledgeDocuments.slice(0, 8).map((doc) => ({
+                id: doc.id,
+                title: doc.title,
+                chunkCount: doc.chunk_count,
+                source: doc.source_path,
+                status: t("settings.knowledge.ready"),
+              }))}
+              titleLabel={t("settings.knowledge.documentTitle")}
+              chunksLabel={t("settings.knowledge.chunks")}
+              sourceLabel={t("settings.knowledge.source")}
+              statusLabel={t("settings.status")}
+            />
           ) : (
             <div className="mt-5 rounded-md border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
               {t("settings.knowledge.empty")}
@@ -511,7 +737,7 @@ export function Settings() {
           )}
         </>
       ) : unavailable(loadErrors.knowledge || t("settings.unavailable"))}
-    </form>
+    </section>
   );
 
   const renderDataSources = () => {
@@ -631,12 +857,18 @@ export function Settings() {
             <MetricCard label={t("settings.channels.loaded")} value={String(channelLoadedCount)} />
             <MetricCard label={t("settings.channels.unavailable")} value={String(channelUnavailableCount)} />
           </div>
+          <div className="mb-4 rounded-md border bg-muted/20 p-4 text-sm text-muted-foreground">
+            <div className="font-medium text-foreground">{t("settings.channels.howToUseTitle")}</div>
+            <p className="mt-1">{t("settings.channels.howToUseBody")}</p>
+            <div className="mt-2 font-mono text-xs">/pairing approve &lt;code&gt; · /pairing list · /new</div>
+          </div>
           <div className="overflow-hidden rounded-md border">
             <table className="w-full text-sm">
               <thead className="bg-muted/40 text-xs text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">{t("settings.channels.channel")}</th>
                   <th className="px-3 py-2 text-left font-medium">{t("settings.channels.state")}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t("settings.channels.config")}</th>
                   <th className="px-3 py-2 text-left font-medium">{t("settings.channels.recovery")}</th>
                 </tr>
               </thead>
@@ -653,6 +885,9 @@ export function Settings() {
                         <StatusPill active={item.loaded} on={t("settings.channels.loaded")} off={t("settings.channels.notLoaded")} />
                         <StatusPill active={item.running} on={t("settings.channels.running")} off={t("settings.channels.stopped")} />
                       </div>
+                    </td>
+                    <td className="max-w-xs px-3 py-2 align-top font-mono text-xs text-muted-foreground">
+                      {channelConfigHint(name)}
                     </td>
                     <td className="max-w-md px-3 py-2 align-top text-xs text-muted-foreground">
                       {item.install_hint || item.error || t("settings.channels.noRecovery")}
@@ -684,16 +919,68 @@ export function Settings() {
 
   const renderAudit = () => (
     <section className={sectionCardClass}>
-      <div className="mb-5 flex items-center gap-2">
-        <ClipboardList className="h-4 w-4 text-primary" />
-        <h2 className="text-base font-semibold">{t("settings.audit.title")}</h2>
+      <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <ClipboardList className="h-4 w-4 text-primary" />
+            <h2 className="text-base font-semibold">{t("settings.audit.title")}</h2>
+          </div>
+          <p className="text-sm text-muted-foreground">{t("settings.audit.description")}</p>
+        </div>
+        <button type="button" onClick={() => loadAuditAndUsage().catch((error) => toast.error(t("settings.audit.refreshFailed", { message: error instanceof Error ? error.message : t("settings.unknownError") })))} className="inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground">
+          <RefreshCw className="h-4 w-4" />
+          {t("settings.refresh")}
+        </button>
       </div>
       <div className="grid gap-3 md:grid-cols-3">
-        <MetricCard label={t("settings.audit.modelCalls")} value={t("settings.audit.apiAvailable")} />
-        <MetricCard label={t("settings.audit.toolCalls")} value={t("settings.audit.planned")} />
-        <MetricCard label={t("settings.audit.securityEvents")} value={t("settings.audit.apiAvailable")} />
+        <MetricCard label={t("settings.audit.modelCalls")} value={String(modelUsage.length)} />
+        <MetricCard label={t("settings.audit.totalTokens")} value={String(totalTokens)} />
+        <MetricCard label={t("settings.audit.estimatedCost")} value={totalCost.toFixed(4)} />
       </div>
-      <p className="mt-4 text-sm text-muted-foreground">{t("settings.audit.description")}</p>
+      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <div className="rounded-md border bg-muted/10 p-4">
+          <h3 className="mb-3 text-sm font-semibold">{t("settings.audit.tokenTrend")}</h3>
+          {usageBars.length ? (
+            <div className="space-y-2">
+              {usageBars.map(([date, value]) => (
+                <div key={date} className="grid grid-cols-[88px_minmax(0,1fr)_72px] items-center gap-2 text-xs">
+                  <span className="text-muted-foreground">{date}</span>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(4, (value / maxUsageBar) * 100)}%` }} />
+                  </div>
+                  <span className="text-right text-muted-foreground">{value}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-md border bg-muted/20 px-3 py-6 text-center text-sm text-muted-foreground">{t("settings.audit.noUsage")}</div>
+          )}
+        </div>
+        <div className="overflow-hidden rounded-md border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 text-xs text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">{t("settings.audit.time")}</th>
+                <th className="px-3 py-2 text-left font-medium">{t("settings.audit.action")}</th>
+                <th className="px-3 py-2 text-left font-medium">{t("settings.audit.target")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditLogs.length ? auditLogs.slice(0, 12).map((log) => (
+                <tr key={log.id} className="border-t">
+                  <td className="whitespace-nowrap px-3 py-2 align-top text-xs text-muted-foreground">{log.created_at.slice(0, 19).replace("T", " ")}</td>
+                  <td className="px-3 py-2 align-top font-medium">{log.action}</td>
+                  <td className="max-w-sm truncate px-3 py-2 align-top text-xs text-muted-foreground" title={`${log.target_type}:${log.target_id}`}>{log.target_type || "-"} {log.target_id}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={3} className="px-3 py-8 text-center text-sm text-muted-foreground">{t("settings.audit.noAuditLogs")}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
   );
 
@@ -774,6 +1061,71 @@ function MetricCard({ label, value, title }: { label: string; value: string; tit
     <div className="rounded-md border bg-muted/20 px-3 py-2">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="truncate text-sm font-medium" title={title || value}>{value}</div>
+    </div>
+  );
+}
+
+function KnowledgeDocumentTable({
+  rows,
+  titleLabel,
+  chunksLabel,
+  sourceLabel,
+  statusLabel,
+}: {
+  rows: Array<{ id: string; title: string; chunkCount: number; source: string; status: string }>;
+  titleLabel: string;
+  chunksLabel: string;
+  sourceLabel: string;
+  statusLabel: string;
+}) {
+  return (
+    <div className="mt-5 overflow-hidden rounded-md border">
+      <table className="w-full text-sm">
+        <thead className="bg-muted/40 text-xs text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2 text-left font-medium">{titleLabel}</th>
+            <th className="px-3 py-2 text-left font-medium">{chunksLabel}</th>
+            <th className="px-3 py-2 text-left font-medium">{statusLabel}</th>
+            <th className="px-3 py-2 text-left font-medium">{sourceLabel}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((doc) => (
+            <tr key={doc.id} className="border-t">
+              <td className="px-3 py-2 align-top font-medium">{doc.title}</td>
+              <td className="px-3 py-2 align-top text-muted-foreground">{doc.chunkCount}</td>
+              <td className="px-3 py-2 align-top text-muted-foreground">{doc.status}</td>
+              <td className="max-w-md truncate px-3 py-2 align-top text-xs text-muted-foreground" title={doc.source}>{doc.source}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SearchResults({
+  results,
+  emptyLabel,
+}: {
+  results: Array<CommercialKnowledgeSearchResult | KnowledgeSearchResult>;
+  emptyLabel: string;
+}) {
+  if (!results.length) {
+    return <div className="mt-4 rounded-md border bg-muted/20 px-3 py-4 text-center text-sm text-muted-foreground">{emptyLabel}</div>;
+  }
+  return (
+    <div className="mt-4 space-y-3">
+      {results.map((item) => (
+        <div key={item.chunk_id} className="rounded-md border bg-background p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-medium">{item.title}</div>
+            <div className="text-xs text-muted-foreground">{Number(item.score).toFixed(4)}</div>
+          </div>
+          <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{item.text}</p>
+          <div className="mt-2 truncate text-xs text-primary" title={item.citation}>{item.citation}</div>
+        </div>
+      ))}
     </div>
   );
 }

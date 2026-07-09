@@ -536,6 +536,29 @@ def _validate_api_auth(
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
+def _commercial_principal_from_request(request: Request):
+    """Return the commercial principal from the session cookie when enabled."""
+    if not _env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
+        return None
+    token = request.cookies.get("vibe_session", "")
+    if not token:
+        return None
+    try:
+        from src.commercial.store import CommercialStore
+
+        return CommercialStore().principal_from_token(token)
+    except Exception as exc:  # noqa: BLE001 - auth fallback must not break local/API-key paths
+        logger.debug("Commercial session auth fallback failed: %s", exc)
+        return None
+
+
+def _has_commercial_role(request: Request, allowed: set[str] | None = None) -> bool:
+    principal = _commercial_principal_from_request(request)
+    if principal is None:
+        return False
+    return allowed is None or principal.role in allowed
+
+
 def _is_local_client(request: Request) -> bool:
     """Return whether the request originates from a loopback client."""
     host = request.client.host if request.client else ""
@@ -616,7 +639,11 @@ async def require_local_or_auth(
     credential reads or writes in dev mode.
     """
     if _configured_api_key():
+        if _has_commercial_role(request):
+            return
         await require_auth(request, cred)
+        return
+    if _has_commercial_role(request):
         return
     if not _is_local_client(request):
         raise HTTPException(
@@ -638,9 +665,14 @@ async def require_settings_write_auth(
     """
     api_key = _configured_api_key()
     if api_key:
+        if _has_commercial_role(request, {"owner", "admin"}):
+            return
         token = _auth_credential_from_header_or_query(cred, None, allow_query=False)
         if not token or not hmac.compare_digest(token, api_key):
             raise HTTPException(status_code=401, detail="Invalid or missing API key")
+        return
+
+    if _has_commercial_role(request, {"owner", "admin"}):
         return
 
     if not _is_local_client(request):
@@ -949,7 +981,7 @@ from src.api.uploads_routes import (  # noqa: E402
 
 from src.api.channels_routes import register_channels_routes  # noqa: E402
 
-register_channels_routes(app)
+register_channels_routes(app, require_auth=require_local_or_auth)
 
 # Re-export for test monkeypatch compatibility
 from src.api.channels_routes import (  # noqa: F401, E402

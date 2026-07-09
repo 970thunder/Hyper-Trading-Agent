@@ -278,7 +278,10 @@
       "stopFailed": "فشل إيقاف قنوات IM",
       "refreshFailedWithMessage": "Failed to refresh IM channels: {{message}}",
       "startFailedWithMessage": "Failed to start IM channels: {{message}}",
-      "stopFailedWithMessage": "Failed to stop IM channels: {{message}}"
+      "stopFailedWithMessage": "Failed to stop IM channels: {{message}}",
+      "config": "Configuration",
+      "howToUseTitle": "How to use IM channels",
+      "howToUseBody": "Configure the matching section in agent/config.yaml, install the optional package shown in Recovery, start channels, then approve incoming senders with pairing commands before using the Agent from IM."
     },
     "generation": "إعدادات التوليد",
     "dataSourceSettings": "إعدادات مصادر البيانات",
@@ -356,7 +359,31 @@
       "indexFailed": "Failed to index document: {{message}}",
       "loadFailed": "Failed to load knowledge base: {{message}}",
       "refreshFailed": "Failed to refresh knowledge base: {{message}}",
-      "empty": "No indexed documents yet."
+      "empty": "No indexed documents yet.",
+      "mode": "Mode",
+      "commercialMode": "Commercial KB",
+      "knowledgeBases": "Knowledge bases",
+      "retrieval": "Retrieval",
+      "hybridRetrieval": "Hybrid keyword + vector",
+      "selectKb": "Knowledge base",
+      "pipelineDescription": "Files and URLs are parsed into text, chunked, vectorized with the local embedding fallback, indexed for keyword retrieval, and returned with stable citations.",
+      "noKnowledgeBaseHint": "No organization knowledge base exists yet. Create a default one before importing files or URLs.",
+      "createDefaultKb": "Create default knowledge base",
+      "defaultKbName": "Default Research Knowledge Base",
+      "defaultKbDescription": "Default knowledge base for research notes, reports, filings, web pages, and strategy references.",
+      "kbCreated": "Knowledge base created.",
+      "kbCreateFailed": "Failed to create knowledge base: {{message}}",
+      "noKnowledgeBase": "No knowledge base selected.",
+      "sourceRequired": "Upload a file, enter a server path, or add a URL.",
+      "uploadFile": "Upload file",
+      "fileTypes": "Supports PDF, Word, Excel, Markdown, TXT, HTML, CSV, JSON, YAML, and TSV.",
+      "url": "Web URL",
+      "searchTest": "Search test",
+      "searchPlaceholder": "Search indexed research content...",
+      "search": "Search knowledge",
+      "searchFailed": "Knowledge search failed: {{message}}",
+      "noSearchResults": "No search results yet.",
+      "ready": "Ready"
     },
     "data": {
       "tushareHint": "Only enter a token when updating it. Existing saved tokens are never returned by the API."
@@ -390,7 +417,16 @@
       "toolCalls": "Tool calls",
       "securityEvents": "Security events",
       "apiAvailable": "API available",
-      "planned": "Planned"
+      "planned": "Planned",
+      "totalTokens": "Total tokens",
+      "estimatedCost": "Estimated cost",
+      "tokenTrend": "Token trend",
+      "noUsage": "No model usage records yet.",
+      "noAuditLogs": "No audit logs yet.",
+      "time": "Time",
+      "action": "Action",
+      "target": "Target",
+      "refreshFailed": "Failed to refresh audit data: {{message}}"
     }
   },
   "agent": {

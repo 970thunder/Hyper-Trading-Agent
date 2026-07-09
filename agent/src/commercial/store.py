@@ -11,7 +11,9 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import os
+import re
 import secrets
 import sqlite3
 import uuid
@@ -24,6 +26,8 @@ from typing import Any
 DEFAULT_DB_PATH = Path.home() / ".vibe-trading" / "commercial" / "commercial.db"
 SESSION_TTL_DAYS = 14
 ROLES = {"owner", "admin", "member", "viewer"}
+EMBEDDING_DIMENSIONS = int(os.getenv("VIBE_TRADING_LOCAL_EMBEDDING_DIMENSIONS", "64"))
+_TOKEN_RE = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
 
 
 @dataclass(frozen=True)
@@ -68,6 +72,32 @@ def _verify_password(password: str, encoded: str) -> bool:
 
 def _secret_fingerprint(secret: str) -> str:
     return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:16]
+
+
+def _local_embedding(text: str, dimensions: int = EMBEDDING_DIMENSIONS) -> list[float]:
+    """Create a deterministic local embedding for offline hybrid retrieval.
+
+    This is a lightweight fallback, not a semantic model. Production deployments
+    should replace it with provider embeddings stored in pgvector.
+    """
+    vector = [0.0] * max(8, dimensions)
+    tokens = [token.lower() for token in _TOKEN_RE.findall(text or "") if token.strip()]
+    for token in tokens[:4096]:
+        digest = hashlib.sha256(token.encode("utf-8")).digest()
+        bucket = int.from_bytes(digest[:4], "big") % len(vector)
+        sign = 1.0 if digest[4] % 2 == 0 else -1.0
+        vector[bucket] += sign
+    norm = math.sqrt(sum(value * value for value in vector))
+    if norm <= 0:
+        return vector
+    return [round(value / norm, 6) for value in vector]
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    if not a or not b:
+        return 0.0
+    size = min(len(a), len(b))
+    return float(sum(a[i] * b[i] for i in range(size)))
 
 
 def _secret_key() -> bytes:
@@ -250,6 +280,14 @@ class CommercialStore:
                 );
                 """
             )
+            existing_chunk_columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(knowledge_chunks)").fetchall()
+            }
+            if "embedding_json" not in existing_chunk_columns:
+                conn.execute("ALTER TABLE knowledge_chunks ADD COLUMN embedding_json TEXT NOT NULL DEFAULT '[]'")
+            if "metadata_json" not in existing_chunk_columns:
+                conn.execute("ALTER TABLE knowledge_chunks ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'")
 
     # --- auth / orgs ---
 
@@ -514,12 +552,13 @@ class CommercialStore:
             )
             for index, chunk in enumerate(chunks):
                 chunk_id = _new_id("chk")
+                embedding_json = json.dumps(_local_embedding(chunk), separators=(",", ":"))
                 conn.execute(
                     """
-                    INSERT INTO knowledge_chunks(id, organization_id, knowledge_base_id, document_id, chunk_index, text, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO knowledge_chunks(id, organization_id, knowledge_base_id, document_id, chunk_index, text, embedding_json, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (chunk_id, principal.organization_id, kb_id, doc_id, index, chunk, now),
+                    (chunk_id, principal.organization_id, kb_id, doc_id, index, chunk, embedding_json, now),
                 )
                 conn.execute(
                     "INSERT INTO knowledge_chunks_fts(chunk_id, organization_id, knowledge_base_id, document_id, title, text) VALUES (?, ?, ?, ?, ?, ?)",
@@ -571,18 +610,31 @@ class CommercialStore:
 
         self._ensure_kb(principal, kb_id)
         capped = max(1, min(limit, 20))
+        query_embedding = _local_embedding(query)
         with self._connect() as conn:
-            rows = conn.execute(
+            try:
+                fts_rows = conn.execute(
+                    """
+                    SELECT chunk_id, document_id, title, text, bm25(knowledge_chunks_fts) AS rank
+                    FROM knowledge_chunks_fts
+                    WHERE knowledge_chunks_fts MATCH ?
+                      AND organization_id = ?
+                      AND knowledge_base_id = ?
+                    ORDER BY rank
+                    LIMIT ?
+                    """,
+                    (_fts_query(query), principal.organization_id, kb_id, capped * 2),
+                ).fetchall()
+            except sqlite3.Error:
+                fts_rows = []
+            vector_rows = conn.execute(
                 """
-                SELECT chunk_id, document_id, title, text, bm25(knowledge_chunks_fts) AS rank
-                FROM knowledge_chunks_fts
-                WHERE knowledge_chunks_fts MATCH ?
-                  AND organization_id = ?
-                  AND knowledge_base_id = ?
-                ORDER BY rank
-                LIMIT ?
+                SELECT c.id AS chunk_id, c.document_id, d.title, d.source_uri, c.text, c.embedding_json
+                FROM knowledge_chunks c
+                JOIN knowledge_documents d ON d.id = c.document_id
+                WHERE c.organization_id = ? AND c.knowledge_base_id = ?
                 """,
-                (_fts_query(query), principal.organization_id, kb_id, capped),
+                (principal.organization_id, kb_id),
             ).fetchall()
             doc_map = {
                 str(row["id"]): {"source_uri": str(row["source_uri"])}
@@ -591,20 +643,52 @@ class CommercialStore:
                     (principal.organization_id, kb_id),
                 ).fetchall()
             }
+            scored: dict[str, dict[str, Any]] = {}
+            for row in fts_rows:
+                lexical_score = 1.0 / (1.0 + max(0.0, float(row["rank"])))
+                scored[str(row["chunk_id"])] = {
+                    "document_id": str(row["document_id"]),
+                    "chunk_id": str(row["chunk_id"]),
+                    "title": str(row["title"]),
+                    "source_uri": doc_map.get(str(row["document_id"]), {}).get("source_uri", ""),
+                    "score": lexical_score * 0.65,
+                    "text": str(row["text"]),
+                }
+            for row in vector_rows:
+                try:
+                    embedding = json.loads(row["embedding_json"] or "[]")
+                except json.JSONDecodeError:
+                    embedding = []
+                vector_score = max(0.0, _cosine(query_embedding, embedding))
+                if vector_score <= 0 and scored.get(str(row["chunk_id"])) is None:
+                    continue
+                item = scored.setdefault(
+                    str(row["chunk_id"]),
+                    {
+                        "document_id": str(row["document_id"]),
+                        "chunk_id": str(row["chunk_id"]),
+                        "title": str(row["title"]),
+                        "source_uri": str(row["source_uri"]),
+                        "score": 0.0,
+                        "text": str(row["text"]),
+                    },
+                )
+                item["score"] = float(item["score"]) + vector_score * 0.35
+            rows = sorted(scored.values(), key=lambda item: float(item["score"]), reverse=True)[:capped]
             conn.execute(
                 "INSERT INTO knowledge_retrieval_logs(id, organization_id, user_id, knowledge_base_id, query, result_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (_new_id("ret"), principal.organization_id, principal.user_id, kb_id, query, len(rows), utcnow()),
             )
         results: list[dict[str, Any]] = []
         for row in rows:
-            source_uri = doc_map.get(str(row["document_id"]), {}).get("source_uri", "")
+            source_uri = str(row.get("source_uri") or "")
             results.append(
                 {
                     "document_id": row["document_id"],
                     "chunk_id": row["chunk_id"],
                     "title": row["title"],
                     "source_uri": source_uri,
-                    "score": float(row["rank"]),
+                    "score": round(float(row["score"]), 6),
                     "text": row["text"],
                     "citation": f"{row['title']} ({source_uri})",
                 }

@@ -278,7 +278,10 @@
       "stopFailed": "停止 IM 通道失败",
       "refreshFailedWithMessage": "刷新 IM 通道失败：{{message}}",
       "startFailedWithMessage": "启动 IM 通道失败：{{message}}",
-      "stopFailedWithMessage": "停止 IM 通道失败：{{message}}"
+      "stopFailedWithMessage": "停止 IM 通道失败：{{message}}",
+      "config": "配置项",
+      "howToUseTitle": "IM 通道使用方式",
+      "howToUseBody": "在 agent/config.yaml 中配置对应 channel section，按恢复建议安装可选依赖，启动通道后使用配对命令批准发送者，再从 IM 中调用 Agent。"
     },
     "generation": "生成设置",
     "dataSourceSettings": "数据源设置",
@@ -356,7 +359,31 @@
       "indexFailed": "索引文档失败：{{message}}",
       "loadFailed": "加载知识库失败：{{message}}",
       "refreshFailed": "刷新知识库失败：{{message}}",
-      "empty": "暂无已索引文档。"
+      "empty": "暂无已索引文档。",
+      "mode": "模式",
+      "commercialMode": "商业知识库",
+      "knowledgeBases": "知识库数量",
+      "retrieval": "检索方式",
+      "hybridRetrieval": "关键词 + 向量混合",
+      "selectKb": "知识库",
+      "pipelineDescription": "文件和网页会先解析为文本，再切分、使用本地 embedding fallback 向量化、建立关键词索引，并在检索结果中返回稳定引用。",
+      "noKnowledgeBaseHint": "当前组织还没有知识库。请先创建默认知识库，再导入文件或 URL。",
+      "createDefaultKb": "创建默认知识库",
+      "defaultKbName": "默认投研知识库",
+      "defaultKbDescription": "用于投研笔记、报告、公告、网页和策略资料的默认知识库。",
+      "kbCreated": "知识库已创建。",
+      "kbCreateFailed": "创建知识库失败：{{message}}",
+      "noKnowledgeBase": "未选择知识库。",
+      "sourceRequired": "请上传文件、填写服务器路径或添加 URL。",
+      "uploadFile": "上传文件",
+      "fileTypes": "支持 PDF、Word、Excel、Markdown、TXT、HTML、CSV、JSON、YAML 和 TSV。",
+      "url": "网页 URL",
+      "searchTest": "搜索测试",
+      "searchPlaceholder": "搜索已索引的投研内容...",
+      "search": "搜索知识库",
+      "searchFailed": "知识库搜索失败：{{message}}",
+      "noSearchResults": "暂无搜索结果。",
+      "ready": "就绪"
     },
     "data": {
       "tushareHint": "仅在需要更新时填写 Token。已保存的 Token 不会通过 API 返回。"
@@ -390,7 +417,16 @@
       "toolCalls": "工具调用",
       "securityEvents": "安全事件",
       "apiAvailable": "API 可用",
-      "planned": "计划中"
+      "planned": "计划中",
+      "totalTokens": "总 Token",
+      "estimatedCost": "估算成本",
+      "tokenTrend": "Token 趋势",
+      "noUsage": "暂无模型用量记录。",
+      "noAuditLogs": "暂无审计日志。",
+      "time": "时间",
+      "action": "操作",
+      "target": "对象",
+      "refreshFailed": "刷新审计数据失败：{{message}}"
     }
   },
   "agent": {

@@ -7,6 +7,11 @@ const apiMock = vi.hoisted(() => ({
   getDataSourceSettings: vi.fn(),
   getKnowledgeStats: vi.fn(),
   listKnowledgeDocuments: vi.fn(),
+  getCommercialMe: vi.fn(),
+  listKnowledgeBases: vi.fn(),
+  listCommercialKnowledgeDocuments: vi.fn(),
+  listAuditLogs: vi.fn(),
+  listModelUsage: vi.fn(),
   getChannelStatus: vi.fn(),
   startChannels: vi.fn(),
   stopChannels: vi.fn(),
@@ -120,6 +125,11 @@ describe("Settings IM channels panel", () => {
       chunk_count: 0,
     });
     apiMock.listKnowledgeDocuments.mockResolvedValue([]);
+    apiMock.getCommercialMe.mockRejectedValue(new Error("not logged in"));
+    apiMock.listKnowledgeBases.mockResolvedValue([]);
+    apiMock.listCommercialKnowledgeDocuments.mockResolvedValue([]);
+    apiMock.listAuditLogs.mockResolvedValue([]);
+    apiMock.listModelUsage.mockResolvedValue([]);
     apiMock.getChannelStatus.mockResolvedValue(channelStatus());
     apiMock.startChannels.mockResolvedValue(channelStatus({ running: true }));
     apiMock.stopChannels.mockResolvedValue(channelStatus());

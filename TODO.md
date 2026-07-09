@@ -1,12 +1,15 @@
 # Hyper Trading Agent TODO
 
 ## P0 当前必须完成
-- [ ] 主题 token 重构
-- [ ] 设置页导航化重构
-- [ ] 中英文 i18n 完整性约束
-- [ ] Agent 专业提示词重写
-- [ ] emoji 后处理清洗
-- [ ] RAG 引用输出规范
+- [x] 主题 token 重构
+- [x] 设置页导航化重构
+- [x] 中英文 i18n 完整性约束
+- [x] Agent 专业提示词重写
+- [x] emoji 后处理清洗
+- [x] RAG 引用输出规范
+- [x] 商业登录态可管理模型与数据源设置
+- [x] IM 通道配置说明与控制面增强
+- [x] 审计与用量面板从占位改为真实数据视图
 
 ## P1 Agent 核心能力
 - [ ] Plan-Execute 执行模式
@@ -17,11 +20,15 @@
 
 ## P2 RAG 与记忆
 - [ ] pgvector runtime adapter
-- [ ] hybrid retrieval
+- [x] hybrid retrieval
 - [ ] ingestion job
-- [ ] citation UI
+- [x] citation UI
 - [ ] persistent memory 策略
 - [ ] 会话历史检索
+- [x] 文件上传导入入口
+- [x] URL 抓取入库入口
+- [x] PDF / Word / Excel / Markdown / TXT / HTML / CSV 解析入口
+- [x] 本地 embedding fallback 向量化
 
 ## P3 输出与展示
 - [ ] 结构化投研报告模板
@@ -32,8 +39,8 @@
 
 ## P4 商业化治理
 - [ ] RBAC 完整接入
-- [ ] 成本统计
-- [ ] 安全审计
+- [x] 成本统计视图
+- [x] 安全审计视图
 - [ ] Prometheus 指标
 - [ ] 管理后台
 - [ ] 交叉测试与评测集

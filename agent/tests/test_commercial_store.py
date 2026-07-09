@@ -88,6 +88,14 @@ def test_commercial_knowledge_base_ingest_search_and_delete(tmp_path):
     assert len(results) == 1
     assert set(results[0]) >= {"document_id", "chunk_id", "title", "source_uri", "score", "text", "citation"}
     assert results[0]["document_id"] == doc["id"]
+    assert results[0]["score"] > 0
+    with store._connect() as conn:
+        row = conn.execute(
+            "SELECT embedding_json FROM knowledge_chunks WHERE document_id = ?",
+            (doc["id"],),
+        ).fetchone()
+    assert row is not None
+    assert row["embedding_json"] not in {"", "[]"}
 
     store.delete_knowledge_document(principal, kb["id"], doc["id"])
     assert store.list_knowledge_documents(principal, kb["id"]) == []
