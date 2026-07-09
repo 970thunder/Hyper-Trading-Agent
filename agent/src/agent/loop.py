@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import queue
+import re
 import threading
 import time as _time
 from datetime import datetime, timezone
@@ -57,6 +58,50 @@ STREAM_RETRY_DELAY_S = float(os.getenv("VT_STREAM_RETRY_DELAY_S", "1.0"))
 TOOL_TIMEOUT_SECONDS = float(os.getenv("VIBE_TRADING_TOOL_TIMEOUT_SECONDS", "1800"))
 GOAL_MAX_CONTINUATIONS = int(os.getenv("VIBE_TRADING_GOAL_MAX_CONTINUATIONS", "3"))
 LLM_USAGE_ARTIFACT = "llm_usage.json"
+
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001f1e6-\U0001f1ff"
+    "\U0001f300-\U0001f5ff"
+    "\U0001f600-\U0001f64f"
+    "\U0001f680-\U0001f6ff"
+    "\U0001f700-\U0001f77f"
+    "\U0001f780-\U0001f7ff"
+    "\U0001f800-\U0001f8ff"
+    "\U0001f900-\U0001f9ff"
+    "\U0001fa00-\U0001fa6f"
+    "\U0001fa70-\U0001faff"
+    "\u2600-\u27bf"
+    "]+",
+    flags=re.UNICODE,
+)
+_INVESTMENT_OUTPUT_RE = re.compile(
+    r"(investment|trading|strategy|backtest|portfolio|factor|alpha|drawdown|sharpe|"
+    r"投资|交易|策略|回测|组合|因子|收益|回撤|夏普|风控|风险)",
+    flags=re.IGNORECASE,
+)
+
+
+def _postprocess_agent_output(content: str) -> str:
+    """Apply lightweight output governance before persisting final answers."""
+    cleaned = _EMOJI_RE.sub("", content or "")
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r"\n{4,}", "\n\n\n", cleaned).strip()
+    if not cleaned:
+        return cleaned
+
+    if _INVESTMENT_OUTPUT_RE.search(cleaned) and not re.search(r"(risk disclosure|风险提示|主要风险|风险)", cleaned, re.IGNORECASE):
+        if re.search(r"[\u4e00-\u9fff]", cleaned):
+            cleaned = (
+                f"{cleaned}\n\n"
+                "风险提示：以上内容仅用于研究和系统分析，不构成投资建议。实际决策需要结合数据质量、样本区间、交易成本、流动性、回撤承受能力和合规约束独立评估。"
+            )
+        else:
+            cleaned = (
+                f"{cleaned}\n\n"
+                "Risk disclosure: This output is for research and system analysis only and is not investment advice. Validate data quality, sample period, transaction costs, liquidity, drawdown tolerance, and compliance constraints before making decisions."
+            )
+    return cleaned
 
 # Layer 1: microcompact only prunes old tool results once the transcript is
 # under real memory pressure. Below this it would clear tool history on every
@@ -654,8 +699,11 @@ class AgentLoop:
                 last_reasoning_emit: float | None = None
 
                 def _on_text_chunk(delta: str) -> None:
-                    thinking_chunks.append(delta)
-                    self._emit("text_delta", {"delta": delta, "iter": current_iter})
+                    cleaned_delta = _EMOJI_RE.sub("", delta)
+                    if not cleaned_delta:
+                        return
+                    thinking_chunks.append(cleaned_delta)
+                    self._emit("text_delta", {"delta": cleaned_delta, "iter": current_iter})
 
                 def _on_reasoning_chunk(delta: str) -> None:
                     # Throttled: long reasoning streams produce hundreds of
@@ -808,7 +856,7 @@ class AgentLoop:
                 consecutive_content_filter_count = 0
 
                 if not response.has_tool_calls:
-                    final_content = response.content or ""
+                    final_content = _postprocess_agent_output(response.content or "")
                     if not final_content:
                         empty_model_response_iter = iteration
                         trace.write(

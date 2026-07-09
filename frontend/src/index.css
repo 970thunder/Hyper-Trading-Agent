@@ -4,75 +4,98 @@
 
 @layer base {
   :root {
+    /* Brand palette tokens */
+    --primary-100: #de283b;
+    --primary-200: #ff6366;
+    --primary-300: #ffccc4;
+    --accent-100: #25b1bf;
+    --accent-200: #005461;
+    --text-100: #1a1a1a;
+    --text-200: #404040;
+    --bg-100: #ffffff;
+    --bg-200: #f5f5f5;
+    --bg-300: #cccccc;
+
     /* Light mode surfaces */
-    --background: 220 20% 98%;
-    --foreground: 220 20% 10%;
+    --background: 0 0% 100%;
+    --foreground: 0 0% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 220 20% 10%;
+    --card-foreground: 0 0% 10%;
 
     /* Popover: a slightly elevated surface used for floating menus,
        tooltips, and the language switcher dropdown. Falls back to a
        solid white (light) or surface-1 (dark) so dropdowns never
        appear transparent and let underlying content bleed through. */
     --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 10%;
+    --popover-foreground: 0 0% 10%;
 
     /* Brand accent */
-    --primary: 27 90% 52%;
+    --primary: 354 73% 51%;
     --primary-foreground: 0 0% 100%;
 
-    --muted: 220 14% 92%;
-    --muted-foreground: 220 14% 46%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 25%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 14% 87%;
+    --border: 0 0% 80%;
     --radius: 0.5rem;
 
     /* Semantic colors */
     --success: 142 71% 45%;
     --danger: 0 84% 60%;
     --warning: 38 92% 50%;
-    --info: 217 91% 60%;
+    --info: 186 68% 45%;
 
     /* Chart tokens */
-    --chart-grid: 220 14% 90%;
-    --chart-text: 220 14% 46%;
-    --chart-axis: 220 14% 80%;
-    --chart-compare-a: #3b82f6;
-    --chart-compare-b: #f59e0b;
+    --chart-grid: 0 0% 88%;
+    --chart-text: 0 0% 25%;
+    --chart-axis: 0 0% 75%;
+    --chart-compare-a: #25b1bf;
+    --chart-compare-b: #de283b;
   }
 
   .dark {
+    --primary-100: #FF6600;
+    --primary-200: #ff983f;
+    --primary-300: #ffffa1;
+    --accent-100: #F5F5F5;
+    --accent-200: #929292;
+    --text-100: #FFFFFF;
+    --text-200: #e0e0e0;
+    --bg-100: #1D1F21;
+    --bg-200: #2c2e30;
+    --bg-300: #444648;
+
     /* Dark mode: 4-level surface system */
-    --background: 220 20% 5%;       /* bg-base */
-    --foreground: 220 10% 92%;
-    --card: 220 20% 8%;             /* surface-1 */
-    --card-foreground: 220 10% 92%;
+    --background: 210 6% 12%;       /* bg-base */
+    --foreground: 0 0% 100%;
+    --card: 210 4% 18%;             /* surface-1 */
+    --card-foreground: 0 0% 100%;
 
-    --popover: 220 20% 9%;          /* surface-1.5 (slightly lighter than card) */
-    --popover-foreground: 220 10% 92%;
+    --popover: 210 4% 18%;          /* surface-1.5 (slightly lighter than card) */
+    --popover-foreground: 0 0% 100%;
 
-    --primary: 27 90% 52%;
+    --primary: 24 100% 50%;
     --primary-foreground: 0 0% 100%;
 
-    --muted: 220 20% 13%;           /* surface-2 */
-    --muted-foreground: 220 10% 55%;
+    --muted: 210 4% 18%;            /* surface-2 */
+    --muted-foreground: 0 0% 88%;
     --destructive: 0 62% 50%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 20% 18%;          /* surface-3 */
+    --border: 210 3% 27%;           /* surface-3 */
 
     /* Semantic colors */
     --success: 142 71% 45%;
     --danger: 0 62% 50%;
     --warning: 38 92% 50%;
-    --info: 217 91% 60%;
+    --info: 186 68% 45%;
 
     /* Chart tokens */
-    --chart-grid: 220 20% 12%;
-    --chart-text: 220 10% 42%;
-    --chart-axis: 220 20% 22%;
-    --chart-compare-a: #60a5fa;
-    --chart-compare-b: #fbbf24;
+    --chart-grid: 210 3% 27%;
+    --chart-text: 0 0% 88%;
+    --chart-axis: 210 3% 38%;
+    --chart-compare-a: #ff983f;
+    --chart-compare-b: #25b1bf;
   }
 
   * { @apply border-border; }

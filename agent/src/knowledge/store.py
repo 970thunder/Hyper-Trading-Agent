@@ -44,11 +44,14 @@ class KnowledgeSearchResult:
     """A retrieved knowledge chunk."""
 
     document_id: str
+    chunk_id: str
     title: str
+    source_uri: str
     source_path: str
     chunk_index: int
     score: float
     text: str
+    citation: str
 
 
 def _db_path() -> Path:
@@ -64,6 +67,17 @@ def _normalize_text(text: str) -> str:
 def _make_doc_id(source_path: str, source_hash: str) -> str:
     seed = f"{Path(source_path).name}:{source_hash}".encode("utf-8")
     return hashlib.sha256(seed).hexdigest()[:16]
+
+
+def _make_chunk_id(document_id: str, chunk_index: int) -> str:
+    return f"{document_id}:{chunk_index}"
+
+
+def _make_citation(title: str, source_uri: str, chunk_index: int) -> str:
+    label = title.strip() or source_uri.strip() or "knowledge document"
+    source = source_uri.strip()
+    suffix = f", chunk {chunk_index + 1}"
+    return f"{label} ({source}{suffix})" if source else f"{label} ({suffix.lstrip(', ')})"
 
 
 def _chunk_text(
@@ -226,16 +240,23 @@ class KnowledgeBase:
         results: list[KnowledgeSearchResult] = []
         for row in rows:
             text = str(row["text"])
+            document_id = str(row["document_id"])
+            chunk_index = int(row["chunk_index"])
+            title = str(row["title"])
+            source_uri = str(row["source_path"])
             if len(text) > MAX_SNIPPET_CHARS:
                 text = text[:MAX_SNIPPET_CHARS].rstrip() + "\n... [truncated]"
             results.append(
                 KnowledgeSearchResult(
-                    document_id=str(row["document_id"]),
-                    title=str(row["title"]),
-                    source_path=str(row["source_path"]),
-                    chunk_index=int(row["chunk_index"]),
+                    document_id=document_id,
+                    chunk_id=_make_chunk_id(document_id, chunk_index),
+                    title=title,
+                    source_uri=source_uri,
+                    source_path=source_uri,
+                    chunk_index=chunk_index,
                     score=float(row["rank"]),
                     text=text,
+                    citation=_make_citation(title, source_uri, chunk_index),
                 )
             )
         return results

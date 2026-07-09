@@ -131,11 +131,14 @@ class KnowledgeSearchTool(BaseTool):
                 "results": [
                     {
                         "document_id": item.document_id,
+                        "chunk_id": item.chunk_id,
                         "title": item.title,
+                        "source_uri": item.source_uri,
                         "source_path": item.source_path,
                         "chunk_index": item.chunk_index,
                         "score": item.score,
                         "text": item.text,
+                        "citation": item.citation,
                     }
                     for item in results
                 ],

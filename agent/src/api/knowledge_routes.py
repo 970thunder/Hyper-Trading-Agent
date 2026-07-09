@@ -45,11 +45,14 @@ class KnowledgeSearchRequest(BaseModel):
 
 class KnowledgeSearchResultResponse(BaseModel):
     document_id: str
+    chunk_id: str
     title: str
+    source_uri: str
     source_path: str
     chunk_index: int
     score: float
     text: str
+    citation: str
 
 
 class KnowledgeSearchResponse(BaseModel):
@@ -139,11 +142,14 @@ def register_knowledge_routes(app: FastAPI) -> None:
             results=[
                 KnowledgeSearchResultResponse(
                     document_id=item.document_id,
+                    chunk_id=item.chunk_id,
                     title=item.title,
+                    source_uri=item.source_uri,
                     source_path=item.source_path,
                     chunk_index=item.chunk_index,
                     score=item.score,
                     text=item.text,
+                    citation=item.citation,
                 )
                 for item in results
             ],

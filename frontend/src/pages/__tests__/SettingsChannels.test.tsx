@@ -1,9 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { Settings } from "../Settings";
 
 const apiMock = vi.hoisted(() => ({
   getLLMSettings: vi.fn(),
   getDataSourceSettings: vi.fn(),
+  getKnowledgeStats: vi.fn(),
+  listKnowledgeDocuments: vi.fn(),
   getChannelStatus: vi.fn(),
   startChannels: vi.fn(),
   stopChannels: vi.fn(),
@@ -98,19 +101,34 @@ function channelStatus(overrides = {}) {
   };
 }
 
+function renderSettings(section = "channels") {
+  return render(
+    <MemoryRouter initialEntries={[`/settings?section=${section}`]}>
+      <Settings />
+    </MemoryRouter>,
+  );
+}
+
 describe("Settings IM channels panel", () => {
   beforeEach(() => {
     apiMock.getLLMSettings.mockResolvedValue(llmSettings());
     apiMock.getDataSourceSettings.mockResolvedValue(dataSourceSettings());
+    apiMock.getKnowledgeStats.mockResolvedValue({
+      status: "ok",
+      db_path: "knowledge.db",
+      document_count: 0,
+      chunk_count: 0,
+    });
+    apiMock.listKnowledgeDocuments.mockResolvedValue([]);
     apiMock.getChannelStatus.mockResolvedValue(channelStatus());
     apiMock.startChannels.mockResolvedValue(channelStatus({ running: true }));
     apiMock.stopChannels.mockResolvedValue(channelStatus());
   });
 
   it("renders channel runtime status and refreshes it", async () => {
-    render(<Settings />);
+    renderSettings();
 
-    expect(await screen.findByText("IM Channels")).toBeInTheDocument();
+    expect((await screen.findAllByText("IM Channels")).length).toBeGreaterThan(0);
     expect(screen.getByText("websocket")).toBeInTheDocument();
     expect(screen.getByText("telegram")).toBeInTheDocument();
     expect(screen.getByText("pip install 'vibe-trading-ai[telegram]'")).toBeInTheDocument();
@@ -121,8 +139,8 @@ describe("Settings IM channels panel", () => {
   });
 
   it("starts channels from the settings control surface", async () => {
-    render(<Settings />);
-    await screen.findByText("IM Channels");
+    renderSettings();
+    expect((await screen.findAllByText("IM Channels")).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Start channels" }));
 
@@ -134,11 +152,11 @@ describe("Settings IM channels panel", () => {
       new Error('Expected JSON from /channels/status, got text/html: <!doctype html>'),
     );
 
-    render(<Settings />);
+    renderSettings();
 
-    expect(await screen.findByText("LLM Settings")).toBeInTheDocument();
-    expect(screen.getByText("Data Source Settings")).toBeInTheDocument();
-    expect(screen.getByText("IM Channels")).toBeInTheDocument();
+    expect((await screen.findAllByText("IM Channels")).length).toBeGreaterThan(0);
+    expect(screen.getByText("Model Configuration")).toBeInTheDocument();
+    expect(screen.getByText("Data Sources")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start channels" })).toBeDisabled();
   });

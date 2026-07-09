@@ -249,7 +249,7 @@
     "serverApiKey": "Server API key",
     "storedInBrowser": "Stored only in this browser. Leave blank to clear it.",
     "localApiKeySaved": "Local API key saved",
-    "subtitle": "Configure model credentials and market data source tokens for this local project.",
+    "subtitle": "Manage model providers, knowledge retrieval, data access, Agent policy, runtime, and audit surfaces.",
     "unavailable": "Settings are unavailable",
     "llmSettings": "LLM Settings",
     "llmSettingsDesc": "Choose the model used by the agent and save it to the project-local agent/.env file.",
@@ -260,7 +260,7 @@
     "clearApiKey": "Clear saved API key",
     "channels": {
       "title": "IM Channels",
-      "description": "Connect chat adapters to the same Vibe-Trading session runtime used by the Web UI and CLI.",
+      "description": "Start, stop, and inspect configured IM connector runtimes. Disabled or unavailable connectors remain visible for diagnosis.",
       "runtime": "Runtime",
       "running": "Running",
       "stopped": "Stopped",
@@ -272,15 +272,18 @@
       "channel": "Channel",
       "state": "State",
       "recovery": "Recovery",
-      "noRecovery": "Ready",
+      "noRecovery": "No recovery hint.",
       "refresh": "Refresh",
       "start": "Start channels",
       "stop": "Stop channels",
-      "started": "IM channels started",
-      "stoppedToast": "IM channels stopped",
-      "refreshFailed": "Failed to refresh IM channels",
+      "started": "Channels started.",
+      "stoppedToast": "Channels stopped.",
+      "refreshFailed": "Failed to refresh channels.",
       "startFailed": "Failed to start IM channels",
-      "stopFailed": "Failed to stop IM channels"
+      "stopFailed": "Failed to stop IM channels",
+      "refreshFailedWithMessage": "Failed to refresh IM channels: {{message}}",
+      "startFailedWithMessage": "Failed to start IM channels: {{message}}",
+      "stopFailedWithMessage": "Failed to stop IM channels: {{message}}"
     },
     "generation": "Generation",
     "dataSourceSettings": "Data Source Settings",
@@ -310,7 +313,90 @@
     "shellTools": "Shell Tools",
     "scheduler": "Scheduler",
     "sessionRuntime": "Session Runtime",
-    "flagsReadFrom": "Flags are read from {{env1}}, {{env2}}, and {{env3}} in {{env_path}}."
+    "flagsReadFrom": "Flags are read from {{env1}}, {{env2}}, and {{env3}} in {{env_path}}.",
+    "unknownError": "Unknown error",
+    "optional": "Optional",
+    "modelProviderHint": "Choose the provider profile used by Agent runs. Organization-level provider management is planned for the commercial edition.",
+    "nav": {
+      "overview": "Overview",
+      "models": "Model Configuration",
+      "knowledge": "Knowledge / RAG",
+      "data": "Data Sources",
+      "agent": "Agent Policy",
+      "security": "Security & API Access",
+      "channels": "IM Channels",
+      "runtime": "Runtime / Jobs",
+      "audit": "Audit & Usage"
+    },
+    "navDesc": {
+      "overview": "Current system readiness",
+      "models": "Provider, model, and generation controls",
+      "knowledge": "Local RAG index and source documents",
+      "data": "Financial data provider credentials",
+      "agent": "Professional output and risk policy",
+      "security": "Local browser API key access",
+      "channels": "Connector runtime controls",
+      "runtime": "Long-running task status",
+      "audit": "Model, tool, and security traces"
+    },
+    "overview": {
+      "title": "System Overview",
+      "description": "A compact snapshot of model, RAG, and connector readiness for the current deployment.",
+      "model": "Model",
+      "provider": "Provider",
+      "documents": "Knowledge documents",
+      "channels": "Channel runtime"
+    },
+    "knowledge": {
+      "title": "Knowledge / RAG",
+      "description": "Index durable research notes and reference material into the local retrieval store. Commercial deployments should migrate this path to PostgreSQL + pgvector.",
+      "documents": "Documents",
+      "chunks": "Chunks",
+      "storage": "Storage",
+      "documentPath": "Document path",
+      "documentTitle": "Document title",
+      "source": "Source",
+      "index": "Index document",
+      "indexed": "Document indexed.",
+      "indexFailed": "Failed to index document: {{message}}",
+      "loadFailed": "Failed to load knowledge base: {{message}}",
+      "refreshFailed": "Failed to refresh knowledge base: {{message}}",
+      "empty": "No indexed documents yet."
+    },
+    "data": {
+      "tushareHint": "Only enter a token when updating it. Existing saved tokens are never returned by the API."
+    },
+    "agentPolicy": {
+      "title": "Agent Policy",
+      "description": "Default Agent behavior is optimized for professional financial research: no emoji, neutral tone, explicit assumptions, citation discipline, and investment risk disclosure.",
+      "responseStyle": "Response style",
+      "professional": "Professional",
+      "emojiPolicy": "Emoji policy",
+      "forbidden": "Forbidden",
+      "citationPolicy": "Citation policy",
+      "requiredWhenUsingRag": "Required when using RAG",
+      "outputLanguage": "Output language",
+      "matchUser": "Match user language"
+    },
+    "jobs": {
+      "title": "Runtime / Background Jobs",
+      "description": "Long-running Agent runs, RAG ingestion, web crawling, and batch backtests should converge on a unified job contract with status, progress, logs, retry, and cancellation.",
+      "agentRuns": "Agent runs",
+      "ragIngestion": "RAG ingestion",
+      "worker": "Worker",
+      "currentMode": "SSE direct mode",
+      "planned": "Planned",
+      "dockerReady": "Docker-ready"
+    },
+    "audit": {
+      "title": "Audit & Usage",
+      "description": "Commercial deployments should record login, model calls, tool calls, knowledge retrieval, configuration changes, and high-risk operations with request/session/run correlation.",
+      "modelCalls": "Model calls",
+      "toolCalls": "Tool calls",
+      "securityEvents": "Security events",
+      "apiAvailable": "API available",
+      "planned": "Planned"
+    }
   },
   "agent": {
     "connectionLostReconnect": "Connection lost, reconnecting…",

@@ -392,11 +392,14 @@ export interface KnowledgeSearchRequest {
 
 export interface KnowledgeSearchResult {
   document_id: string;
+  chunk_id: string;
   title: string;
+  source_uri: string;
   source_path: string;
   chunk_index: number;
   score: number;
   text: string;
+  citation: string;
 }
 
 export interface KnowledgeSearchResponse {
