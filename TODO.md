@@ -29,6 +29,8 @@
 - [x] URL 抓取入库入口
 - [x] PDF / Word / Excel / Markdown / TXT / HTML / CSV 解析入口
 - [x] 本地 embedding fallback 向量化
+- [x] OpenAI-compatible embedding provider 优先向量化
+- [x] 知识库向量化状态与 fallback 原因可观测
 
 ## P3 输出与展示
 - [ ] 结构化投研报告模板
@@ -41,6 +43,8 @@
 - [ ] RBAC 完整接入
 - [x] 成本统计视图
 - [x] 安全审计视图
+- [x] Agent LLM 用量写入商业用量表
+- [x] 模型用量关联 session / attempt / run
 - [ ] Prometheus 指标
 - [ ] 管理后台
 - [ ] 交叉测试与评测集

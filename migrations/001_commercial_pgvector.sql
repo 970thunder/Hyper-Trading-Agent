@@ -74,6 +74,10 @@ CREATE TABLE IF NOT EXISTS model_call_usage (
     total_tokens integer NOT NULL DEFAULT 0,
     latency_ms integer NOT NULL DEFAULT 0,
     estimated_cost numeric NOT NULL DEFAULT 0,
+    session_id text NOT NULL DEFAULT '',
+    attempt_id text NOT NULL DEFAULT '',
+    run_id text NOT NULL DEFAULT '',
+    metadata_json jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at timestamptz NOT NULL DEFAULT now()
 );
 

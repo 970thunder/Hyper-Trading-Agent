@@ -91,14 +91,77 @@ def test_commercial_knowledge_base_ingest_search_and_delete(tmp_path):
     assert results[0]["score"] > 0
     with store._connect() as conn:
         row = conn.execute(
-            "SELECT embedding_json FROM knowledge_chunks WHERE document_id = ?",
+            "SELECT embedding_json, metadata_json FROM knowledge_chunks WHERE document_id = ?",
             (doc["id"],),
         ).fetchone()
     assert row is not None
     assert row["embedding_json"] not in {"", "[]"}
+    assert "embedding_source" in row["metadata_json"]
 
     store.delete_knowledge_document(principal, kb["id"], doc["id"])
     assert store.list_knowledge_documents(principal, kb["id"]) == []
+
+
+def test_commercial_knowledge_uses_provider_embedding_when_available(tmp_path, monkeypatch):
+    store = CommercialStore(tmp_path / "commercial.db")
+    principal, _ = store.register_owner(
+        email="owner@example.com",
+        password="password123",
+        organization_name="Acme Research",
+    )
+    kb = store.create_knowledge_base(principal, "Research")
+
+    monkeypatch.setattr(
+        "src.commercial.store._provider_embedding",
+        lambda text: ([0.1, 0.2, 0.3], "siliconflow:BAAI/bge-m3"),
+    )
+
+    doc = store.add_knowledge_document(
+        principal,
+        kb["id"],
+        title="Provider Vector",
+        source_uri="uploads/vector.md",
+        source_type="file",
+        text="Provider embeddings should be stored with source metadata.",
+    )
+
+    with store._connect() as conn:
+        row = conn.execute(
+            "SELECT embedding_json, metadata_json FROM knowledge_chunks WHERE document_id = ?",
+            (doc["id"],),
+        ).fetchone()
+    assert row is not None
+    assert row["embedding_json"] == "[0.1,0.2,0.3]"
+    assert '"embedding_fallback": false' in row["metadata_json"]
+    assert "siliconflow:BAAI/bge-m3" in row["metadata_json"]
+
+
+def test_record_llm_usage_summary(tmp_path):
+    store = CommercialStore(tmp_path / "commercial.db")
+    principal, _ = store.register_owner(
+        email="owner@example.com",
+        password="password123",
+        organization_name="Acme Research",
+    )
+
+    record = store.record_llm_usage_summary(
+        principal,
+        {
+            "provider": "siliconflow",
+            "model": "deepseek-ai/DeepSeek-V4-Flash",
+            "totals": {"input_tokens": 100, "output_tokens": 25, "total_tokens": 125, "calls": 2},
+        },
+        session_id="session-1",
+        attempt_id="attempt-1",
+        run_id="run-1",
+    )
+
+    assert record is not None
+    usage = store.list_usage(principal)
+    assert usage[0]["provider"] == "siliconflow"
+    assert usage[0]["total_tokens"] == 125
+    assert usage[0]["run_id"] == "run-1"
+    assert usage[0]["metadata"]["calls"] == 2
 
 
 def test_knowledge_base_is_organization_scoped(tmp_path):

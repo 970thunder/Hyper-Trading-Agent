@@ -26,6 +26,7 @@ import {
   type AuditLog,
   type ChannelRuntimeStatus,
   type CommercialKnowledgeBase,
+  type CommercialKnowledgeBackendStatus,
   type CommercialKnowledgeDocument,
   type CommercialKnowledgeSearchResult,
   type CommercialPrincipal,
@@ -120,6 +121,7 @@ export function Settings() {
   const [knowledgeDocuments, setKnowledgeDocuments] = useState<KnowledgeDocument[]>([]);
   const [principal, setPrincipal] = useState<CommercialPrincipal | null>(null);
   const [knowledgeBases, setKnowledgeBases] = useState<CommercialKnowledgeBase[]>([]);
+  const [knowledgeBackendStatus, setKnowledgeBackendStatus] = useState<CommercialKnowledgeBackendStatus | null>(null);
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [commercialDocuments, setCommercialDocuments] = useState<CommercialKnowledgeDocument[]>([]);
   const [knowledgeSearchResults, setKnowledgeSearchResults] = useState<Array<CommercialKnowledgeSearchResult | KnowledgeSearchResult>>([]);
@@ -154,8 +156,12 @@ export function Settings() {
   };
 
   const loadCommercialKnowledge = async (preferredKnowledgeBaseId = selectedKnowledgeBaseId) => {
-    const bases = await api.listKnowledgeBases();
+    const [bases, backendStatus] = await Promise.all([
+      api.listKnowledgeBases(),
+      api.getCommercialKnowledgeBackendStatus().catch(() => null),
+    ]);
     setKnowledgeBases(bases);
+    setKnowledgeBackendStatus(backendStatus);
     const nextId = preferredKnowledgeBaseId && bases.some((kb) => kb.id === preferredKnowledgeBaseId)
       ? preferredKnowledgeBaseId
       : bases[0]?.id || "";
@@ -611,11 +617,16 @@ export function Settings() {
 
       {principal ? (
         <>
-          <div className="mb-5 grid gap-3 md:grid-cols-4">
+          <div className="mb-5 grid gap-3 md:grid-cols-5">
             <MetricCard label={t("settings.knowledge.mode")} value={t("settings.knowledge.commercialMode")} />
             <MetricCard label={t("settings.knowledge.knowledgeBases")} value={String(knowledgeBases.length)} />
             <MetricCard label={t("settings.knowledge.documents")} value={String(commercialDocuments.length)} />
             <MetricCard label={t("settings.knowledge.retrieval")} value={t("settings.knowledge.hybridRetrieval")} />
+            <MetricCard
+              label={t("settings.knowledge.embedding")}
+              value={knowledgeBackendStatus?.primary.available ? knowledgeBackendStatus.primary.provider : t("settings.knowledge.localFallback")}
+              title={knowledgeBackendStatus?.primary.available ? knowledgeBackendStatus.primary.model : knowledgeBackendStatus?.fallback.model}
+            />
           </div>
 
           {knowledgeBases.length ? (
@@ -638,8 +649,21 @@ export function Settings() {
                   ))}
                 </select>
               </label>
-              <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
-                {t("settings.knowledge.pipelineDescription")}
+              <div className="grid gap-2 rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
+                <span>{t("settings.knowledge.pipelineDescription")}</span>
+                {knowledgeBackendStatus ? (
+                  <span>
+                    {knowledgeBackendStatus.primary.available
+                      ? t("settings.knowledge.embeddingProviderReady", {
+                        provider: knowledgeBackendStatus.primary.provider,
+                        model: knowledgeBackendStatus.primary.model,
+                      })
+                      : t("settings.knowledge.embeddingFallbackActive", {
+                        provider: knowledgeBackendStatus.primary.provider,
+                        model: knowledgeBackendStatus.fallback.model,
+                      })}
+                  </span>
+                ) : null}
               </div>
             </div>
           ) : (
@@ -957,6 +981,37 @@ export function Settings() {
           )}
         </div>
         <div className="overflow-hidden rounded-md border">
+          <div className="border-b bg-muted/20 px-3 py-2 text-sm font-semibold">{t("settings.audit.modelUsage")}</div>
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 text-xs text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">{t("settings.audit.time")}</th>
+                <th className="px-3 py-2 text-left font-medium">{t("settings.model")}</th>
+                <th className="px-3 py-2 text-right font-medium">{t("settings.audit.totalTokens")}</th>
+                <th className="px-3 py-2 text-left font-medium">{t("settings.audit.run")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {modelUsage.length ? modelUsage.slice(0, 8).map((usage) => (
+                <tr key={usage.id} className="border-t">
+                  <td className="whitespace-nowrap px-3 py-2 align-top text-xs text-muted-foreground">{usage.created_at.slice(0, 19).replace("T", " ")}</td>
+                  <td className="px-3 py-2 align-top">
+                    <div className="font-medium">{usage.provider}</div>
+                    <div className="text-xs text-muted-foreground">{usage.model}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right align-top tabular-nums">{usage.total_tokens}</td>
+                  <td className="max-w-[160px] truncate px-3 py-2 align-top text-xs text-muted-foreground" title={usage.run_id || ""}>{usage.run_id || "-"}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={4} className="px-3 py-8 text-center text-sm text-muted-foreground">{t("settings.audit.noUsage")}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="overflow-hidden rounded-md border lg:col-span-2">
+          <div className="border-b bg-muted/20 px-3 py-2 text-sm font-semibold">{t("settings.audit.auditLogs")}</div>
           <table className="w-full text-sm">
             <thead className="bg-muted/40 text-xs text-muted-foreground">
               <tr>

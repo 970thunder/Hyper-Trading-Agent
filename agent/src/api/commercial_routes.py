@@ -11,7 +11,7 @@ import httpx
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
-from src.commercial.store import CommercialStore, Principal
+from src.commercial.store import CommercialStore, Principal, embedding_backend_status as get_embedding_backend_status
 from src.tools.doc_reader_tool import read_document
 from src.tools.path_utils import safe_document_path
 from src.tools.web_reader_tool import WebReaderTool
@@ -211,6 +211,12 @@ def register_commercial_routes(app: FastAPI) -> None:
     @app.get("/knowledge-bases")
     async def list_knowledge_bases(principal: Principal = Depends(_principal_from_cookie)):
         return _store().list_knowledge_bases(principal)
+
+    @app.get("/knowledge-bases/status")
+    async def knowledge_backend_status(principal: Principal = Depends(_principal_from_cookie)):
+        status_payload = get_embedding_backend_status()
+        status_payload["organization_id"] = principal.organization_id
+        return status_payload
 
     @app.post("/knowledge-bases")
     async def create_knowledge_base(

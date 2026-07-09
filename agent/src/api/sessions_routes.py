@@ -621,11 +621,23 @@ def register_sessions_routes(app: FastAPI) -> None:
         svc = _host_get_session_service()
         if not svc:
             raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        commercial_principal = None
+        host = _host()
+        if host is not None and hasattr(host, "_commercial_principal_from_request"):
+            principal = host._commercial_principal_from_request(http_request)
+            if principal is not None:
+                commercial_principal = {
+                    "user_id": principal.user_id,
+                    "organization_id": principal.organization_id,
+                    "email": principal.email,
+                    "role": principal.role,
+                }
         try:
             result = await svc.send_message(
                 session_id=session_id,
                 content=payload.content,
                 include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
+                commercial_principal=commercial_principal,
             )
             return result
         except ValueError as exc:

@@ -100,6 +100,139 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return float(sum(a[i] * b[i] for i in range(size)))
 
 
+def _embedding_provider_env(provider: str) -> tuple[str | None, str | None]:
+    normalized = provider.strip().lower().replace("_", "-")
+    return {
+        "siliconflow": ("SILICONFLOW_API_KEY", "SILICONFLOW_BASE_URL"),
+        "openai": ("OPENAI_API_KEY", "OPENAI_BASE_URL"),
+        "openrouter": ("OPENROUTER_API_KEY", "OPENROUTER_BASE_URL"),
+        "deepseek": ("DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL"),
+        "dashscope": ("DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL"),
+        "qwen": ("DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL"),
+    }.get(normalized, (None, None))
+
+
+def _default_embedding_model(provider: str) -> str:
+    normalized = provider.strip().lower().replace("_", "-")
+    if normalized == "openai":
+        return "text-embedding-3-small"
+    if normalized == "dashscope" or normalized == "qwen":
+        return "text-embedding-v3"
+    return "BAAI/bge-m3"
+
+
+def _embedding_config() -> dict[str, Any]:
+    try:
+        from src.providers.llm import _ensure_dotenv
+
+        _ensure_dotenv()
+    except Exception:
+        pass
+    provider = (
+        os.getenv("VIBE_TRADING_EMBEDDING_PROVIDER", "").strip()
+        or os.getenv("LANGCHAIN_PROVIDER", "").strip()
+        or "siliconflow"
+    ).lower()
+    key_env, base_env = _embedding_provider_env(provider)
+    api_key = (
+        os.getenv("VIBE_TRADING_EMBEDDING_API_KEY", "").strip()
+        or os.getenv(key_env or "", "").strip()
+        or os.getenv("OPENAI_API_KEY", "").strip()
+    )
+    base_url = (
+        os.getenv("VIBE_TRADING_EMBEDDING_BASE_URL", "").strip()
+        or os.getenv(base_env or "", "").strip()
+        or os.getenv("OPENAI_BASE_URL", "").strip()
+        or os.getenv("OPENAI_API_BASE", "").strip()
+    )
+    model = os.getenv("VIBE_TRADING_EMBEDDING_MODEL", "").strip() or _default_embedding_model(provider)
+    disabled = os.getenv("VIBE_TRADING_EMBEDDING_DISABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+    return {
+        "provider": provider,
+        "model": model,
+        "base_url": base_url,
+        "api_key_configured": bool(api_key),
+        "available": bool(api_key and base_url and not disabled),
+        "disabled": disabled,
+        "_api_key": api_key,
+    }
+
+
+def embedding_backend_status() -> dict[str, Any]:
+    cfg = _embedding_config()
+    return {
+        "primary": {
+            "provider": cfg["provider"],
+            "model": cfg["model"],
+            "available": cfg["available"],
+            "api_key_configured": cfg["api_key_configured"],
+            "base_url_configured": bool(cfg["base_url"]),
+            "disabled": cfg["disabled"],
+        },
+        "fallback": {
+            "provider": "local",
+            "model": f"hashing-{EMBEDDING_DIMENSIONS}",
+            "available": True,
+        },
+        "storage": "sqlite-fts-local",
+        "target_storage": "postgres-pgvector",
+    }
+
+
+def _embedding_endpoint(base_url: str) -> str:
+    base = base_url.strip().rstrip("/")
+    if base.endswith("/embeddings"):
+        return base
+    if base.endswith("/v1"):
+        return f"{base}/embeddings"
+    return f"{base}/v1/embeddings"
+
+
+def _provider_embedding(text: str) -> tuple[list[float], str]:
+    cfg = _embedding_config()
+    if not cfg["available"]:
+        raise RuntimeError("embedding provider is not configured")
+    try:
+        import httpx
+
+        response = httpx.post(
+            _embedding_endpoint(str(cfg["base_url"])),
+            headers={"Authorization": f"Bearer {cfg['_api_key']}"},
+            json={"model": cfg["model"], "input": text[:12000], "encoding_format": "float"},
+            timeout=float(os.getenv("VIBE_TRADING_EMBEDDING_TIMEOUT_SECONDS", "20")),
+        )
+        response.raise_for_status()
+        payload = response.json()
+        embedding = payload.get("data", [{}])[0].get("embedding")
+        if not isinstance(embedding, list) or not embedding:
+            raise RuntimeError("embedding response did not include a vector")
+        return [float(value) for value in embedding], f"{cfg['provider']}:{cfg['model']}"
+    except Exception as exc:  # noqa: BLE001 - caller deliberately falls back
+        raise RuntimeError(f"embedding provider failed: {type(exc).__name__}") from exc
+
+
+def _embedding_for_text(text: str) -> tuple[list[float], dict[str, Any]]:
+    try:
+        vector, source = _provider_embedding(text)
+        return vector, {
+            "embedding_source": source,
+            "embedding_provider": source.split(":", 1)[0],
+            "embedding_model": source.split(":", 1)[1] if ":" in source else "",
+            "embedding_dimensions": len(vector),
+            "embedding_fallback": False,
+        }
+    except RuntimeError as exc:
+        vector = _local_embedding(text)
+        return vector, {
+            "embedding_source": f"local:hashing-{len(vector)}",
+            "embedding_provider": "local",
+            "embedding_model": f"hashing-{len(vector)}",
+            "embedding_dimensions": len(vector),
+            "embedding_fallback": True,
+            "embedding_error": str(exc),
+        }
+
+
 def _secret_key() -> bytes:
     raw = os.getenv("VIBE_TRADING_SECRET_KEY", "").strip()
     if raw:
@@ -215,6 +348,10 @@ class CommercialStore:
                     total_tokens INTEGER NOT NULL DEFAULT 0,
                     latency_ms INTEGER NOT NULL DEFAULT 0,
                     estimated_cost REAL NOT NULL DEFAULT 0,
+                    session_id TEXT NOT NULL DEFAULT '',
+                    attempt_id TEXT NOT NULL DEFAULT '',
+                    run_id TEXT NOT NULL DEFAULT '',
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS knowledge_bases (
@@ -288,6 +425,15 @@ class CommercialStore:
                 conn.execute("ALTER TABLE knowledge_chunks ADD COLUMN embedding_json TEXT NOT NULL DEFAULT '[]'")
             if "metadata_json" not in existing_chunk_columns:
                 conn.execute("ALTER TABLE knowledge_chunks ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'")
+            existing_usage_columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(model_call_usage)").fetchall()
+            }
+            for column_name in ("session_id", "attempt_id", "run_id"):
+                if column_name not in existing_usage_columns:
+                    conn.execute(f"ALTER TABLE model_call_usage ADD COLUMN {column_name} TEXT NOT NULL DEFAULT ''")
+            if "metadata_json" not in existing_usage_columns:
+                conn.execute("ALTER TABLE model_call_usage ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'")
 
     # --- auth / orgs ---
 
@@ -416,7 +562,8 @@ class CommercialStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, provider, model, prompt_tokens, completion_tokens, total_tokens, latency_ms, estimated_cost, created_at
+                SELECT id, provider, model, prompt_tokens, completion_tokens, total_tokens,
+                       latency_ms, estimated_cost, session_id, attempt_id, run_id, metadata_json, created_at
                 FROM model_call_usage
                 WHERE organization_id = ?
                 ORDER BY created_at DESC
@@ -424,7 +571,109 @@ class CommercialStore:
                 """,
                 (principal.organization_id, max(1, min(limit, 500))),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [dict(row) | {"metadata": json.loads(row["metadata_json"] or "{}")} for row in rows]
+
+    def record_model_usage(
+        self,
+        principal: Principal,
+        *,
+        provider: str,
+        model: str,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        total_tokens: int = 0,
+        latency_ms: int = 0,
+        estimated_cost: float = 0.0,
+        provider_id: str = "",
+        session_id: str = "",
+        attempt_id: str = "",
+        run_id: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        total = max(0, int(total_tokens or 0))
+        prompt = max(0, int(prompt_tokens or 0))
+        completion = max(0, int(completion_tokens or 0))
+        if total <= 0 and (prompt or completion):
+            total = prompt + completion
+        usage_id = _new_id("use")
+        now = utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO model_call_usage(
+                    id, organization_id, provider_id, provider, model,
+                    prompt_tokens, completion_tokens, total_tokens, latency_ms,
+                    estimated_cost, session_id, attempt_id, run_id, metadata_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    usage_id,
+                    principal.organization_id,
+                    provider_id,
+                    provider,
+                    model,
+                    prompt,
+                    completion,
+                    total,
+                    max(0, int(latency_ms or 0)),
+                    float(estimated_cost or 0.0),
+                    session_id,
+                    attempt_id,
+                    run_id,
+                    json.dumps(metadata or {}, ensure_ascii=False),
+                    now,
+                ),
+            )
+        self.audit(
+            principal,
+            "model_call.record",
+            "model_usage",
+            usage_id,
+            {"provider": provider, "model": model, "tokens": total, "run_id": run_id},
+        )
+        return {
+            "id": usage_id,
+            "provider": provider,
+            "model": model,
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "total_tokens": total,
+            "latency_ms": max(0, int(latency_ms or 0)),
+            "estimated_cost": float(estimated_cost or 0.0),
+            "session_id": session_id,
+            "attempt_id": attempt_id,
+            "run_id": run_id,
+            "metadata": metadata or {},
+            "created_at": now,
+        }
+
+    def record_llm_usage_summary(
+        self,
+        principal: Principal,
+        summary: dict[str, Any],
+        *,
+        session_id: str = "",
+        attempt_id: str = "",
+        run_id: str = "",
+    ) -> dict[str, Any] | None:
+        totals = summary.get("totals") if isinstance(summary, dict) else None
+        if not isinstance(totals, dict):
+            return None
+        total_tokens = int(totals.get("total_tokens") or 0)
+        if total_tokens <= 0:
+            return None
+        return self.record_model_usage(
+            principal,
+            provider=str(summary.get("provider") or "unknown"),
+            model=str(summary.get("model") or "unknown"),
+            prompt_tokens=int(totals.get("input_tokens") or 0),
+            completion_tokens=int(totals.get("output_tokens") or 0),
+            total_tokens=total_tokens,
+            session_id=session_id,
+            attempt_id=attempt_id,
+            run_id=run_id,
+            metadata={"source": "agent_loop", "calls": int(totals.get("calls") or 0)},
+        )
 
     # --- model providers ---
 
@@ -552,13 +801,25 @@ class CommercialStore:
             )
             for index, chunk in enumerate(chunks):
                 chunk_id = _new_id("chk")
-                embedding_json = json.dumps(_local_embedding(chunk), separators=(",", ":"))
+                embedding, embedding_metadata = _embedding_for_text(chunk)
+                chunk_metadata = {"source_type": source_type, **embedding_metadata}
+                embedding_json = json.dumps(embedding, separators=(",", ":"))
                 conn.execute(
                     """
-                    INSERT INTO knowledge_chunks(id, organization_id, knowledge_base_id, document_id, chunk_index, text, embedding_json, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO knowledge_chunks(id, organization_id, knowledge_base_id, document_id, chunk_index, text, embedding_json, metadata_json, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (chunk_id, principal.organization_id, kb_id, doc_id, index, chunk, embedding_json, now),
+                    (
+                        chunk_id,
+                        principal.organization_id,
+                        kb_id,
+                        doc_id,
+                        index,
+                        chunk,
+                        embedding_json,
+                        json.dumps(chunk_metadata, ensure_ascii=False),
+                        now,
+                    ),
                 )
                 conn.execute(
                     "INSERT INTO knowledge_chunks_fts(chunk_id, organization_id, knowledge_base_id, document_id, title, text) VALUES (?, ?, ?, ?, ?, ?)",
@@ -610,7 +871,8 @@ class CommercialStore:
 
         self._ensure_kb(principal, kb_id)
         capped = max(1, min(limit, 20))
-        query_embedding = _local_embedding(query)
+        query_embedding, query_embedding_metadata = _embedding_for_text(query)
+        query_embedding_source = str(query_embedding_metadata.get("embedding_source") or "")
         with self._connect() as conn:
             try:
                 fts_rows = conn.execute(
@@ -629,7 +891,7 @@ class CommercialStore:
                 fts_rows = []
             vector_rows = conn.execute(
                 """
-                SELECT c.id AS chunk_id, c.document_id, d.title, d.source_uri, c.text, c.embedding_json
+                SELECT c.id AS chunk_id, c.document_id, d.title, d.source_uri, c.text, c.embedding_json, c.metadata_json
                 FROM knowledge_chunks c
                 JOIN knowledge_documents d ON d.id = c.document_id
                 WHERE c.organization_id = ? AND c.knowledge_base_id = ?
@@ -659,7 +921,16 @@ class CommercialStore:
                     embedding = json.loads(row["embedding_json"] or "[]")
                 except json.JSONDecodeError:
                     embedding = []
-                vector_score = max(0.0, _cosine(query_embedding, embedding))
+                try:
+                    metadata = json.loads(row["metadata_json"] or "{}")
+                except json.JSONDecodeError:
+                    metadata = {}
+                chunk_embedding_source = str(metadata.get("embedding_source") or "local")
+                same_embedding_space = (
+                    chunk_embedding_source == query_embedding_source
+                    or (chunk_embedding_source.startswith("local:") and query_embedding_source.startswith("local:"))
+                )
+                vector_score = max(0.0, _cosine(query_embedding, embedding)) if same_embedding_space else 0.0
                 if vector_score <= 0 and scored.get(str(row["chunk_id"])) is None:
                     continue
                 item = scored.setdefault(
@@ -679,6 +950,30 @@ class CommercialStore:
                 "INSERT INTO knowledge_retrieval_logs(id, organization_id, user_id, knowledge_base_id, query, result_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (_new_id("ret"), principal.organization_id, principal.user_id, kb_id, query, len(rows), utcnow()),
             )
+            if rows:
+                conn.execute(
+                    """
+                    INSERT INTO audit_logs(id, organization_id, user_id, action, target_type, target_id, metadata_json, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        _new_id("aud"),
+                        principal.organization_id,
+                        principal.user_id,
+                        "knowledge.search",
+                        "knowledge_base",
+                        kb_id,
+                        json.dumps(
+                            {
+                                "query": query[:200],
+                                "result_count": len(rows),
+                                "embedding_source": query_embedding_source,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        utcnow(),
+                    ),
+                )
         results: list[dict[str, Any]] = []
         for row in rows:
             source_uri = str(row.get("source_uri") or "")

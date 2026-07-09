@@ -14,6 +14,8 @@ export class ApiError extends Error {
 
 export const AUTH_REQUIRED_MESSAGE =
   "Remote API access requires an API key. Add it in Settings, or run the backend on localhost for local-only use.";
+export const LOGIN_REQUIRED_MESSAGE = "Please sign in to access this organization workspace.";
+export const PERMISSION_REQUIRED_MESSAGE = "Your account does not have permission to perform this action.";
 
 export function isAuthRequiredError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 401 || error.status === 403);
@@ -25,8 +27,13 @@ async function errorFromResponse(res: Response): Promise<ApiError> {
     const body = await res.json();
     detail = body.detail || body.message || detail;
   } catch { /* ignore */ }
-  if (res.status === 401 || res.status === 403) {
-    detail = AUTH_REQUIRED_MESSAGE;
+  if (res.status === 401) {
+    detail = detail.toLowerCase().includes("api key") ? AUTH_REQUIRED_MESSAGE : LOGIN_REQUIRED_MESSAGE;
+  }
+  if (res.status === 403) {
+    detail = detail.toLowerCase().includes("api_auth_key") || detail.toLowerCase().includes("api key")
+      ? AUTH_REQUIRED_MESSAGE
+      : PERMISSION_REQUIRED_MESSAGE;
   }
   return new ApiError(detail, res.status);
 }
@@ -190,6 +197,7 @@ export const api = {
       method: "POST",
     }),
   listKnowledgeBases: () => request<CommercialKnowledgeBase[]>("/knowledge-bases"),
+  getCommercialKnowledgeBackendStatus: () => request<CommercialKnowledgeBackendStatus>("/knowledge-bases/status"),
   createKnowledgeBase: (body: CommercialKnowledgeBaseCreateRequest) =>
     request<CommercialKnowledgeBase>("/knowledge-bases", {
       method: "POST",
@@ -470,6 +478,25 @@ export interface CommercialKnowledgeBase {
   updated_at: string;
 }
 
+export interface CommercialKnowledgeBackendStatus {
+  organization_id: string;
+  storage: string;
+  target_storage: string;
+  primary: {
+    provider: string;
+    model: string;
+    available: boolean;
+    api_key_configured: boolean;
+    base_url_configured: boolean;
+    disabled: boolean;
+  };
+  fallback: {
+    provider: string;
+    model: string;
+    available: boolean;
+  };
+}
+
 export interface CommercialKnowledgeBaseCreateRequest {
   name: string;
   description?: string;
@@ -548,6 +575,9 @@ export interface ModelUsage {
   total_tokens: number;
   latency_ms: number;
   estimated_cost: number;
+  session_id?: string;
+  attempt_id?: string;
+  run_id?: string;
   created_at: string;
 }
 

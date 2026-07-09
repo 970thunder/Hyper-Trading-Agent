@@ -89,6 +89,7 @@ class SessionService:
         role: str = "user",
         *,
         include_shell_tools: bool = False,
+        commercial_principal: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Send a message to a session and trigger execution.
 
@@ -116,6 +117,8 @@ class SessionService:
         attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id, prompt=content)
         self.store.create_attempt(attempt)
         session.config["include_shell_tools"] = include_shell_tools
+        if commercial_principal:
+            session.config["commercial_principal"] = commercial_principal
         session.last_attempt_id = attempt.attempt_id
         session.updated_at = datetime.now().isoformat()
         self.store.update_session(session)
@@ -276,11 +279,55 @@ class SessionService:
 
         # Load metrics from the run output when available.
         if result.get("run_dir"):
-            metrics = self._load_metrics(Path(result["run_dir"]))
+            run_dir = Path(result["run_dir"])
+            metrics = self._load_metrics(run_dir)
             if metrics:
                 result["metrics"] = metrics
+            self._record_commercial_llm_usage(
+                run_dir,
+                session_config=session_config or {},
+                session_id=session_id,
+                attempt_id=attempt_id,
+            )
 
         return result
+
+    @staticmethod
+    def _record_commercial_llm_usage(
+        run_dir: Path,
+        *,
+        session_config: Dict[str, Any],
+        session_id: str,
+        attempt_id: str,
+    ) -> None:
+        principal_payload = session_config.get("commercial_principal")
+        if not isinstance(principal_payload, dict):
+            return
+        usage_path = run_dir / "llm_usage.json"
+        if not usage_path.exists():
+            return
+        try:
+            import json
+
+            from src.commercial.store import CommercialStore, Principal
+
+            summary = json.loads(usage_path.read_text(encoding="utf-8"))
+            principal = Principal(
+                user_id=str(principal_payload["user_id"]),
+                organization_id=str(principal_payload["organization_id"]),
+                email=str(principal_payload.get("email") or ""),
+                role=str(principal_payload.get("role") or "member"),
+            )
+            CommercialStore().record_llm_usage_summary(
+                principal,
+                summary,
+                session_id=session_id,
+                attempt_id=attempt_id,
+                run_id=run_dir.name,
+            )
+        except Exception:
+            # Usage accounting should never fail the completed research run.
+            return
 
     @staticmethod
     def _convert_messages_to_history(messages: list) -> list[Dict[str, Any]]:
