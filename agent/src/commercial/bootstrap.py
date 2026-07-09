@@ -9,7 +9,7 @@ from src.commercial.store import CommercialStore
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Initialize a commercial Vibe-Trading organization owner")
+    parser = argparse.ArgumentParser(description="Initialize a commercial Hyper Trading Agent organization owner")
     parser.add_argument("--email", required=True)
     parser.add_argument("--password", required=True)
     parser.add_argument("--organization", default="Default Organization")

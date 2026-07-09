@@ -85,14 +85,23 @@ Set at least:
 Start:
 
 ```powershell
-docker compose -f docker-compose.prod.yml up --build
+docker compose --env-file .env.production -f docker-compose.prod.yml up --build -d
 ```
 
 Initialize the first organization owner:
 
 ```powershell
-docker compose -f docker-compose.prod.yml exec api python -m src.commercial.bootstrap --email owner@example.com --password "change-this-password" --organization "Hyper Research" --api-key "$env:SILICONFLOW_API_KEY"
+$sfKey = (Select-String -Path .env.production -Pattern '^SILICONFLOW_API_KEY=').Line.Split('=',2)[1]
+docker compose --env-file .env.production -f docker-compose.prod.yml exec api python -m src.commercial.bootstrap --email owner@example.com --password "change-this-password" --organization "Hyper Research" --api-key "$sfKey"
 ```
+
+Stop:
+
+```powershell
+docker compose --env-file .env.production -f docker-compose.prod.yml down
+```
+
+For local HTTP access, set `VIBE_TRADING_COOKIE_SECURE=false` in `.env.production`. Use `true` only behind HTTPS/TLS. If host port `8899` is occupied, set `API_PORT=8898` or another free port.
 
 ## Commercial API Surface
 

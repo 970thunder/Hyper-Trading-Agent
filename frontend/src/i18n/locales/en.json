@@ -118,8 +118,8 @@
     "disconnected": "Connection lost"
   },
   "welcome": {
-    "title": "Vibe-Trading",
-    "subtitle": "vibe trading with your professional financial agent team",
+    "title": "Hyper Trading Agent",
+    "subtitle": "Commercial financial research with an agent team",
     "describePrompt": "Describe a trading strategy to get started.",
     "tryExample": "Try an example:",
     "categories": {

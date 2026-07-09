@@ -5,7 +5,7 @@ FROM node:20-slim AS frontend-build
 
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --ignore-scripts
+RUN npm install --ignore-scripts
 COPY frontend/ ./
 RUN npm run build
 
@@ -28,7 +28,8 @@ WORKDIR /app
 #   Cairo/gdk-pixbuf) per its official Debian install list; without them the
 #   lazy `from weasyprint import HTML` in reporter.py fails and PDF rendering
 #   silently downgrades to HTML-only. fonts-dejavu-core gives non-blank PDFs.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update \
+    && apt-get install -y --fix-missing --no-install-recommends \
     build-essential \
     libpango-1.0-0 \
     libpangoft2-1.0-0 \

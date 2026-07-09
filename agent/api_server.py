@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vibe-Trading API Server - RESTful API for finance research and backtesting.
+"""Hyper Trading Agent API Server - RESTful API for finance research and backtesting.
 
 V5: ReAct Agent + async /run + CORS env + SSE tool events.
 """
@@ -150,8 +150,8 @@ class RunResponse(BaseModel):
 # ============================================================================
 
 app = FastAPI(
-    title="Vibe-Trading API",
-    description="Vibe-Trading API: natural-language finance research, backtesting, and swarm workflows",
+    title="Hyper Trading Agent API",
+    description="Hyper Trading Agent API: natural-language finance research, backtesting, and swarm workflows",
     version=APP_VERSION,
     docs_url="/docs",
     redoc_url="/redoc"
@@ -337,6 +337,8 @@ from src.api.scheduled_routes import (  # noqa: E402
 @app.on_event("startup")
 async def _run_startup_preflight() -> None:
     """Run preflight checks on server startup."""
+    if os.getenv("VIBE_TRADING_SKIP_PREFLIGHT", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return
     from src.preflight import run_preflight
 
     run_preflight(console)
@@ -1056,7 +1058,7 @@ def serve_main(argv: list[str] | None = None) -> int:
                     raise
                 return await super().get_response("index.html", scope)
 
-    parser = argparse.ArgumentParser(description="Vibe-Trading Server")
+    parser = argparse.ArgumentParser(description="Hyper Trading Agent Server")
     parser.add_argument("--port", type=int, default=8000, help="Listen port (default 8000)")
     parser.add_argument("--host", default="127.0.0.1", help="Bind address")
     parser.add_argument("--dev", action="store_true", help="Dev mode: spawn Vite on :5173")
@@ -1096,7 +1098,7 @@ def serve_main(argv: list[str] | None = None) -> int:
         print("[warn] Run: cd frontend && npm run build")
 
     print("=" * 50)
-    print("  Vibe-Trading Server")
+    print("  Hyper Trading Agent Server")
     print(f"  http://127.0.0.1:{args.port}")
     print("=" * 50)
 

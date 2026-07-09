@@ -1,3 +1,5 @@
+name: hyper-trading-agent
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -29,7 +31,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       VIBE_TRADING_COMMERCIAL_MODE: "1"
     ports:
-      - "${API_BIND:-0.0.0.0}:8899:8899"
+      - "${API_BIND:-0.0.0.0}:${API_PORT:-8899}:8899"
     depends_on:
       postgres:
         condition: service_healthy
@@ -50,6 +52,7 @@ services:
       DATABASE_URL: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
       REDIS_URL: redis://redis:6379/0
       VIBE_TRADING_COMMERCIAL_MODE: "1"
+      VIBE_TRADING_SKIP_PREFLIGHT: "1"
     command: ["python", "-m", "src.commercial.worker"]
     depends_on:
       postgres:
@@ -61,6 +64,8 @@ services:
       - vibe-sessions:/app/agent/sessions
       - vibe-home:/home/vibe/.vibe-trading
       - vibe-uploads:/app/agent/uploads
+    healthcheck:
+      disable: true
     restart: unless-stopped
 
 volumes:
