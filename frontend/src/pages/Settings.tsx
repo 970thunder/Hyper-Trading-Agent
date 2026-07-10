@@ -21,6 +21,7 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -170,6 +171,18 @@ function splitList(value: string): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function swarmPresetDisplayName(t: TFunction, preset: SwarmPreset): string {
+  return t(`settings.swarmPresetNames.${preset.name}`, { defaultValue: preset.title || preset.name });
+}
+
+function swarmAgentRoleDisplayName(
+  t: TFunction,
+  presetName: string,
+  agent: Pick<SwarmPresetAgent, "id" | "role">,
+): string {
+  return t(`settings.swarmAgentRoles.${presetName}.${agent.id}`, { defaultValue: agent.role || agent.id });
 }
 
 function isSettingsSection(value: string | null): value is SettingsSection {
@@ -1381,7 +1394,7 @@ export function Settings() {
               className={fieldClass}
             >
               {swarmPresets.map((preset) => (
-                <option key={preset.name} value={preset.name}>{preset.title || preset.name}</option>
+                <option key={preset.name} value={preset.name}>{swarmPresetDisplayName(t, preset)}</option>
               ))}
             </select>
           </label>
@@ -1398,7 +1411,9 @@ export function Settings() {
         <div className="grid gap-5 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.1fr)]">
           <div className="overflow-hidden rounded-md border">
             <div className="border-b bg-muted/20 px-3 py-2 text-sm font-semibold">
-              {swarmAgentList?.title || selectedSwarmPreset}
+              {swarmAgentList
+                ? swarmPresetDisplayName(t, { name: swarmAgentList.preset_name, title: swarmAgentList.title, description: swarmAgentList.description, agent_count: swarmAgentList.agents.length, variables: [] })
+                : selectedSwarmPreset}
             </div>
             <table className="w-full text-sm">
               <thead className="bg-muted/40 text-xs text-muted-foreground">
@@ -1412,7 +1427,7 @@ export function Settings() {
                 {swarmAgentList?.agents.length ? swarmAgentList.agents.map((agent) => (
                   <tr key={agent.id} className={cn("border-t", editingSwarmAgentId === agent.id && "bg-primary/5")}>
                     <td className="px-3 py-2 align-top">
-                      <div className="font-medium">{agent.role || agent.id}</div>
+                      <div className="font-medium">{swarmAgentRoleDisplayName(t, selectedSwarmPreset, agent)}</div>
                       <div className="text-xs text-muted-foreground">{agent.id} · {t("settings.swarmAgents.taskCount", { count: agent.task_count ?? 0 })}</div>
                     </td>
                     <td className="max-w-[220px] truncate px-3 py-2 align-top text-xs text-muted-foreground" title={swarmAgentModelLabel(agent)}>

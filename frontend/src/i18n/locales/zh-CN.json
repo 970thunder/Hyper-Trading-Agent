@@ -478,11 +478,11 @@
       "refreshFailed": "刷新审计数据失败：{{message}}"
     },
     "swarmAgents": {
-      "title": "多 Agent 管理",
-      "description": "编辑 Swarm preset 使用的专业 Agent。保存后会写入运行时覆盖配置，并对新的多 Agent 运行生效。",
-      "preset": "Preset",
-      "newAgent": "新建 Agent",
-      "agent": "Agent",
+      "title": "多智能体管理",
+      "description": "编辑 Swarm 预设使用的专业智能体。保存后会写入运行时覆盖配置，并对新的多智能体运行生效。",
+      "preset": "预设",
+      "newAgent": "新建智能体",
+      "agent": "智能体",
       "model": "模型",
       "actions": "操作",
       "taskCount": "{{count}} 个任务",
@@ -490,9 +490,9 @@
       "configuredModels": "组织已配置模型",
       "compatibleModelNames": "兼容模型名",
       "empty": "当前 preset 暂无 Agent。",
-      "editAgent": "编辑 Agent",
-      "createAgent": "创建 Agent",
-      "formHint": "工具和技能使用英文逗号分隔。删除 Agent 会同步移除依赖它的任务。",
+      "editAgent": "编辑智能体",
+      "createAgent": "创建智能体",
+      "formHint": "工具和技能使用英文逗号分隔。删除智能体会同步移除依赖它的任务。",
       "id": "Agent ID",
       "role": "角色",
       "maxIterations": "最大迭代次数",
@@ -501,17 +501,221 @@
       "tools": "可用工具",
       "skills": "可用技能",
       "systemPrompt": "系统提示词",
-      "create": "创建 Agent",
-      "update": "更新 Agent",
-      "idRequired": "Agent ID 不能为空。",
-      "created": "Agent 已创建。",
-      "updated": "Agent 已更新。",
-      "deleted": "Agent 已删除，并移除了 {{count}} 个依赖任务。",
-      "saveFailed": "保存 Agent 失败：{{message}}",
-      "deleteFailed": "删除 Agent 失败：{{message}}",
-      "loadFailed": "加载多 Agent 配置失败：{{message}}"
+      "create": "创建智能体",
+      "update": "更新智能体",
+      "idRequired": "智能体 ID 不能为空。",
+      "created": "智能体已创建。",
+      "updated": "智能体已更新。",
+      "deleted": "智能体已删除，并移除了 {{count}} 个依赖任务。",
+      "saveFailed": "保存智能体失败：{{message}}",
+      "deleteFailed": "删除智能体失败：{{message}}",
+      "loadFailed": "加载多智能体配置失败：{{message}}"
     },
-    "cancel": "取消"
+    "cancel": "取消",
+    "swarmPresetNames": {
+      "commodity_research_team": "大宗商品研究团队",
+      "convertible_bond_team": "可转债研究团队",
+      "credit_research_team": "固收信用研究团队",
+      "crypto_research_lab": "加密资产研究实验室",
+      "crypto_trading_desk": "加密交易与风险台",
+      "derivatives_strategy_desk": "衍生品策略台",
+      "earnings_research_desk": "财报研究台",
+      "equity_research_team": "股票研究团队",
+      "etf_allocation_desk": "ETF 配置台",
+      "event_driven_task_force": "事件驱动任务组",
+      "factor_research_committee": "因子研究委员会",
+      "fund_selection_panel": "基金筛选委员会",
+      "fundamental_research_team": "基本面深度研究团队",
+      "geopolitical_war_room": "地缘政治风险作战室",
+      "global_allocation_committee": "全球资产配置委员会",
+      "global_equities_desk": "全球股票研究台",
+      "investment_committee": "投资委员会",
+      "macro_rates_fx_desk": "宏观 / 利率 / 外汇策略台",
+      "macro_strategy_forum": "宏观策略论坛",
+      "ml_quant_lab": "机器学习量化实验室",
+      "pairs_research_lab": "配对交易研究实验室",
+      "portfolio_review_board": "投资组合复盘委员会",
+      "quant_strategy_desk": "量化策略台",
+      "risk_committee": "风险委员会",
+      "sector_rotation_team": "行业轮动研究团队",
+      "sentiment_intelligence_team": "市场情绪情报组",
+      "social_alpha_team": "社媒另类数据团队",
+      "statistical_arbitrage_desk": "统计套利台",
+      "technical_analysis_panel": "技术分析委员会"
+    },
+    "swarmAgentRoles": {
+      "commodity_research_team": {
+        "supply_analyst": "供给分析师",
+        "demand_analyst": "需求分析师",
+        "cycle_strategist": "周期策略师"
+      },
+      "convertible_bond_team": {
+        "bond_analyst": "债底分析师",
+        "equity_analyst": "正股分析师",
+        "option_analyst": "内嵌期权分析师",
+        "cb_strategist": "可转债策略师"
+      },
+      "credit_research_team": {
+        "credit_analyst": "信用分析师",
+        "rate_analyst": "利率分析师",
+        "sector_credit_analyst": "行业信用分析师",
+        "fixed_income_strategist": "固收策略师"
+      },
+      "crypto_research_lab": {
+        "onchain_analyst": "链上数据分析师",
+        "defi_analyst": "DeFi 协议分析师",
+        "crypto_sentiment_analyst": "加密情绪分析师",
+        "alpha_synthesizer": "Alpha 综合分析师"
+      },
+      "crypto_trading_desk": {
+        "funding_basis_analyst": "资金费率与基差分析师",
+        "liquidation_analyst": "清算与微观结构分析师",
+        "flow_analyst": "链上与稳定币流分析师",
+        "desk_risk_manager": "交易台风险经理"
+      },
+      "derivatives_strategy_desk": {
+        "vol_analyst": "波动率分析师",
+        "strategy_designer": "策略设计师",
+        "greeks_manager": "希腊值风险经理"
+      },
+      "earnings_research_desk": {
+        "fundamental_analyst": "基本面与公告分析师",
+        "revision_tracker": "盈利预测跟踪员",
+        "event_options_analyst": "财报事件与期权分析师",
+        "earnings_strategist": "财报策略师"
+      },
+      "equity_research_team": {
+        "macro_analyst": "宏观分析师",
+        "sector_analyst": "行业分析师",
+        "stock_picker": "个股分析师",
+        "aggregator": "研究报告编辑"
+      },
+      "etf_allocation_desk": {
+        "etf_screener": "ETF 筛选员",
+        "macro_allocator": "宏观配置师",
+        "risk_budgeter": "风险预算师",
+        "portfolio_optimizer": "组合优化师"
+      },
+      "event_driven_task_force": {
+        "event_scanner": "事件扫描员",
+        "impact_analyst": "影响分析师",
+        "strategy_builder": "策略构建师"
+      },
+      "factor_research_committee": {
+        "factor_miner": "因子挖掘员",
+        "factor_validator": "因子验证员",
+        "factor_combiner": "因子组合员",
+        "backtest_reviewer": "回测复核员"
+      },
+      "fund_selection_panel": {
+        "fund_screener": "基金筛选员",
+        "attribution_analyst": "绩效归因分析师",
+        "fof_optimizer": "FOF 组合优化师"
+      },
+      "fundamental_research_team": {
+        "financial_analyst": "财务分析师",
+        "valuation_analyst": "估值分析师",
+        "quality_analyst": "质量分析师",
+        "report_editor": "研究报告编辑"
+      },
+      "geopolitical_war_room": {
+        "geopolitical_analyst": "地缘政治分析师",
+        "energy_analyst": "能源冲击分析师",
+        "supply_chain_analyst": "供应链分析师",
+        "chief_strategist": "首席策略师"
+      },
+      "global_allocation_committee": {
+        "a_share_analyst": "A 股分析师",
+        "crypto_analyst": "加密资产分析师",
+        "us_hk_analyst": "港美股分析师",
+        "allocator": "资产配置策略师"
+      },
+      "global_equities_desk": {
+        "a_share_researcher": "A 股研究员",
+        "us_hk_researcher": "港美股研究员",
+        "crypto_researcher": "加密资产研究员",
+        "global_strategist": "全球股票策略师"
+      },
+      "investment_committee": {
+        "bull_advocate": "多头研究员",
+        "bear_advocate": "空头研究员",
+        "risk_officer": "首席风险官",
+        "portfolio_manager": "投资组合经理"
+      },
+      "macro_rates_fx_desk": {
+        "rates_analyst": "全球利率与收益率曲线分析师",
+        "fx_strategist": "外汇策略师",
+        "commodity_inflation_analyst": "商品与通胀分析师",
+        "macro_pm": "宏观组合经理"
+      },
+      "macro_strategy_forum": {
+        "global_economist": "全球经济学家",
+        "domestic_economist": "中国经济学家",
+        "policy_analyst": "政策分析师",
+        "chief_strategist": "首席策略师"
+      },
+      "ml_quant_lab": {
+        "feature_engineer": "特征工程师",
+        "data_scientist": "数据科学家",
+        "backtest_engineer": "回测工程师"
+      },
+      "pairs_research_lab": {
+        "correlation_scanner": "相关性扫描员",
+        "cointegration_tester": "协整检验员",
+        "pair_strategist": "配对策略师",
+        "microstructure_reviewer": "微观结构复核员"
+      },
+      "portfolio_review_board": {
+        "attribution_analyst": "绩效归因分析师",
+        "risk_inspector": "风险检查员",
+        "execution_analyst": "执行质量分析师",
+        "chief_investment_officer": "首席投资官"
+      },
+      "quant_strategy_desk": {
+        "screener": "股票筛选员",
+        "factor_miner": "因子研究员",
+        "backtester": "策略回测员",
+        "risk_auditor": "风险审计员"
+      },
+      "risk_committee": {
+        "drawdown_analyst": "回撤分析师",
+        "tail_risk_analyst": "尾部风险分析师",
+        "regime_detector": "市场状态分析师",
+        "aggregator": "风险负责人"
+      },
+      "sector_rotation_team": {
+        "cycle_analyst": "经济周期分析师",
+        "prosperity_analyst": "行业景气分析师",
+        "flow_analyst": "资金流分析师",
+        "rotation_strategist": "行业轮动策略师"
+      },
+      "sentiment_intelligence_team": {
+        "news_analyst": "新闻情报分析师",
+        "social_analyst": "社交情绪分析师",
+        "flow_analyst": "资金流分析师",
+        "signal_synthesizer": "情绪信号综合师"
+      },
+      "social_alpha_team": {
+        "twitter_analyst": "Twitter 分析师",
+        "telegram_analyst": "Telegram 分析师",
+        "reddit_analyst": "Reddit 分析师",
+        "alpha_synthesizer": "Alpha 综合分析师"
+      },
+      "statistical_arbitrage_desk": {
+        "pair_scanner": "配对扫描员",
+        "microstructure_analyst": "微观结构分析师",
+        "arb_strategist": "套利策略师",
+        "risk_monitor": "风险监控员"
+      },
+      "technical_analysis_panel": {
+        "classic_ta_analyst": "经典技术分析师",
+        "ichimoku_analyst": "一目均衡表分析师",
+        "harmonic_analyst": "谐波形态分析师",
+        "wave_analyst": "艾略特波浪分析师",
+        "smc_analyst": "SMC / 订单流分析师",
+        "signal_aggregator": "信号汇总裁判"
+      }
+    }
   },
   "agent": {
     "connectionLostReconnect": "连接已断开，正在重连…",

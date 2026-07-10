@@ -516,7 +516,211 @@
       "deleteFailed": "Failed to delete agent: {{message}}",
       "loadFailed": "Failed to load swarm agents: {{message}}"
     },
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "swarmPresetNames": {
+      "commodity_research_team": "Commodity Research Team",
+      "convertible_bond_team": "Convertible Bond Research Team",
+      "credit_research_team": "Fixed Income Credit Research Team",
+      "crypto_research_lab": "Crypto Asset Research Lab",
+      "crypto_trading_desk": "Crypto Trading & Risk Desk",
+      "derivatives_strategy_desk": "Derivatives Strategy Desk",
+      "earnings_research_desk": "Earnings Research Desk",
+      "equity_research_team": "Equity Research Team",
+      "etf_allocation_desk": "ETF Allocation Desk",
+      "event_driven_task_force": "Event-Driven Task Force",
+      "factor_research_committee": "Factor Research Committee",
+      "fund_selection_panel": "Fund Selection Panel",
+      "fundamental_research_team": "Fundamental Deep Research Team",
+      "geopolitical_war_room": "Geopolitical Risk War Room",
+      "global_allocation_committee": "Global Allocation Committee",
+      "global_equities_desk": "Global Equities Research Desk",
+      "investment_committee": "Investment Committee",
+      "macro_rates_fx_desk": "Macro / Rates / FX Desk",
+      "macro_strategy_forum": "Macro Strategy Forum",
+      "ml_quant_lab": "Machine Learning Quant Lab",
+      "pairs_research_lab": "Pairs Trading Research Lab",
+      "portfolio_review_board": "Portfolio Review Board",
+      "quant_strategy_desk": "Quant Strategy Desk",
+      "risk_committee": "Risk Committee",
+      "sector_rotation_team": "Sector Rotation Research Team",
+      "sentiment_intelligence_team": "Market Sentiment Intelligence Unit",
+      "social_alpha_team": "Social-Media Alternative Data Team",
+      "statistical_arbitrage_desk": "Statistical Arbitrage Desk",
+      "technical_analysis_panel": "Technical Analysis Panel"
+    },
+    "swarmAgentRoles": {
+      "commodity_research_team": {
+        "supply_analyst": "Supply Analyst",
+        "demand_analyst": "Demand Analyst",
+        "cycle_strategist": "Cycle Strategist"
+      },
+      "convertible_bond_team": {
+        "bond_analyst": "Bond Floor Analyst",
+        "equity_analyst": "Underlying Equity Analyst",
+        "option_analyst": "Embedded Option Analyst",
+        "cb_strategist": "Convertible Bond Strategist"
+      },
+      "credit_research_team": {
+        "credit_analyst": "Credit Analyst",
+        "rate_analyst": "Interest Rate Analyst",
+        "sector_credit_analyst": "Sector Credit Analyst",
+        "fixed_income_strategist": "Fixed Income Strategist"
+      },
+      "crypto_research_lab": {
+        "onchain_analyst": "On-Chain Data Analyst",
+        "defi_analyst": "DeFi Protocol Analyst",
+        "crypto_sentiment_analyst": "Crypto Sentiment Analyst",
+        "alpha_synthesizer": "Alpha Synthesizer"
+      },
+      "crypto_trading_desk": {
+        "funding_basis_analyst": "Funding Rate & Basis Analyst",
+        "liquidation_analyst": "Liquidation & Microstructure Analyst",
+        "flow_analyst": "On-Chain & Stablecoin Flow Analyst",
+        "desk_risk_manager": "Trading Desk Risk Manager"
+      },
+      "derivatives_strategy_desk": {
+        "vol_analyst": "Volatility Analyst",
+        "strategy_designer": "Strategy Designer",
+        "greeks_manager": "Greeks Risk Manager"
+      },
+      "earnings_research_desk": {
+        "fundamental_analyst": "Fundamental & Filing Analyst",
+        "revision_tracker": "Earnings Revision & Consensus Tracker",
+        "event_options_analyst": "Earnings Event & Options Analyst",
+        "earnings_strategist": "Earnings Desk Strategist"
+      },
+      "equity_research_team": {
+        "macro_analyst": "Macro Analyst",
+        "sector_analyst": "Sector Analyst",
+        "stock_picker": "Stock Analyst",
+        "aggregator": "Research Report Editor"
+      },
+      "etf_allocation_desk": {
+        "etf_screener": "ETF Screener",
+        "macro_allocator": "Macro Allocator",
+        "risk_budgeter": "Risk Budgeter",
+        "portfolio_optimizer": "Portfolio Optimizer"
+      },
+      "event_driven_task_force": {
+        "event_scanner": "Event Scout",
+        "impact_analyst": "Impact Analyst",
+        "strategy_builder": "Strategy Builder"
+      },
+      "factor_research_committee": {
+        "factor_miner": "Factor Miner",
+        "factor_validator": "Factor Validator",
+        "factor_combiner": "Factor Combiner",
+        "backtest_reviewer": "Backtest Reviewer"
+      },
+      "fund_selection_panel": {
+        "fund_screener": "Fund Screener",
+        "attribution_analyst": "Performance Attribution Analyst",
+        "fof_optimizer": "FOF Portfolio Optimizer"
+      },
+      "fundamental_research_team": {
+        "financial_analyst": "Financial Analyst",
+        "valuation_analyst": "Valuation Analyst",
+        "quality_analyst": "Quality Analyst",
+        "report_editor": "Research Report Editor"
+      },
+      "geopolitical_war_room": {
+        "geopolitical_analyst": "Geopolitical Analyst",
+        "energy_analyst": "Energy Shock Analyst",
+        "supply_chain_analyst": "Supply Chain Analyst",
+        "chief_strategist": "Chief Strategist"
+      },
+      "global_allocation_committee": {
+        "a_share_analyst": "A-Share Analyst",
+        "crypto_analyst": "Crypto Analyst",
+        "us_hk_analyst": "HK / US Analyst",
+        "allocator": "Allocation Strategist"
+      },
+      "global_equities_desk": {
+        "a_share_researcher": "A-Share Equity Researcher",
+        "us_hk_researcher": "US & HK Equity Researcher",
+        "crypto_researcher": "Crypto Asset Researcher",
+        "global_strategist": "Global Equity Strategist"
+      },
+      "investment_committee": {
+        "bull_advocate": "Bull-side Researcher",
+        "bear_advocate": "Bear-side Researcher",
+        "risk_officer": "Chief Risk Officer",
+        "portfolio_manager": "Portfolio Manager"
+      },
+      "macro_rates_fx_desk": {
+        "rates_analyst": "Global Rates & Yield Curve Analyst",
+        "fx_strategist": "FX Strategist",
+        "commodity_inflation_analyst": "Commodity & Inflation Analyst",
+        "macro_pm": "Macro Portfolio Manager"
+      },
+      "macro_strategy_forum": {
+        "global_economist": "Global Economist",
+        "domestic_economist": "China Economist",
+        "policy_analyst": "Policy Analyst",
+        "chief_strategist": "Chief Strategist"
+      },
+      "ml_quant_lab": {
+        "feature_engineer": "Feature Engineer",
+        "data_scientist": "Data Scientist",
+        "backtest_engineer": "Backtest Engineer"
+      },
+      "pairs_research_lab": {
+        "correlation_scanner": "Correlation Scanner",
+        "cointegration_tester": "Cointegration Tester",
+        "pair_strategist": "Pair Strategist",
+        "microstructure_reviewer": "Microstructure Reviewer"
+      },
+      "portfolio_review_board": {
+        "attribution_analyst": "Performance Attribution Analyst",
+        "risk_inspector": "Risk Inspector",
+        "execution_analyst": "Execution Quality Analyst",
+        "chief_investment_officer": "Chief Investment Officer"
+      },
+      "quant_strategy_desk": {
+        "screener": "Stock Screener",
+        "factor_miner": "Factor Researcher",
+        "backtester": "Strategy Backtester",
+        "risk_auditor": "Risk Auditor"
+      },
+      "risk_committee": {
+        "drawdown_analyst": "Drawdown Analyst",
+        "tail_risk_analyst": "Tail Risk Analyst",
+        "regime_detector": "Market Regime Analyst",
+        "aggregator": "Head of Risk"
+      },
+      "sector_rotation_team": {
+        "cycle_analyst": "Economic Cycle Analyst",
+        "prosperity_analyst": "Sector Prosperity Analyst",
+        "flow_analyst": "Capital Flow Analyst",
+        "rotation_strategist": "Sector Rotation Strategist"
+      },
+      "sentiment_intelligence_team": {
+        "news_analyst": "News Intelligence Analyst",
+        "social_analyst": "Social Sentiment Analyst",
+        "flow_analyst": "Capital Flow Analyst",
+        "signal_synthesizer": "Sentiment Signal Synthesizer"
+      },
+      "social_alpha_team": {
+        "twitter_analyst": "Twitter Analyst",
+        "telegram_analyst": "Telegram Analyst",
+        "reddit_analyst": "Reddit Analyst",
+        "alpha_synthesizer": "Alpha Synthesizer"
+      },
+      "statistical_arbitrage_desk": {
+        "pair_scanner": "Pair Scanner",
+        "microstructure_analyst": "Microstructure Analyst",
+        "arb_strategist": "Arbitrage Strategist",
+        "risk_monitor": "Risk Monitor"
+      },
+      "technical_analysis_panel": {
+        "classic_ta_analyst": "Classic Technical Analyst",
+        "ichimoku_analyst": "Ichimoku Analyst",
+        "harmonic_analyst": "Harmonic Pattern Analyst",
+        "wave_analyst": "Elliott Wave Analyst",
+        "smc_analyst": "SMC / Order-Flow Analyst",
+        "signal_aggregator": "Signal Aggregator (Judge)"
+      }
+    }
   },
   "agent": {
     "connectionLostReconnect": "Connection lost, reconnecting…",
