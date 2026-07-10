@@ -315,7 +315,10 @@ async def _spa_html_deep_link_fallback(request: Request, call_next):
         if "text/html" in accept and _is_spa_html_route(request.url.path):
             index = _FRONTEND_DIST / "index.html"
             if index.exists():
-                return FileResponse(str(index))
+                return FileResponse(
+                    str(index),
+                    headers={"Cache-Control": "no-store, max-age=0"},
+                )
     return await call_next(request)
 
 
@@ -1091,11 +1094,16 @@ def serve_main(argv: list[str] | None = None) -> int:
 
         async def get_response(self, path: str, scope: Dict[str, Any]):
             try:
-                return await super().get_response(path, scope)
+                response = await super().get_response(path, scope)
             except StarletteHTTPException as exc:
                 if exc.status_code != status.HTTP_404_NOT_FOUND:
                     raise
-                return await super().get_response("index.html", scope)
+                response = await super().get_response("index.html", scope)
+            if path in {"", ".", "index.html"} or response.headers.get("content-type", "").startswith(
+                "text/html"
+            ):
+                response.headers["Cache-Control"] = "no-store, max-age=0"
+            return response
 
     parser = argparse.ArgumentParser(description="Hyper Trading Agent Server")
     parser.add_argument("--port", type=int, default=8000, help="Listen port (default 8000)")
