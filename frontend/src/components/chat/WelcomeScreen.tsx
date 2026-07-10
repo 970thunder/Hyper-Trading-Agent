@@ -208,12 +208,11 @@ export function WelcomeScreen({ onExample }: Props) {
         ))}
       </div>
 
-      <div className="w-full max-w-3xl space-y-4 text-left">
-        <div className="flex items-center justify-between gap-3 px-1">
+      <div className="w-full max-w-4xl space-y-4 text-left">
+        <div className="flex items-center gap-3 px-1">
           <p className="text-xs text-muted-foreground">{t('welcome.tryExample')}</p>
-          <p className="hidden text-[11px] text-muted-foreground sm:block">{t("welcome.tabHint")}</p>
         </div>
-        <div className="flex gap-1 overflow-x-auto rounded-xl border bg-muted/20 p-1">
+        <div className="flex flex-wrap justify-center gap-1 rounded-xl border bg-muted/20 p-1">
           {CATEGORIES.map((cat) => {
             const selected = active.labelKey === cat.labelKey;
             return (
@@ -222,7 +221,7 @@ export function WelcomeScreen({ onExample }: Props) {
                 type="button"
                 onClick={() => setActiveCategory(cat.labelKey)}
                 className={[
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-all duration-200",
+                  "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-all duration-200",
                   selected ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
                 ].join(" ")}
               >

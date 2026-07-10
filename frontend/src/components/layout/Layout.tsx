@@ -1,10 +1,10 @@
 import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { Activity, BarChart3, Bot, Check, ChevronDown, FileText, Languages, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2 } from "lucide-react";
+import { Activity, BarChart3, Bot, Check, ChevronDown, FileText, Languages, LogOut, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
-import { api, type SessionItem } from "@/lib/api";
+import { api, type CommercialPrincipal, type SessionItem } from "@/lib/api";
 import { useAgentStore } from "@/stores/agent";
 import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
 import { SUPPORTED_LANGUAGES } from "@/i18n";
@@ -29,6 +29,8 @@ export function Layout() {
   const { dark, toggle } = useDarkMode();
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [principal, setPrincipal] = useState<CommercialPrincipal | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
   const sseStatus = useAgentStore(s => s.sseStatus);
   const sseRetryAttempt = useAgentStore(s => s.sseRetryAttempt);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("qa-sidebar") === "collapsed");
@@ -55,6 +57,33 @@ export function Layout() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getCommercialMe()
+      .then((me) => {
+        if (!cancelled) setPrincipal(me);
+      })
+      .catch(() => {
+        if (!cancelled) setPrincipal(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const logout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await api.logoutCommercial();
+      setPrincipal(null);
+      window.location.reload();
+    } catch {
+      alert(t("layout.logoutFailed"));
+      setLoggingOut(false);
+    }
+  };
 
   const deleteSession = async (sid: string) => {
     try {
@@ -242,6 +271,26 @@ export function Layout() {
                   </button>
                 </div>
               </div>
+              {principal && (
+                <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/25 px-2 py-1.5">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <UserRound className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    <div className="min-w-0">
+                      <p className="truncate text-[11px] font-medium text-foreground" title={principal.email}>{principal.email}</p>
+                      <p className="text-[10px] text-muted-foreground">{t("layout.account")}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={logout}
+                    disabled={loggingOut}
+                    className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-background hover:text-primary disabled:opacity-40"
+                    title={t("layout.logout")}
+                  >
+                    {loggingOut ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              )}
               <div className="flex flex-col gap-1">
                 <LanguageSwitcher />
                 <p className="text-[10px] text-muted-foreground/60">{t('app.version')}</p>

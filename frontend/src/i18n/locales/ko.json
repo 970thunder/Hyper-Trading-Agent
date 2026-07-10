@@ -21,7 +21,10 @@
     "dark": "다크",
     "language": "언어",
     "collapse": "접기",
-    "expand": "펼치기"
+    "expand": "펼치기",
+    "account": "Signed in",
+    "logout": "Log out",
+    "logoutFailed": "Failed to log out"
   },
   "runtime": {
     "monitorBadge": "런타임 모니터",
@@ -537,7 +540,8 @@
       "localFallback": "Local settings",
       "availableCount": "{{count}} models available",
       "localOnly": "Using local model settings"
-    }
+    },
+    "connectorStatus": "Connector status"
   },
   "runDetail": {
     "title": "실행 상세",

@@ -26,7 +26,10 @@
     "dark": "Dark",
     "language": "Language",
     "collapse": "Collapse",
-    "expand": "Expand"
+    "expand": "Expand",
+    "account": "Signed in",
+    "logout": "Log out",
+    "logoutFailed": "Failed to log out"
   },
   "runtime": {
     "monitorBadge": "Runtime Monitor",
@@ -542,7 +545,8 @@
       "localFallback": "Local settings",
       "availableCount": "{{count}} models available",
       "localOnly": "Using local model settings"
-    }
+    },
+    "connectorStatus": "Connector status"
   },
   "runDetail": {
     "title": "Run Detail",

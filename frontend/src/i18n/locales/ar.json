@@ -21,7 +21,10 @@
     "dark": "داكن",
     "language": "اللغة",
     "collapse": "طي",
-    "expand": "توسيع"
+    "expand": "توسيع",
+    "account": "Signed in",
+    "logout": "Log out",
+    "logoutFailed": "Failed to log out"
   },
   "runtime": {
     "monitorBadge": "مراقب وقت التشغيل",
@@ -537,7 +540,8 @@
       "localFallback": "Local settings",
       "availableCount": "{{count}} models available",
       "localOnly": "Using local model settings"
-    }
+    },
+    "connectorStatus": "Connector status"
   },
   "runDetail": {
     "title": "تفاصيل التشغيل",

@@ -21,7 +21,10 @@
     "dark": "暗色",
     "language": "语言",
     "collapse": "收起",
-    "expand": "展开"
+    "expand": "展开",
+    "account": "已登录",
+    "logout": "退出登录",
+    "logoutFailed": "退出登录失败"
   },
   "runtime": {
     "monitorBadge": "运行时监控",
@@ -537,7 +540,8 @@
       "localFallback": "本地设置",
       "availableCount": "{{count}} 个模型可用",
       "localOnly": "使用本地模型设置"
-    }
+    },
+    "connectorStatus": "连接器状态"
   },
   "runDetail": {
     "title": "运行详情",

@@ -286,11 +286,11 @@ export const RunnerStatus = memo(function RunnerStatus({ status, unavailable, ha
   const authorizedCount = status.brokers.filter((b) => b.auth.oauth_token_present).length;
 
   return (
-    <div className="grid gap-2">
+    <div className="relative inline-flex">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex max-w-full items-center gap-1.5 justify-self-start rounded-lg bg-primary/10 px-2.5 py-1 text-left text-xs font-medium text-primary transition-colors hover:bg-primary/15"
+        className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1 text-left text-xs font-medium text-primary transition-colors hover:bg-primary/15"
         aria-label={i18n.t("runnerStatus.connectorRuntime")}
         aria-expanded={open}
       >
@@ -315,7 +315,7 @@ export const RunnerStatus = memo(function RunnerStatus({ status, unavailable, ha
       </button>
 
       {open && (
-        <div className="grid gap-2 rounded-xl border border-primary/20 bg-background/95 p-3 shadow-sm">
+        <div className="absolute bottom-full left-0 z-50 mb-2 grid max-h-[55vh] w-[min(46rem,calc(100vw-2rem))] gap-2 overflow-auto rounded-xl border border-primary/20 bg-popover p-3 shadow-xl">
           {status.brokers.map((broker) => (
             <BrokerRow key={broker.auth.broker} broker={broker} halted={isHalted || broker.halted} onRefresh={onRefresh} />
           ))}

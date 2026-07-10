@@ -1323,9 +1323,9 @@ export function Agent() {
         <ConversationTimeline messages={messages} containerRef={listRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="border-t p-4 bg-background/80 backdrop-blur-sm">
-        <div className="max-w-3xl mx-auto space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+      <form onSubmit={handleSubmit} className="border-t bg-background/85 px-4 py-3 backdrop-blur-sm">
+        <div className="mx-auto max-w-5xl space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               <button
                 type="button"
@@ -1381,15 +1381,13 @@ export function Agent() {
                 </div>
               )}
             </div>
-            <div className="text-[11px] text-muted-foreground">
-              {enabledModelProviders.length > 0
-                ? t("agent.modelPicker.availableCount", { count: enabledModelProviders.length })
-                : t("agent.modelPicker.localOnly")}
-            </div>
-          </div>
-          {/* Swarm preset badge */}
-          {swarmPreset && (
-            <div className="flex items-center gap-1">
+            <RunnerStatus
+              status={liveStatus}
+              unavailable={liveStatusUnavailable}
+              halted={liveIsHalted}
+              onRefresh={refreshLiveStatus}
+            />
+            {swarmPreset && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 text-xs font-medium">
                 <Users className="h-3 w-3" />
                 {swarmPreset.title}
@@ -1397,8 +1395,8 @@ export function Agent() {
                   <X className="h-3 w-3" />
                 </button>
               </span>
-            </div>
-          )}
+            )}
+          </div>
           {goalComposerActive && (
             <div className="flex items-center gap-1">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-xs font-medium">
@@ -1573,14 +1571,6 @@ export function Agent() {
               )}
             </div>
           )}
-          {/* Persistent live runtime status panel — sits alongside the goal/mandate
-              badges (SPEC §7.5 + audit C2). Self-hides when no broker is configured. */}
-          <RunnerStatus
-            status={liveStatus}
-            unavailable={liveStatusUnavailable}
-            halted={liveIsHalted}
-            onRefresh={refreshLiveStatus}
-          />
           {/* Attachment badge */}
           {attachment && (
             <div className="flex items-center gap-1">
