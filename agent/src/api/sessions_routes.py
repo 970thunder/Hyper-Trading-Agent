@@ -302,16 +302,19 @@ def register_sessions_routes(app: FastAPI) -> None:
     require_event_stream_auth = host.require_event_stream_auth
 
     # Late-access closures for shared host symbols (monkeypatch-safe)
+    def _host_module():
+        return _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
+
     def _host_get_session_service():
-        h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
+        h = _host_module()
         return h._get_session_service()
 
     def _host_validate_path_param(value: str, kind: str) -> None:
-        h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
+        h = _host_module()
         return h._validate_path_param(value, kind)
 
     def _host_shell_tools_enabled_for_request(request: Request) -> bool:
-        h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
+        h = _host_module()
         return h._shell_tools_enabled_for_request(request)
 
     def _get_existing_session_or_404(session_id: str):
@@ -624,7 +627,7 @@ def register_sessions_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=501, detail="Session runtime not enabled")
         commercial_principal = None
         commercial_model_provider = None
-        host = _host()
+        host = _host_module()
         if host is not None and hasattr(host, "_commercial_principal_from_request"):
             principal = host._commercial_principal_from_request(http_request)
             if principal is not None:

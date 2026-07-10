@@ -24,7 +24,8 @@
     "expand": "展开",
     "account": "已登录",
     "logout": "退出登录",
-    "logoutFailed": "退出登录失败"
+    "logoutFailed": "退出登录失败",
+    "login": "商业登录"
   },
   "runtime": {
     "monitorBadge": "运行时监控",
@@ -899,5 +900,13 @@
     "noPriceData": "暂无价格数据",
     "noCorrelationData": "暂无相关性数据",
     "noEquityData": "暂无收益曲线数据"
+  },
+  "login": {
+    "title": "商业登录",
+    "description": "登录后启用组织模型、管理员设置、审计和用量治理。",
+    "email": "邮箱",
+    "password": "密码",
+    "submit": "登录",
+    "failed": "登录失败"
   }
 }

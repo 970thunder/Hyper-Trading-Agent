@@ -24,7 +24,8 @@
     "expand": "펼치기",
     "account": "Signed in",
     "logout": "Log out",
-    "logoutFailed": "Failed to log out"
+    "logoutFailed": "Failed to log out",
+    "login": "Commercial login"
   },
   "runtime": {
     "monitorBadge": "런타임 모니터",
@@ -899,5 +900,13 @@
     "noPriceData": "가격 데이터 없음",
     "noCorrelationData": "상관 데이터 없음",
     "noEquityData": "자산 데이터 없음"
+  },
+  "login": {
+    "title": "Commercial login",
+    "description": "Sign in to enable organization models, admin settings, audit, and usage governance.",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "failed": "Sign in failed"
   }
 }

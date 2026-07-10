@@ -24,7 +24,8 @@
     "expand": "展開",
     "account": "Signed in",
     "logout": "Log out",
-    "logoutFailed": "Failed to log out"
+    "logoutFailed": "Failed to log out",
+    "login": "Commercial login"
   },
   "runtime": {
     "monitorBadge": "ランタイムモニター",
@@ -899,5 +900,13 @@
     "noPriceData": "価格データがありません",
     "noCorrelationData": "相関データがありません",
     "noEquityData": "エクイティデータがありません"
+  },
+  "login": {
+    "title": "Commercial login",
+    "description": "Sign in to enable organization models, admin settings, audit, and usage governance.",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "failed": "Sign in failed"
   }
 }

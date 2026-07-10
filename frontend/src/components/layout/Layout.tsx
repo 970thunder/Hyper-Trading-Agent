@@ -244,12 +244,17 @@ export function Layout() {
         <div className={cn("border-t", collapsed ? "p-1 flex flex-col items-center gap-1" : "p-3 space-y-2")}>
           {collapsed ? (
             <>
-              <button onClick={toggle} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={dark ? t('layout.light') : t('layout.dark')}>
-                {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-              </button>
-              <button onClick={() => setCollapsed(false)} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={t('layout.expand')}>
-                <ChevronsRight className="h-3.5 w-3.5" />
-              </button>
+                <button onClick={toggle} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={dark ? t('layout.light') : t('layout.dark')}>
+                  {dark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+                </button>
+                {!principal && (
+                  <Link to="/login" className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={t("layout.login")}>
+                    <UserRound className="h-3.5 w-3.5" />
+                  </Link>
+                )}
+                <button onClick={() => setCollapsed(false)} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={t('layout.expand')}>
+                  <ChevronsRight className="h-3.5 w-3.5" />
+                </button>
             </>
           ) : (
             <>
@@ -271,7 +276,7 @@ export function Layout() {
                   </button>
                 </div>
               </div>
-              {principal && (
+              {principal ? (
                 <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/25 px-2 py-1.5">
                   <div className="flex min-w-0 items-center gap-1.5">
                     <UserRound className="h-3.5 w-3.5 shrink-0 text-primary" />
@@ -290,6 +295,14 @@ export function Layout() {
                     {loggingOut ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
                   </button>
                 </div>
+              ) : (
+                <Link
+                  to="/login"
+                  className="flex items-center gap-2 rounded-lg border bg-muted/25 px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
+                >
+                  <UserRound className="h-3.5 w-3.5" />
+                  {t("layout.login")}
+                </Link>
               )}
               <div className="flex flex-col gap-1">
                 <LanguageSwitcher />

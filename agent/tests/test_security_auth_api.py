@@ -465,10 +465,12 @@ def test_dns_rebound_session_message_does_not_enable_shell_tools_by_default(
     captured: dict[str, object] = {}
 
     class FakeSessionService:
-        async def send_message(self, session_id: str, content: str, include_shell_tools: bool = False):
+        async def send_message(self, session_id: str, content: str, include_shell_tools: bool = False, **kwargs):
             captured["session_id"] = session_id
             captured["content"] = content
             captured["include_shell_tools"] = include_shell_tools
+            captured["commercial_principal"] = kwargs.get("commercial_principal")
+            captured["commercial_model_provider"] = kwargs.get("commercial_model_provider")
             return {"message_id": "msg-test", "attempt_id": "attempt-test"}
 
     monkeypatch.setattr(api_server, "_get_session_service", lambda: FakeSessionService())
@@ -489,6 +491,33 @@ def test_dns_rebound_session_message_does_not_enable_shell_tools_by_default(
     # invoked and shell tools can never be granted via a DNS-rebound request.
     assert response.status_code == 403
     assert "include_shell_tools" not in captured
+
+
+def test_loopback_session_message_without_commercial_cookie_uses_local_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeSessionService:
+        async def send_message(self, session_id: str, content: str, include_shell_tools: bool = False, **kwargs):
+            captured["session_id"] = session_id
+            captured["content"] = content
+            captured["include_shell_tools"] = include_shell_tools
+            captured["commercial_principal"] = kwargs.get("commercial_principal")
+            captured["commercial_model_provider"] = kwargs.get("commercial_model_provider")
+            return {"message_id": "msg-test", "attempt_id": "attempt-test"}
+
+    monkeypatch.setattr(api_server, "_get_session_service", lambda: FakeSessionService())
+
+    response = _local_client().post(
+        "/sessions/abcdef012345/messages",
+        json={"content": "hello"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"message_id": "msg-test", "attempt_id": "attempt-test"}
+    assert captured["commercial_principal"] is None
+    assert captured["commercial_model_provider"] is None
 
 
 def test_default_cors_origins_are_loopback_only() -> None:
