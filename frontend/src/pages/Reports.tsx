@@ -167,8 +167,8 @@ export function Reports() {
         ) : null}
 
         {!loading && error ? (
-          <section className="rounded-md border border-amber-500/30 bg-amber-500/5 p-5">
-            <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
+          <section className="rounded-md border border-warning/30 bg-warning/10 p-5">
+            <div className="flex items-center gap-2 font-medium text-warning">
               <AlertTriangle className="h-5 w-5" />
               {t("reports.unavailable")}
             </div>

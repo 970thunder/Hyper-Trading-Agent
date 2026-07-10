@@ -24,7 +24,6 @@ const OVERLAY_OPTIONS: { id: Overlay; label: string; group: string }[] = [
 ];
 
 const RANGE_BARS: Record<Range, number> = { "1M": 22, "3M": 63, "6M": 126, "1Y": 252, ALL: Infinity };
-const OVERLAY_COLORS = ["#f59e0b", "#8b5cf6", "#3b82f6", "#ec4899", "#10b981", "#f97316", "#6366f1"];
 
 interface Props {
   data: PriceBar[];
@@ -122,7 +121,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
 
     for (const [key, { name, data: lineData }] of Object.entries(overlayMap)) {
       if (overlays.has(key as Overlay)) {
-        overlaySeries.push({ name, type: "line", data: lineData, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: OVERLAY_COLORS[colorIdx], width: 1 } });
+        overlaySeries.push({ name, type: "line", data: lineData, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { color: t.maColors[colorIdx % t.maColors.length], width: 1 } });
         legendNames.push(name);
         colorIdx++;
       }
@@ -180,7 +179,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
       subSeries = [
         { name: "%K", type: "line", data: kdj.k, xAxisIndex: 1, yAxisIndex: 1, symbol: "none", lineStyle: { width: 1, color: t.infoColor } },
         { name: "%D", type: "line", data: kdj.d, xAxisIndex: 1, yAxisIndex: 1, symbol: "none", lineStyle: { width: 1, color: t.warningColor } },
-        { name: "%J", type: "line", data: kdj.j, xAxisIndex: 1, yAxisIndex: 1, symbol: "none", lineStyle: { width: 1, color: "#a855f7" } },
+        { name: "%J", type: "line", data: kdj.j, xAxisIndex: 1, yAxisIndex: 1, symbol: "none", lineStyle: { width: 1, color: t.primarySoftColor } },
       ];
       legendNames.push("%K", "%D", "%J");
     }
@@ -188,7 +187,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
     // Backend custom indicators (Map-based O(1) lookup)
     const extraSeries = extraIndicators.map((ind, i) => {
       legendNames.push(ind.name);
-      return { name: ind.name, type: "line" as const, data: ind.values, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { width: 1, color: OVERLAY_COLORS[(colorIdx + i) % OVERLAY_COLORS.length], type: "dashed" as const } };
+      return { name: ind.name, type: "line" as const, data: ind.values, xAxisIndex: 0, yAxisIndex: 0, symbol: "none", lineStyle: { width: 1, color: t.maColors[(colorIdx + i) % t.maColors.length], type: "dashed" as const } };
     });
 
     const maxBars = RANGE_BARS[range];

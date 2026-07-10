@@ -47,8 +47,8 @@ function ToolIcon({ tool, status }: { tool: string; status: ToolCallEntry["statu
   const kind = toolKind(tool);
   if (kind === "rag") return <Database className="h-3.5 w-3.5 text-accent" />;
   if (kind === "skill") return <Sparkles className="h-3.5 w-3.5 text-primary" />;
-  if (kind === "document") return <FileText className="h-3.5 w-3.5 text-sky-500" />;
-  if (kind === "search") return <Search className="h-3.5 w-3.5 text-cyan-600" />;
+  if (kind === "document") return <FileText className="h-3.5 w-3.5 text-info" />;
+  if (kind === "search") return <Search className="h-3.5 w-3.5 text-accent" />;
   return <CheckCircle2 className="h-3.5 w-3.5 text-success" />;
 }
 
@@ -140,7 +140,7 @@ export function AgentExecutionTrace({
         const stepNumber = index + (reasoningActive || reasoningChars > 0 ? 2 : 1);
         return (
           <div key={entry.id} className="flex gap-2 rounded-lg border border-border/55 bg-background/80 px-2.5 py-2 text-xs shadow-sm transition-colors hover:border-primary/30">
-            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted">
+            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted">
               <ToolIcon tool={entry.tool} status={entry.status} />
             </div>
             <div className="min-w-0 flex-1 space-y-1">
@@ -154,7 +154,7 @@ export function AgentExecutionTrace({
                   "rounded-full px-1.5 py-0.5 text-[10px]",
                   entry.status === "running" && "bg-primary/10 text-primary",
                   entry.status === "ok" && "bg-success/10 text-success",
-                  entry.status === "error" && "bg-destructive/10 text-destructive",
+                  entry.status === "error" && "bg-danger/10 text-danger",
                 )}>
                   {statusLabel(entry.status, t)}
                 </span>

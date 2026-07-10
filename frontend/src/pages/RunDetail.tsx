@@ -345,8 +345,8 @@ function RunCardTab({ card }: { card: RunCard }) {
       </div>
 
       {warnings.length > 0 && (
-        <section className="rounded-md border border-amber-500/25 bg-amber-500/5 p-3">
-          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-300">
+        <section className="rounded-md border border-warning/25 bg-warning/10 p-3">
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-warning">
             <AlertTriangle className="h-4 w-4" />
             {i18n.t("runDetail.warnings")}
           </div>
@@ -414,7 +414,7 @@ function RunCardStat({ label, value, tone = "normal" }: { label: string; value: 
   return (
     <div className="rounded-md border bg-card p-3">
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={cn("mt-1 truncate text-sm font-medium", tone === "warning" ? "text-amber-700 dark:text-amber-300" : "")}>{value}</div>
+      <div className={cn("mt-1 truncate text-sm font-medium", tone === "warning" ? "text-warning" : "")}>{value}</div>
     </div>
   );
 }

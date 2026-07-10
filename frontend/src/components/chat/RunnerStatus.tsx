@@ -143,7 +143,7 @@ function BrokerRow({
         <div className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-xs font-semibold capitalize text-foreground">{brokerKey}</span>
           {authorized ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+            <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">
               <ShieldCheck className="h-2.5 w-2.5" />
               Authorized
             </span>
@@ -179,10 +179,10 @@ function BrokerRow({
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-md border bg-background/60 p-2">
               <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                <CircleDot className={["h-2.5 w-2.5", runnerAlive ? "text-emerald-500" : "text-muted-foreground"].join(" ")} />
+                <CircleDot className={["h-2.5 w-2.5", runnerAlive ? "text-success" : "text-muted-foreground"].join(" ")} />
                 Runner
               </div>
-              <div className={["mt-0.5 text-xs font-semibold", runnerAlive ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"].join(" ")}>
+              <div className={["mt-0.5 text-xs font-semibold", runnerAlive ? "text-success" : "text-muted-foreground"].join(" ")}>
                 {runnerAlive ? "Running" : "Stopped"}
               </div>
             </div>
@@ -211,7 +211,7 @@ function BrokerRow({
                       countdown.expired
                         ? "bg-destructive/10 text-destructive"
                         : countdown.soon
-                          ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                          ? "bg-warning/10 text-warning"
                           : "bg-muted text-muted-foreground",
                     ].join(" ")}
                     title={`Expires ${new Date(mandate.expires_at).toLocaleString()}`}
@@ -290,7 +290,7 @@ export const RunnerStatus = memo(function RunnerStatus({ status, unavailable, ha
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1 text-left text-xs font-medium text-primary transition-colors hover:bg-primary/15"
+        className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-primary/20 bg-primary/10 px-2.5 py-1 text-left text-xs font-medium text-primary shadow-sm transition-colors hover:bg-primary/15"
         aria-label={i18n.t("runnerStatus.connectorRuntime")}
         aria-expanded={open}
       >
@@ -300,7 +300,7 @@ export const RunnerStatus = memo(function RunnerStatus({ status, unavailable, ha
           {authorizedCount > 0 ? i18n.t("runnerStatus.connected", { count: authorizedCount }) : i18n.t("runnerStatus.noConnector")}
         </span>
         {anyRunning && !isHalted && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+          <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">
             <CircleDot className="h-2.5 w-2.5" />
             {i18n.t("runnerStatus.running")}
           </span>
@@ -315,7 +315,7 @@ export const RunnerStatus = memo(function RunnerStatus({ status, unavailable, ha
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 z-50 mb-2 grid max-h-[55vh] w-[min(46rem,calc(100vw-2rem))] gap-2 overflow-auto rounded-xl border border-primary/20 bg-popover p-3 shadow-xl">
+        <div className="absolute bottom-full left-0 z-50 mb-2 grid max-h-[55vh] w-[min(46rem,calc(100vw-2rem))] gap-2 overflow-auto rounded-lg border border-primary/20 bg-popover p-3 shadow-xl">
           {status.brokers.map((broker) => (
             <BrokerRow key={broker.auth.broker} broker={broker} halted={isHalted || broker.halted} onRefresh={onRefresh} />
           ))}

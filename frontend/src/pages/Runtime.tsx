@@ -119,8 +119,8 @@ export function Runtime() {
         ) : null}
 
         {!loading && error ? (
-          <section className="rounded-md border border-amber-500/30 bg-amber-500/5 p-5">
-            <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
+          <section className="rounded-md border border-warning/30 bg-warning/10 p-5">
+            <div className="flex items-center gap-2 font-medium text-warning">
               <AlertTriangle className="h-5 w-5" />
               {t("runtime.unavailableTitle")}
             </div>
@@ -311,7 +311,7 @@ function StatusPill({ label, tone }: { label: string; tone: "success" | "danger"
         "inline-flex items-center rounded px-2 py-0.5 text-xs font-medium",
         tone === "success" && "bg-success/10 text-success",
         tone === "danger" && "bg-danger/10 text-danger",
-        tone === "warning" && "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+        tone === "warning" && "bg-warning/10 text-warning",
         tone === "neutral" && "bg-muted text-muted-foreground",
       )}
     >

@@ -11,7 +11,7 @@ interface Example {
 interface Category {
   labelKey: string;
   icon: React.ReactNode;
-  color: string;
+  tone: "primary" | "info" | "accent";
   examples: Example[];
 }
 
@@ -19,7 +19,7 @@ const CATEGORIES: Category[] = [
   {
     labelKey: "welcome.categories.multiMarketBacktest",
     icon: <TrendingUp className="h-4 w-4" />,
-    color: "text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5",
+    tone: "primary",
     examples: [
       {
         titleKey: "welcome.examples.crossMarketPortfolio",
@@ -41,7 +41,7 @@ const CATEGORIES: Category[] = [
   {
     labelKey: "welcome.categories.researchAnalysis",
     icon: <Sparkles className="h-4 w-4" />,
-    color: "text-info border-info/30 hover:border-info/60 hover:bg-info/5",
+    tone: "info",
     examples: [
       {
         titleKey: "welcome.examples.multiFactorAlpha",
@@ -58,7 +58,7 @@ const CATEGORIES: Category[] = [
   {
     labelKey: "welcome.categories.swarmTeams",
     icon: <Users className="h-4 w-4" />,
-    color: "text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5",
+    tone: "primary",
     examples: [
       {
         titleKey: "welcome.examples.investmentCommittee",
@@ -75,7 +75,7 @@ const CATEGORIES: Category[] = [
   {
     labelKey: "welcome.categories.docWebResearch",
     icon: <Globe className="h-4 w-4" />,
-    color: "text-info border-info/30 hover:border-info/60 hover:bg-info/5",
+    tone: "info",
     examples: [
       {
         titleKey: "welcome.examples.earningsReport",
@@ -92,7 +92,7 @@ const CATEGORIES: Category[] = [
   {
     labelKey: "welcome.categories.tradeJournal",
     icon: <NotebookPen className="h-4 w-4" />,
-    color: "text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5",
+    tone: "primary",
     examples: [
       {
         titleKey: "welcome.examples.analyzeBrokerExport",
@@ -109,7 +109,7 @@ const CATEGORIES: Category[] = [
   {
     labelKey: "welcome.categories.tradingConnectors",
     icon: <Landmark className="h-4 w-4" />,
-    color: "text-cyan-400 border-cyan-500/30 hover:border-cyan-500/60 hover:bg-cyan-500/5",
+    tone: "accent",
     examples: [
       {
         titleKey: "welcome.examples.checkConnector",
@@ -131,7 +131,7 @@ const CATEGORIES: Category[] = [
   {
     labelKey: "welcome.categories.shadowAccount",
     icon: <UserCircle2 className="h-4 w-4" />,
-    color: "text-emerald-400 border-emerald-500/30 hover:border-emerald-500/60 hover:bg-emerald-500/5",
+    tone: "info",
     examples: [
       {
         titleKey: "welcome.examples.trainShadow",
@@ -178,12 +178,18 @@ export function WelcomeScreen({ onExample }: Props) {
   const { t } = useTranslation();
   const [activeCategory, setActiveCategory] = useState(CATEGORIES[0].labelKey);
   const active = CATEGORIES.find((cat) => cat.labelKey === activeCategory) ?? CATEGORIES[0];
+  const activeTone =
+    active.tone === "accent"
+      ? "border-accent/35 hover:border-accent/70"
+      : active.tone === "info"
+        ? "border-info/35 hover:border-info/70"
+        : "border-primary/35 hover:border-primary/70";
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center space-y-7 text-center">
+    <div className="flex min-h-[58vh] flex-col items-center justify-center space-y-6 text-center">
       {/* Header */}
       <div className="space-y-3">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/85 to-info/80 shadow-lg shadow-primary/20 transition-transform duration-300 hover:scale-105">
-          <Bot className="h-8 w-8 text-white" />
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/45 hover:bg-primary/15">
+          <Bot className="h-7 w-7" />
         </div>
         <div>
           <h2 className="text-2xl font-bold tracking-tight">{t('welcome.title')}</h2>
@@ -208,11 +214,11 @@ export function WelcomeScreen({ onExample }: Props) {
         ))}
       </div>
 
-      <div className="w-full max-w-4xl space-y-4 text-left">
+      <div className="w-full max-w-4xl space-y-3 text-left">
         <div className="flex items-center gap-3 px-1">
           <p className="text-xs text-muted-foreground">{t('welcome.tryExample')}</p>
         </div>
-        <div className="flex flex-wrap justify-center gap-1 rounded-xl border bg-muted/20 p-1">
+        <div className="flex flex-wrap justify-center gap-1 rounded-lg border bg-muted/20 p-1">
           {CATEGORIES.map((cat) => {
             const selected = active.labelKey === cat.labelKey;
             return (
@@ -221,8 +227,8 @@ export function WelcomeScreen({ onExample }: Props) {
                 type="button"
                 onClick={() => setActiveCategory(cat.labelKey)}
                 className={[
-                  "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-all duration-200",
-                  selected ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
+                  "inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-all duration-200 active:translate-y-px",
+                  selected ? "bg-background text-primary shadow-sm ring-1 ring-border/50" : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
                 ].join(" ")}
               >
                 {cat.icon}
@@ -236,7 +242,7 @@ export function WelcomeScreen({ onExample }: Props) {
             <button
               key={ex.titleKey}
               onClick={() => onExample(t(ex.promptKey as any))}
-              className={`group block w-full rounded-xl border bg-card/80 px-4 py-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 ${active.color}`}
+              className={`group block w-full rounded-lg border bg-card/90 px-4 py-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-card hover:shadow-md active:translate-y-px ${activeTone}`}
             >
               <span className="text-sm font-semibold leading-snug text-foreground transition-colors group-hover:text-primary">
                 {t(ex.titleKey as any)}

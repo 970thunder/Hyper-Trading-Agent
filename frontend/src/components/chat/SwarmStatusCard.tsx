@@ -29,13 +29,13 @@ function formatElapsed(seconds: number | undefined): string {
 function statusTone(status: SwarmAgentDisplayStatus): string {
   switch (status) {
     case "done":
-      return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
+      return "bg-success/10 text-success";
     case "failed":
       return "bg-destructive/10 text-destructive";
     case "blocked":
-      return "bg-amber-500/10 text-amber-600 dark:text-amber-400";
+      return "bg-warning/10 text-warning";
     case "retry":
-      return "bg-sky-500/10 text-sky-600 dark:text-sky-400";
+      return "bg-info/10 text-info";
     case "running":
       return "bg-primary/10 text-primary";
     case "cancelled":
@@ -69,7 +69,7 @@ function StatusIcon({ status }: { status: SwarmAgentDisplayStatus }) {
 function runTone(status: SwarmRunStatus["status"]): string {
   switch (status) {
     case "completed":
-      return "text-emerald-600 dark:text-emerald-400";
+      return "text-success";
     case "failed":
       return "text-destructive";
     case "cancelled":

@@ -89,7 +89,7 @@ export const RunCompleteCard = memo(function RunCompleteCard({ msg }: Props) {
             <button
               onClick={handlePineClick}
               disabled={pineLoading}
-              className="text-sm text-emerald-600 dark:text-emerald-400 hover:underline inline-flex items-center gap-1.5 font-medium disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-success hover:underline disabled:opacity-50"
             >
               {pineLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Code2 className="h-3.5 w-3.5" />}
               Pine Script
@@ -100,7 +100,7 @@ export const RunCompleteCard = memo(function RunCompleteCard({ msg }: Props) {
               href={`/shadow-reports/${encodeURIComponent(msg.shadowId)}?format=html`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm text-teal-600 dark:text-teal-400 hover:underline inline-flex items-center gap-1.5 font-medium"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-info hover:underline"
             >
               <FileText className="h-3.5 w-3.5" />
               Shadow Report

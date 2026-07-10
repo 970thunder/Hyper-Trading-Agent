@@ -17,6 +17,27 @@
 - [x] 前端可见品牌统一为 Hyper Trading Agent
 - [x] Swarm 多 Agent 创建、更新、删除与参数编辑
 - [x] Swarm Agent 绑定组织模型配置并透传到运行时
+- [x] UI / Interaction Beautification 第一轮：主题色、圆角、Agent 工作台、设置卡片、图表色板、AlphaZoo 顶部卡片统一
+
+## P0 UI / Interaction Beautification
+- [x] 主题 token 与 Tailwind accent 映射补齐
+- [x] 欢迎页移除蓝青渐变与旧色示例卡
+- [x] Agent 头像改为 Hyper Trading token 化样式
+- [x] Agent composer 改为更紧凑的专业工具条
+- [x] 模型与连接器菜单保持悬浮，不撑开底部栏
+- [x] 工具调用与执行 trace 使用语义 token 状态色
+- [x] 会话标题生成规则修正，并对过长标题使用省略号
+- [x] 设置页模型 provider 卡片和状态徽标视觉统一
+- [x] 首页改为工作台入口，不再是营销式居中 hero
+- [x] K 线、验证面板、对比图 fallback 色板迁移到红/青/中性灰体系
+- [x] AlphaZoo 因子库卡片移除渐变并统一选中态
+- [x] 报告、运行时、RunDetail 警告态改用 warning token
+- [x] 新增 UI 审计文档与验收截图清单
+- [ ] Settings 全部 section 进一步拆分为复用组件，降低单文件复杂度
+- [ ] AlphaZoo 详情、bench、compare 全量表格和筛选区二次美化
+- [ ] Reports / Runtime 增加更完整的数据图表和任务操作态
+- [ ] 移动端 Agent composer 与设置页截图验收
+- [ ] 核心页面 Playwright light/dark 截图回归
 
 ## P1 Agent 核心能力
 - [ ] Plan-Execute 执行模式

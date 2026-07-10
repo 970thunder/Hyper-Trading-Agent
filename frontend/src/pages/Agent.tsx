@@ -69,8 +69,8 @@ function generateShortSessionTitle(content: string, maxChars = SESSION_TITLE_MAX
   const tickers = (cleaned.match(/(?<!\d)\d{6}\.(?:SZ|SH|BJ)(?![A-Z0-9])|\b[A-Z]{1,6}(?:\.[A-Z]{1,4})?\b/gi) ?? [])
     .map((item) => item.toUpperCase())
     .filter((item) => !TITLE_TICKER_STOPWORDS.has(item));
-  if (tickers.length > 1) return clipSessionTitle(`${tickers[0].toUpperCase()}等标的分析`, maxChars);
-  if (tickers.length === 1) return clipSessionTitle(`${tickers[0].toUpperCase()}分析`, maxChars);
+  if (tickers.length > 1) return clipSessionTitle(`${tickers[0].toUpperCase()} 等标的分析`, maxChars);
+  if (tickers.length === 1) return clipSessionTitle(`${tickers[0].toUpperCase()} 分析`, maxChars);
 
   const lowered = cleaned.toLowerCase();
   const rules: Array<[string[], string]> = [
@@ -79,7 +79,7 @@ function generateShortSessionTitle(content: string, maxChars = SESSION_TITLE_MAX
     [["研报", "财报", "估值", "基本面"], "基本面研究"],
     [["rag", "知识库", "文档", "pdf"], "知识库问答"],
     [["模型", "provider", "llm"], "模型配置"],
-    [["im", "通道", "telegram", "slack"], "IM通道配置"],
+    [["im", "通道", "telegram", "slack"], "IM 通道配置"],
   ];
   for (const [keywords, title] of rules) {
     if (keywords.some((keyword) => lowered.includes(keyword))) return title;
@@ -104,7 +104,7 @@ function normalizeTitleSource(content: string): string {
 
 function clipSessionTitle(title: string, maxChars: number): string {
   const compact = title.replace(/\s+/g, " ").replace(/^[\s\-:：,，]+|[\s\-:：,，]+$/g, "");
-  return compact.length > maxChars ? compact.slice(0, maxChars).replace(/[\s\-:：,，]+$/g, "") : compact;
+  return compact.length > maxChars ? `${compact.slice(0, Math.max(0, maxChars - 1)).replace(/[\s\-:：,，]+$/g, "")}...` : compact;
 }
 
 /* ---------- Connector runtime channel ----------
@@ -146,14 +146,14 @@ function liveActionStyle(kind: string): { icon: typeof Activity; tone: string } 
   switch (kind) {
     case "order_rejected":
     case "breach":
-      return { icon: Ban, tone: "border-amber-500/40 bg-amber-500/5 text-amber-600 dark:text-amber-400" };
+      return { icon: Ban, tone: "border-warning/40 bg-warning/10 text-warning" };
     case "halt_tripped":
       return { icon: OctagonX, tone: "border-destructive/40 bg-destructive/5 text-destructive" };
     case "mandate_committed":
     case "halt_cleared":
-      return { icon: CheckCircle2, tone: "border-emerald-500/40 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400" };
+      return { icon: CheckCircle2, tone: "border-success/35 bg-success/10 text-success" };
     default:
-      return { icon: Activity, tone: "border-sky-500/40 bg-sky-500/5 text-sky-600 dark:text-sky-400" };
+      return { icon: Activity, tone: "border-info/35 bg-info/10 text-info" };
   }
 }
 
@@ -1428,7 +1428,7 @@ export function Agent() {
         <ConversationTimeline messages={messages} containerRef={listRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="border-t bg-background/85 px-4 py-3 backdrop-blur-sm">
+      <form onSubmit={handleSubmit} className="border-t bg-background/90 px-4 py-2.5 backdrop-blur-sm">
         <div className="mx-auto max-w-5xl space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
@@ -1436,21 +1436,18 @@ export function Agent() {
                 type="button"
                 onClick={() => setModelMenuOpen((open) => !open)}
                 disabled={status === "streaming" || enabledModelProviders.length === 0}
-                className="inline-flex max-w-full items-center gap-2 rounded-xl border bg-card/80 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:text-foreground hover:shadow-md disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex max-w-full items-center gap-2 rounded-md border bg-card/90 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:text-foreground hover:shadow-md disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
                 title={t("agent.modelPicker.title")}
               >
                 <Cpu className="h-3.5 w-3.5 text-primary" />
                 <span className="shrink-0">{t("agent.modelPicker.label")}</span>
-                <span className="max-w-[14rem] truncate text-foreground">
-                  {selectedModelProvider ? selectedModelProvider.model : t("agent.modelPicker.localFallback")}
-                </span>
+                {selectedModelProvider && <span className="max-w-[14rem] truncate text-foreground">{selectedModelProvider.model}</span>}
                 <ChevronDown className={["h-3.5 w-3.5 transition-transform", modelMenuOpen ? "rotate-180" : ""].join(" ")} />
               </button>
               {modelMenuOpen && enabledModelProviders.length > 0 && (
-                <div className="absolute bottom-full left-0 z-50 mb-2 w-[22rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border bg-popover shadow-xl">
+                <div className="absolute bottom-full left-0 z-50 mb-2 w-[22rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border bg-popover shadow-xl">
                   <div className="border-b px-3 py-2">
                     <div className="text-xs font-semibold text-foreground">{t("agent.modelPicker.title")}</div>
-                    <div className="text-[11px] text-muted-foreground">{t("agent.modelPicker.description")}</div>
                   </div>
                   <div className="max-h-64 overflow-auto p-1">
                     {enabledModelProviders.map((provider) => {
@@ -1493,7 +1490,7 @@ export function Agent() {
               onRefresh={refreshLiveStatus}
             />
             {swarmPreset && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 text-xs font-medium">
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-info/25 bg-info/10 px-2.5 py-1 text-xs font-medium text-info">
                 <Users className="h-3 w-3" />
                 {swarmPreset.title}
                 <button type="button" onClick={() => setSwarmPreset(null)} className="hover:text-destructive transition-colors">
@@ -1529,7 +1526,7 @@ export function Agent() {
                   {goalSnapshot.goal.ui_summary || goalSnapshot.goal.objective}
                 </span>
                 {goalProgress.metLabel && (
-                  <span className="shrink-0 font-mono text-[11px] text-emerald-600 dark:text-emerald-400">
+                  <span className="shrink-0 font-mono text-[11px] text-success">
                     {goalProgress.metLabel}
                   </span>
                 )}
@@ -1547,7 +1544,7 @@ export function Agent() {
                 />
               </button>
               {goalDetailsOpen && (
-                <div className="grid gap-3 rounded-xl border border-primary/20 bg-background/95 p-3 text-xs shadow-sm">
+                <div className="grid gap-3 rounded-lg border border-primary/20 bg-background/95 p-3 text-xs shadow-sm">
                   {goalEditActive ? (
                     <div className="grid gap-2">
                       <textarea
@@ -1725,13 +1722,13 @@ export function Agent() {
                 type="button"
                 onClick={() => setShowUploadMenu(prev => !prev)}
                 disabled={status === "streaming" || uploading}
-                className="w-9 h-9 rounded-full border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40 shrink-0"
+                className="icon-button shrink-0"
                 title={t("agent.moreOptions")}
               >
                 <Plus className="h-4 w-4" />
               </button>
               {showUploadMenu && (
-                <div className="absolute bottom-full left-0 mb-2 w-52 rounded-xl border bg-background/95 backdrop-blur-sm shadow-lg py-1 z-50">
+                <div className="absolute bottom-full left-0 z-50 mb-2 w-56 rounded-lg border bg-popover py-1 shadow-xl">
                   <button
                     type="button"
                     onClick={() => { fileInputRef.current?.click(); setShowUploadMenu(false); }}
@@ -1837,14 +1834,14 @@ export function Agent() {
                   ? t("agent.describeGoal")
                   : t("agent.placeholder")
               }
-              className="flex-1 px-4 py-2.5 rounded-xl border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 transition-shadow resize-none max-h-32 overflow-y-auto"
+              className="max-h-28 flex-1 resize-none overflow-y-auto rounded-md border bg-background px-4 py-2.5 text-sm transition-shadow focus:outline-none focus:ring-2 focus:ring-primary/40"
               disabled={status === "streaming"}
             />
             {messages.length > 0 && (
               <button
                 type="button"
                 onClick={handleExport}
-                className="px-3 py-2.5 rounded-xl border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                className="icon-button"
                 title={t('agent.exportChat')}
               >
                 <Download className="h-4 w-4" />
@@ -1854,7 +1851,7 @@ export function Agent() {
               <button
                 type="button"
                 onClick={handleCancel}
-                className="px-4 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+                className="inline-flex h-9 items-center justify-center rounded-md bg-destructive px-4 text-sm font-medium text-destructive-foreground transition-opacity hover:opacity-90"
                 title={t('agent.stopGeneration')}
               >
                 <Square className="h-4 w-4" />
@@ -1863,7 +1860,7 @@ export function Agent() {
               <button
                 type="submit"
                 disabled={goalComposerActive ? !input.trim() : (!input.trim() && !attachment)}
-                className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
+                className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
               >
                 <Send className="h-4 w-4" />
               </button>

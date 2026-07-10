@@ -10,10 +10,10 @@ function Badge({ value, good }: { value: string; good: boolean | null }) {
   return (
     <span
       className={cn(
-        "inline-block px-2 py-0.5 rounded-full text-xs font-semibold",
-        good === true && "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-        good === false && "bg-red-500/15 text-red-600 dark:text-red-400",
-        good === null && "bg-zinc-500/10 text-zinc-500",
+        "inline-block rounded-full px-2 py-0.5 text-xs font-semibold",
+        good === true && "bg-success/10 text-success",
+        good === false && "bg-danger/10 text-danger",
+        good === null && "bg-muted text-muted-foreground",
       )}
     >
       {value}
@@ -47,7 +47,7 @@ function MonteCarloSection({ mc }: { mc: NonNullable<ValidationData["monte_carlo
       <p className="text-xs text-muted-foreground">
         {i18n.t("validation.monteCarloDesc", { n: mc.n_simulations.toLocaleString() })}
       </p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-xl border border-border/60 bg-muted/20 p-3">
+      <div className="grid grid-cols-2 gap-1 rounded-lg border border-border/60 bg-muted/20 p-3 sm:grid-cols-4">
         <Stat label={i18n.t("validation.actualSharpe")} value={mc.actual_sharpe.toFixed(2)} />
         <Stat label={i18n.t("validation.pValueSharpe")} value={mc.p_value_sharpe.toFixed(4)} sub={sig ? "< 0.05" : ">= 0.05"} />
         <Stat label={i18n.t("validation.simulatedMean")} value={mc.simulated_sharpe_mean.toFixed(2)} sub={`std ${mc.simulated_sharpe_std.toFixed(2)}`} />
@@ -61,8 +61,8 @@ function MonteCarloSection({ mc }: { mc: NonNullable<ValidationData["monte_carlo
           <span>P95: {mc.simulated_sharpe_p95.toFixed(2)}</span>
         </div>
         <div className="relative h-3 rounded-full bg-muted overflow-hidden">
-          <div className="absolute inset-y-0 bg-zinc-300 dark:bg-zinc-600 rounded-full" style={barStyle(mc.simulated_sharpe_p5, mc.simulated_sharpe_p95, mc.simulated_sharpe_p5, mc.simulated_sharpe_p95)} />
-          <div className="absolute top-0 bottom-0 w-0.5 bg-emerald-500" style={markerStyle(mc.actual_sharpe, mc.simulated_sharpe_p5, mc.simulated_sharpe_p95)} />
+          <div className="absolute inset-y-0 rounded-full bg-border" style={barStyle(mc.simulated_sharpe_p5, mc.simulated_sharpe_p95, mc.simulated_sharpe_p5, mc.simulated_sharpe_p95)} />
+          <div className="absolute bottom-0 top-0 w-0.5 bg-primary" style={markerStyle(mc.actual_sharpe, mc.simulated_sharpe_p5, mc.simulated_sharpe_p95)} />
         </div>
       </div>
     </div>
@@ -81,7 +81,7 @@ function BootstrapSection({ bs }: { bs: NonNullable<ValidationData["bootstrap"]>
       <p className="text-xs text-muted-foreground">
         {i18n.t("validation.bootstrapDesc", { n: bs.n_bootstrap.toLocaleString(), pct: (bs.confidence * 100).toFixed(0) + "%" })}
       </p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-xl border border-border/60 bg-muted/20 p-3">
+      <div className="grid grid-cols-2 gap-1 rounded-lg border border-border/60 bg-muted/20 p-3 sm:grid-cols-4">
         <Stat label={i18n.t("validation.observedSharpe")} value={bs.observed_sharpe.toFixed(2)} />
         <Stat label={i18n.t("validation.ci", { pct: (bs.confidence * 100).toFixed(0) + "%" })} value={`[${bs.ci_lower.toFixed(2)}, ${bs.ci_upper.toFixed(2)}]`} />
         <Stat label={i18n.t("validation.medianSharpe")} value={bs.median_sharpe.toFixed(2)} />
@@ -94,7 +94,7 @@ function BootstrapSection({ bs }: { bs: NonNullable<ValidationData["bootstrap"]>
           <span>{bs.ci_upper.toFixed(2)}</span>
         </div>
         <div className="relative h-3 rounded-full bg-muted overflow-hidden">
-          <div className={cn("absolute inset-y-0 rounded-full", reliable ? "bg-emerald-500/30" : "bg-amber-500/30")} style={barStyle(bs.ci_lower, bs.ci_upper, Math.min(bs.ci_lower, 0), Math.max(bs.ci_upper, 1))} />
+          <div className={cn("absolute inset-y-0 rounded-full", reliable ? "bg-success/25" : "bg-warning/25")} style={barStyle(bs.ci_lower, bs.ci_upper, Math.min(bs.ci_lower, 0), Math.max(bs.ci_upper, 1))} />
           <div className="absolute top-0 bottom-0 w-0.5 bg-foreground" style={markerStyle(bs.observed_sharpe, Math.min(bs.ci_lower, 0), Math.max(bs.ci_upper, 1))} />
         </div>
       </div>
@@ -114,7 +114,7 @@ function WalkForwardSection({ wf }: { wf: NonNullable<ValidationData["walk_forwa
       <p className="text-xs text-muted-foreground">
         {i18n.t("validation.walkForwardDesc", { n: wf.n_windows })}
       </p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-xl border border-border/60 bg-muted/20 p-3">
+      <div className="grid grid-cols-2 gap-1 rounded-lg border border-border/60 bg-muted/20 p-3 sm:grid-cols-4">
         <Stat label={i18n.t("validation.consistency")} value={pctFmt(wf.consistency_rate)} />
         <Stat label={i18n.t("validation.avgReturn")} value={pctFmt(wf.return_mean)} sub={`std ${pctFmt(wf.return_std)}`} />
         <Stat label={i18n.t("validation.avgSharpe")} value={wf.sharpe_mean.toFixed(2)} sub={`std ${wf.sharpe_std.toFixed(2)}`} />
@@ -138,7 +138,7 @@ function WalkForwardSection({ wf }: { wf: NonNullable<ValidationData["walk_forwa
             <tr key={w.window} className="border-b last:border-0">
               <td className="py-1.5 pr-3 font-mono">{w.window}</td>
               <td className="py-1.5 pr-3 font-mono text-muted-foreground">{w.start} ~ {w.end}</td>
-              <td className={cn("py-1.5 pr-3 text-right font-mono tabular-nums", w.return > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>{pctFmt(w.return)}</td>
+              <td className={cn("py-1.5 pr-3 text-right font-mono tabular-nums", w.return > 0 ? "text-success" : "text-danger")}>{pctFmt(w.return)}</td>
               <td className="py-1.5 pr-3 text-right font-mono tabular-nums">{w.sharpe.toFixed(2)}</td>
               <td className="py-1.5 pr-3 text-right font-mono tabular-nums">{pctFmt(w.max_dd)}</td>
               <td className="py-1.5 pr-3 text-right font-mono tabular-nums">{w.trades}</td>

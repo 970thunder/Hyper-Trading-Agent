@@ -117,10 +117,10 @@ const SETTINGS_SECTIONS: {
 ];
 
 const fieldClass =
-  "w-full rounded-md border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60";
+  "w-full rounded-md border border-border/75 bg-background px-3 py-2 text-sm outline-none transition focus:border-primary/70 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60";
 const labelClass = "text-sm font-medium";
 const hintClass = "text-xs text-muted-foreground";
-const sectionCardClass = "rounded-lg border bg-card p-5 shadow-sm";
+const sectionCardClass = "rounded-lg border border-border/70 bg-card p-5 shadow-sm";
 
 function toForm(settings: LLMSettings): LLMFormState {
   return {
@@ -908,7 +908,7 @@ export function Settings() {
             ) : (
               <div className="grid gap-3">
                 {commercialModelProviders.map((provider) => (
-                  <div key={provider.id} className="rounded-xl border bg-background p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md">
+                  <div key={provider.id} className="rounded-lg border border-border/70 bg-background p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md">
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                       <div className="min-w-0 space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -1794,7 +1794,7 @@ export function Settings() {
 
 function MetricCard({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
-    <div className="rounded-md border bg-muted/20 px-3 py-2">
+    <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 transition-colors hover:bg-muted/35">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="truncate text-sm font-medium" title={title || value}>{value}</div>
     </div>
@@ -1868,7 +1868,7 @@ function SearchResults({
 
 function StatusPill({ active, on, off }: { active: boolean; on: string; off: string }) {
   return (
-    <span className={`rounded-full px-2 py-0.5 text-xs ${active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+    <span className={active ? "status-primary" : "status-soft"}>
       {active ? on : off}
     </span>
   );

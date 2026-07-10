@@ -32,6 +32,8 @@
     /* Brand accent */
     --primary: 354 73% 51%;
     --primary-foreground: 0 0% 100%;
+    --accent: 186 68% 45%;
+    --accent-foreground: 187 100% 19%;
 
     --muted: 0 0% 96%;
     --muted-foreground: 0 0% 25%;
@@ -77,6 +79,8 @@
 
     --primary: 24 100% 50%;
     --primary-foreground: 0 0% 100%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 57%;
 
     --muted: 210 4% 18%;            /* surface-2 */
     --muted-foreground: 0 0% 88%;
@@ -101,6 +105,11 @@
   * { @apply border-border; }
   body { @apply bg-background text-foreground; }
 
+  :focus-visible {
+    outline: 2px solid hsl(var(--primary) / 0.55);
+    outline-offset: 2px;
+  }
+
   /* Prose table enhancements */
   .prose table { border-collapse: collapse; width: 100%; }
   .prose th, .prose td { border: 1px solid hsl(var(--border)); }
@@ -111,6 +120,48 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); }
+}
+
+@layer components {
+  .surface-panel {
+    @apply rounded-lg border border-border/70 bg-card shadow-sm transition-colors;
+  }
+
+  .surface-panel-hover {
+    @apply rounded-lg border border-border/70 bg-card shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md;
+  }
+
+  .toolbar-button {
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-border/70 bg-card px-3 py-2 text-sm font-medium text-muted-foreground transition-all duration-200 hover:border-primary/35 hover:bg-muted/55 hover:text-foreground active:translate-y-px disabled:pointer-events-none disabled:opacity-45;
+  }
+
+  .icon-button {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-md border border-border/70 bg-card text-muted-foreground transition-all duration-200 hover:border-primary/35 hover:bg-muted/55 hover:text-foreground active:translate-y-px disabled:pointer-events-none disabled:opacity-45;
+  }
+
+  .status-soft {
+    @apply rounded-full border border-border/60 bg-muted/45 px-2 py-0.5 text-xs font-medium text-muted-foreground;
+  }
+
+  .status-primary {
+    @apply rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary;
+  }
+
+  .status-info {
+    @apply rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-xs font-medium text-info;
+  }
+
+  .status-success {
+    @apply rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-xs font-medium text-success;
+  }
+
+  .status-warning {
+    @apply rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning;
+  }
+
+  .status-danger {
+    @apply rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger;
+  }
 }
 
 /* Streaming pulse-slide animation for the "running" bar */

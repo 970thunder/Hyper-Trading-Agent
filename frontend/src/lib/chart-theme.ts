@@ -15,6 +15,11 @@ function hslToHex(hsl: string): string {
   return `#${f(0)}${f(8)}${f(4)}`;
 }
 
+function tokenHex(name: string, fallback: string): string {
+  const value = css(name);
+  return value.startsWith("#") ? value : hslToHex(value) || fallback;
+}
+
 function isChinese(): boolean {
   return (document.documentElement.lang || navigator.language || "").startsWith("zh");
 }
@@ -26,13 +31,19 @@ function buildTheme() {
   const cn = isChinese();
   const isDark = document.documentElement.classList.contains("dark");
 
-  const successHex = hslToHex(css("--success")) || "#22c55e";
-  const dangerHex = hslToHex(css("--danger")) || "#ef4444";
-  const infoHex = hslToHex(css("--info")) || "#3b82f6";
-  const warningHex = hslToHex(css("--warning")) || "#f59e0b";
-  const gridHex = hslToHex(css("--chart-grid")) || (isDark ? "#1e2433" : "#e5e7eb");
-  const textHex = hslToHex(css("--chart-text")) || "#6b7280";
-  const axisHex = hslToHex(css("--chart-axis")) || "#374151";
+  const primaryHex = tokenHex("--primary-100", isDark ? "#FF6600" : "#de283b");
+  const primarySoftHex = tokenHex("--primary-200", isDark ? "#ff983f" : "#ff6366");
+  const primaryPaleHex = tokenHex("--primary-300", isDark ? "#ffffa1" : "#ffccc4");
+  const accentHex = tokenHex("--accent-100", isDark ? "#F5F5F5" : "#25b1bf");
+  const accentDeepHex = tokenHex("--accent-200", isDark ? "#929292" : "#005461");
+  const neutralHex = tokenHex("--bg-300", isDark ? "#444648" : "#cccccc");
+  const successHex = hslToHex(css("--success")) || accentHex;
+  const dangerHex = hslToHex(css("--danger")) || primaryHex;
+  const infoHex = hslToHex(css("--info")) || accentHex;
+  const warningHex = hslToHex(css("--warning")) || primarySoftHex;
+  const gridHex = hslToHex(css("--chart-grid")) || neutralHex;
+  const textHex = hslToHex(css("--chart-text")) || tokenHex("--text-200", isDark ? "#e0e0e0" : "#404040");
+  const axisHex = hslToHex(css("--chart-axis")) || neutralHex;
 
   // Locale-aware candlestick colors: China = red up / green down
   const upHex = cn ? dangerHex : successHex;
@@ -44,15 +55,21 @@ function buildTheme() {
     axisColor: axisHex,
     upColor: upHex,
     downColor: downHex,
-    maColors: [warningHex, "#8b5cf6", infoHex],
-    bollColor: "rgba(99,102,241,0.5)",
+    maColors: [primaryHex, accentHex, primarySoftHex, accentDeepHex, neutralHex, warningHex, infoHex],
+    bollColor: isDark ? "rgba(255,152,63,0.55)" : "rgba(37,177,191,0.5)",
     volumeUp: upHex + "66",
     volumeDown: downHex + "66",
     infoColor: infoHex,
     warningColor: warningHex,
-    tooltipBg: isDark ? "rgba(10,14,22,0.92)" : "rgba(255,255,255,0.96)",
-    tooltipBorder: isDark ? "#1e2433" : "#e5e7eb",
-    tooltipText: isDark ? "#d1d5db" : "#374151",
+    primaryColor: primaryHex,
+    primarySoftColor: primarySoftHex,
+    primaryPaleColor: primaryPaleHex,
+    accentColor: accentHex,
+    accentDeepColor: accentDeepHex,
+    neutralColor: neutralHex,
+    tooltipBg: isDark ? "rgba(29,31,33,0.94)" : "rgba(255,255,255,0.96)",
+    tooltipBorder: gridHex,
+    tooltipText: textHex,
   };
 }
 

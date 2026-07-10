@@ -58,6 +58,7 @@ i18n
     // region codes from compound language keys like "zh-CN" which causes
     // isSupportedCode to reject them ("zh-CN" → "zh", not in supportedLngs).
     interpolation: { escapeValue: false },
+    react: { useSuspense: false },
     detection: {
       // In browsers the navigator.language gives the user's browser locale,
       // useful as a fallback when no explicit choice is saved. In Node.js

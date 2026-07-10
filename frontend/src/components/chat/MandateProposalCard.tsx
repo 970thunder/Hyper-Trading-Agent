@@ -72,7 +72,7 @@ function ProfileTile({
   return (
     <div
       className={[
-        "rounded-xl border p-3 transition-colors",
+        "rounded-lg border p-3 transition-colors",
         active
           ? "border-primary/60 bg-primary/5"
           : "border-border/60 bg-muted/20 hover:border-primary/40",
@@ -227,7 +227,7 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
       <div className="flex gap-3">
         <AgentAvatar />
         <div className="flex-1 min-w-0">
-          <span className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+          <span className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-md bg-success/10 px-2.5 py-1 text-xs font-medium text-success">
             <ShieldCheck className="h-3 w-3 shrink-0" />
             <span className="shrink-0">
               Mandate {committed.selected_ordinal != null ? `#${committed.selected_ordinal} ` : ""}active
@@ -252,10 +252,10 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
   return (
     <div className="flex gap-3">
       <AgentAvatar />
-      <div className="flex-1 min-w-0 space-y-3 rounded-2xl border border-primary/20 bg-background/95 p-4 shadow-sm">
+      <div className="min-w-0 flex-1 space-y-3 rounded-lg border border-primary/20 bg-background/95 p-4 shadow-sm">
         <div className="flex items-start gap-2">
           {isReauth ? (
-            <ShieldAlert className="h-4 w-4 shrink-0 text-amber-500" />
+            <ShieldAlert className="h-4 w-4 shrink-0 text-warning" />
           ) : (
             <ShieldCheck className="h-4 w-4 shrink-0 text-primary" />
           )}

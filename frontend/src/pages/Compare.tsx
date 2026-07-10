@@ -124,8 +124,8 @@ function EquityChartOverlay({ leftCurve, rightCurve, leftLabel, rightLabel }: Eq
     const leftData = dates.map((d) => leftMap.get(d) ?? null);
     const rightData = dates.map((d) => rightMap.get(d) ?? null);
 
-    const PRIMARY_COLOR = getComputedStyle(document.documentElement).getPropertyValue("--chart-compare-a").trim() || "#3b82f6";
-    const SECONDARY_COLOR = getComputedStyle(document.documentElement).getPropertyValue("--chart-compare-b").trim() || "#f59e0b";
+    const PRIMARY_COLOR = getComputedStyle(document.documentElement).getPropertyValue("--chart-compare-a").trim() || "#25b1bf";
+    const SECONDARY_COLOR = getComputedStyle(document.documentElement).getPropertyValue("--chart-compare-b").trim() || "#de283b";
 
     chart.setOption({
       backgroundColor: "transparent",
@@ -277,11 +277,11 @@ export function Compare() {
       {/* Loading state — show skeletons while a selected run's data is in flight */}
       {loading && !hasData && (
         <div className="space-y-6">
-          <div className="border rounded-xl p-4">
+          <div className="border rounded-lg p-4">
             <h2 className="text-sm font-medium text-muted-foreground mb-2">{i18n.t("compare.equityDrawdown")}</h2>
             <SkeletonChart height={320} />
           </div>
-          <div className="border rounded-xl overflow-hidden">
+          <div className="border rounded-lg overflow-hidden">
             <SkeletonMetrics />
           </div>
         </div>
@@ -289,7 +289,7 @@ export function Compare() {
 
       {/* Equity curve overlay */}
       {(leftCurve.length > 0 || rightCurve.length > 0) && (
-        <div className="border rounded-xl p-4">
+        <div className="border rounded-lg p-4">
           <h2 className="text-sm font-medium text-muted-foreground mb-2">{i18n.t("compare.equityDrawdown")}</h2>
           <EquityChartOverlay
             leftCurve={leftCurve}
@@ -302,7 +302,7 @@ export function Compare() {
 
       {/* Metrics table */}
       {(leftData || rightData) && (
-        <div className="border rounded-xl overflow-hidden">
+        <div className="border rounded-lg overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40">
