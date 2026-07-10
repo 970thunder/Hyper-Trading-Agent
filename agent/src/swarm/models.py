@@ -70,7 +70,11 @@ class SwarmAgentSpec(BaseModel):
         skills: List of allowed skill names.
         max_iterations: Maximum ReAct loop iterations.
         timeout_seconds: Worker timeout in seconds.
-        model_name: Override default model; None uses global config.
+        model_name: Override default model name; None uses global config.
+        model_provider_id: Optional organization model provider id. When
+            resolved by the API runtime, this takes precedence over
+            ``model_name`` and carries provider/base URL/secret parameters
+            through non-persisted runtime fields.
         max_retries: Maximum retry attempts on failure.
     """
 
@@ -82,6 +86,13 @@ class SwarmAgentSpec(BaseModel):
     max_iterations: int = 25
     timeout_seconds: int = 300
     model_name: str | None = None
+    model_provider_id: str | None = None
+    llm_provider: str | None = Field(default=None, exclude=True)
+    llm_base_url: str | None = Field(default=None, exclude=True)
+    llm_api_key: str | None = Field(default=None, exclude=True)
+    llm_temperature: float | None = Field(default=None, exclude=True)
+    llm_timeout_seconds: int | None = Field(default=None, exclude=True)
+    llm_max_retries: int | None = Field(default=None, exclude=True)
     max_retries: int = 2
 
 

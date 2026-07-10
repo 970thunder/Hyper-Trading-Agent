@@ -347,8 +347,17 @@ def run_worker(
         include_shell_tools=include_shell_tools,
     )
 
-    # 2. Create LLM
-    llm = ChatLLM(model_name=agent_spec.model_name)
+    # 2. Create LLM. Organization model-provider overrides are injected into
+    #    non-persisted SwarmAgentSpec runtime fields by the API/runtime layer.
+    llm = ChatLLM(
+        model_name=agent_spec.model_name,
+        provider=agent_spec.llm_provider,
+        base_url=agent_spec.llm_base_url,
+        api_key=agent_spec.llm_api_key,
+        temperature=agent_spec.llm_temperature,
+        timeout_seconds=agent_spec.llm_timeout_seconds,
+        max_retries=agent_spec.llm_max_retries,
+    )
 
     # 3. Build system prompt with filtered skills
     skills_loader = SkillsLoader()

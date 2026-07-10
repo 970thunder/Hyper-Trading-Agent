@@ -187,14 +187,15 @@ export function Layout() {
                       <Link
                         to={`/agent?session=${s.session_id}`}
                         className={cn(
-                          "flex-1 min-w-0 ps-3 pe-14 py-1.5 rounded-md text-xs transition-colors truncate block border-s-2",
+                          "flex-1 min-w-0 ps-3 py-1.5 rounded-md text-xs transition-colors block border-s-2",
+                          isDeleting ? "pe-[5.5rem]" : "pe-14",
                           isActive
                             ? "border-s-primary bg-primary/10 text-primary font-medium"
                             : "border-s-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
                         )}
                         title={s.title || s.session_id}
                       >
-                        <span className="flex items-center gap-1.5">
+                        <span className="flex min-w-0 items-center gap-1.5">
                           {streamingSessionId === s.session_id ? (
                             <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
                           ) : (
@@ -203,14 +204,16 @@ export function Layout() {
                               isActive ? "bg-primary/70" : "bg-muted-foreground/40"
                             )} />
                           )}
-                          {s.title || s.session_id.slice(0, 16)}
+                          <span className="min-w-0 flex-1 truncate">
+                            {s.title || s.session_id.slice(0, 16)}
+                          </span>
                         </span>
                       </Link>
                     )}
                     {!isRenaming && isDeleting ? (
-                      <div className="absolute right-0.5 flex items-center gap-0.5">
-                        <button onClick={() => deleteSession(s.session_id)} className="p-1 text-danger hover:bg-danger/10 rounded text-[10px] font-medium">{t('layout.confirm')}</button>
-                        <button onClick={() => setDeleteTarget(null)} className="p-1 text-muted-foreground hover:bg-muted rounded text-[10px]">{t('layout.cancel')}</button>
+                      <div className="absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-card/95 p-0.5 shadow-sm ring-1 ring-border/70">
+                        <button onClick={() => deleteSession(s.session_id)} className="whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium text-danger transition-colors hover:bg-danger/10">{t('layout.confirm')}</button>
+                        <button onClick={() => setDeleteTarget(null)} className="whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted">{t('layout.cancel')}</button>
                       </div>
                     ) : !isRenaming ? (
                       <div className="absolute right-1 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">

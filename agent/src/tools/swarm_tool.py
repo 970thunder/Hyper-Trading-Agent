@@ -658,6 +658,7 @@ class SwarmTool(BaseTool):
         *,
         include_shell_tools: bool = False,
         event_callback: Any | None = None,
+        default_model_provider_runtime: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the swarm launcher.
 
@@ -668,6 +669,7 @@ class SwarmTool(BaseTool):
         """
         self.include_shell_tools = include_shell_tools
         self._event_callback = event_callback
+        self._default_model_provider_runtime = default_model_provider_runtime
 
     def _emit_session_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Forward swarm status to the hosting session SSE channel if present."""
@@ -748,6 +750,7 @@ class SwarmTool(BaseTool):
                 variables,
                 live_callback=_live_callback if self._event_callback is not None else None,
                 include_shell_tools=self.include_shell_tools,
+                default_model_provider_runtime=self._default_model_provider_runtime,
             )
         except FileNotFoundError as exc:
             return json.dumps(

@@ -11,12 +11,26 @@ from typing import Any, Awaitable, Callable
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 # ---------------------------------------------------------------------------
 # Module-level state
 # ---------------------------------------------------------------------------
 
 _swarm_runtime = None
+
+
+class SwarmAgentPayload(BaseModel):
+    id: str = Field(..., min_length=1)
+    role: str = ""
+    system_prompt: str = ""
+    tools: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    max_iterations: int = Field(25, ge=1, le=200)
+    timeout_seconds: int = Field(300, ge=10, le=7200)
+    model_name: str | None = None
+    model_provider_id: str | None = None
+    max_retries: int = Field(2, ge=0, le=10)
 
 
 def _get_swarm_runtime():
@@ -77,6 +91,43 @@ def register_swarm_routes(
         h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
         return h._shell_tools_enabled_for_request(request)
 
+    def _resolve_model_provider_runtimes(request: Request, preset_name: str) -> dict[str, dict[str, Any]] | None:
+        """Resolve organization model providers referenced by editable agents.
+
+        The endpoint still supports local-only mode without a commercial login:
+        in that case provider ids are ignored and each worker falls back to the
+        stored model name or process-level LLM settings.
+        """
+        session_token = request.cookies.get("vibe_session")
+        if not session_token:
+            return None
+        from src.commercial.store import CommercialStore
+        from src.swarm.presets import list_preset_agents
+
+        store = CommercialStore()
+        principal = store.principal_from_token(session_token)
+        if principal is None:
+            return None
+        provider_ids = {
+            str(agent.get("model_provider_id") or "").strip()
+            for agent in list_preset_agents(preset_name).get("agents", [])
+        }
+        provider_ids.discard("")
+        runtimes: dict[str, dict[str, Any]] = {}
+        for provider_id in provider_ids:
+            try:
+                runtime = store.resolve_model_provider_runtime(principal, provider_id)
+            except KeyError as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Agent model provider {exc.args[0]} not found in current organization",
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+            if runtime:
+                runtimes[provider_id] = runtime
+        return runtimes or None
+
     # --- Routes ---
 
     @app.get("/swarm/presets")
@@ -85,6 +136,66 @@ def register_swarm_routes(
         from src.swarm.presets import list_presets
 
         return list_presets()
+
+    @app.get("/swarm/presets/{preset_name}/agents", dependencies=[Depends(require_auth)])
+    async def list_swarm_preset_agents(preset_name: str):
+        """List editable agents for a swarm preset."""
+        _host_validate_path_param(preset_name, "preset_name")
+        from src.swarm.presets import list_preset_agents
+
+        try:
+            return list_preset_agents(preset_name)
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/swarm/presets/{preset_name}/agents", dependencies=[Depends(require_auth)])
+    async def create_swarm_preset_agent(preset_name: str, payload: SwarmAgentPayload):
+        """Create an editable agent definition for a swarm preset."""
+        _host_validate_path_param(preset_name, "preset_name")
+        from src.swarm.presets import save_preset_agent
+
+        try:
+            return save_preset_agent(preset_name, payload.model_dump(), create=True)
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.put("/swarm/presets/{preset_name}/agents/{agent_id}", dependencies=[Depends(require_auth)])
+    async def update_swarm_preset_agent(preset_name: str, agent_id: str, payload: SwarmAgentPayload):
+        """Update an editable agent definition for a swarm preset."""
+        _host_validate_path_param(preset_name, "preset_name")
+        _host_validate_path_param(agent_id, "agent_id")
+        from src.swarm.presets import save_preset_agent
+
+        data = payload.model_dump()
+        data["id"] = agent_id
+        try:
+            return save_preset_agent(preset_name, data, create=False)
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=f"Agent {e.args[0]} not found")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.delete("/swarm/presets/{preset_name}/agents/{agent_id}", dependencies=[Depends(require_auth)])
+    async def delete_swarm_preset_agent(preset_name: str, agent_id: str):
+        """Delete an agent definition and dependent tasks from a swarm preset override."""
+        _host_validate_path_param(preset_name, "preset_name")
+        _host_validate_path_param(agent_id, "agent_id")
+        from src.swarm.presets import delete_preset_agent
+
+        try:
+            return delete_preset_agent(preset_name, agent_id)
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"Agent {agent_id} not found")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     @app.post("/swarm/runs", dependencies=[Depends(require_auth)])
     async def create_swarm_run(payload: dict, http_request: Request):
@@ -97,6 +208,7 @@ def register_swarm_routes(
                 preset_name,
                 user_vars,
                 include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
+                model_provider_runtimes=_resolve_model_provider_runtimes(http_request, preset_name),
             )
             return {"id": run.id, "status": run.status.value, "preset_name": run.preset_name}
         except FileNotFoundError as e:
@@ -226,6 +338,7 @@ def register_swarm_routes(
                 reconciled.preset_name,
                 reconciled.user_vars or {},
                 include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
+                model_provider_runtimes=_resolve_model_provider_runtimes(http_request, reconciled.preset_name),
             )
             return {
                 "id": new_run.id,

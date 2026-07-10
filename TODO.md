@@ -15,6 +15,8 @@
 - [x] Agent 欢迎页示例标签页化
 - [x] Agent 对话页专业化 composer
 - [x] 前端可见品牌统一为 Hyper Trading Agent
+- [x] Swarm 多 Agent 创建、更新、删除与参数编辑
+- [x] Swarm Agent 绑定组织模型配置并透传到运行时
 
 ## P1 Agent 核心能力
 - [ ] Plan-Execute 执行模式

@@ -16,7 +16,7 @@ import pkgutil
 from collections.abc import Mapping
 from collections import deque
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from src.agent.tools import BaseTool, ToolRegistry
 
@@ -71,6 +71,7 @@ def build_registry(
     session_id: str | None = None,
     event_callback: Callable[[str, dict], None] | None = None,
     warn_callback: Callable[[str], None] | None = None,
+    commercial_model_provider: Mapping[str, Any] | None = None,
     interactive: bool | None = None,
     _mcp_server_tool_name_segments: Mapping[str, str] | None = None,
 ) -> ToolRegistry:
@@ -146,7 +147,13 @@ def build_registry(
             elif cls in session_injected_classes:
                 registry.register(cls(default_session_id=session_id, event_callback=event_callback))
             elif cls is SwarmTool:
-                registry.register(cls(include_shell_tools=include_shell_tools, event_callback=event_callback))
+                registry.register(
+                    cls(
+                        include_shell_tools=include_shell_tools,
+                        event_callback=event_callback,
+                        default_model_provider_runtime=dict(commercial_model_provider or {}),
+                    )
+                )
             else:
                 registry.register(cls())
         except Exception as exc:

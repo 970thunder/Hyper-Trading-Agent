@@ -7,12 +7,15 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
 _AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
+_SESSION_TITLE_MAX_CHARS = 18
+_TITLE_TICKER_STOPWORDS = {"API", "CSV", "DOC", "EXCEL", "HTML", "IM", "LLM", "PDF", "RAG", "URL", "WORD"}
 
 from src.session.events import EventBus
 from src.session.models import (
@@ -115,6 +118,8 @@ class SessionService:
         if role != "user":
             return {"message_id": message.message_id}
 
+        self._maybe_set_initial_title(session, content)
+
         attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id, prompt=content)
         self.store.create_attempt(attempt)
         session.config["include_shell_tools"] = include_shell_tools
@@ -138,6 +143,22 @@ class SessionService:
             )
         )
         return {"message_id": message.message_id, "attempt_id": attempt.attempt_id}
+
+    def _maybe_set_initial_title(self, session: Session, content: str) -> None:
+        """Set a short generated title from the first user message.
+
+        The title generator is local and deterministic so starting a chat never
+        depends on an extra model call. Manual titles are left untouched.
+        """
+        if session.title.strip():
+            return
+        title = generate_short_session_title(content)
+        if not title:
+            return
+        session.title = title
+        session.config["title_generated"] = True
+        self._search_index.index_session(session.session_id, title)
+        self.event_bus.emit(session.session_id, "session.updated", {"session_id": session.session_id, "title": title})
 
     def get_messages(self, session_id: str, limit: int = 100) -> list[Message]:
         """Return the message history."""
@@ -280,6 +301,7 @@ class SessionService:
                 session_id=session_id,
                 event_callback=event_callback,
                 warn_callback=_mcp_collision_warn,
+                commercial_model_provider=model_provider if isinstance(model_provider, dict) else None,
             ),
         )
 
@@ -427,3 +449,55 @@ class SessionService:
         if attempt.status == AttemptStatus.COMPLETED:
             return attempt.summary or "Strategy execution completed."
         return f"Execution failed: {attempt.error or 'unknown error'}"
+
+
+def generate_short_session_title(content: str, max_chars: int = _SESSION_TITLE_MAX_CHARS) -> str:
+    """Generate a compact sidebar title from user input."""
+    cleaned = _normalize_title_source(content)
+    if not cleaned:
+        return ""
+
+    tickers = [
+        item.upper()
+        for item in re.findall(r"(?<!\d)\d{6}\.(?:SZ|SH|BJ)(?![A-Z0-9])|\b[A-Z]{1,6}(?:\.[A-Z]{1,4})?\b", cleaned, flags=re.IGNORECASE)
+        if item.upper() not in _TITLE_TICKER_STOPWORDS
+    ]
+    if tickers:
+        first = tickers[0]
+        if len(tickers) > 1:
+            return _clip_title(f"{first}等标的分析", max_chars)
+        return _clip_title(f"{first}分析", max_chars)
+
+    topic_rules = [
+        (("回测", "backtest"), "策略回测"),
+        (("量化", "策略", "因子", "alpha"), "量化策略研究"),
+        (("研报", "财报", "估值", "基本面"), "基本面研究"),
+        (("RAG", "知识库", "文档", "PDF"), "知识库问答"),
+        (("模型", "provider", "LLM"), "模型配置"),
+        (("IM", "通道", "Telegram", "Slack"), "IM通道配置"),
+    ]
+    lowered = cleaned.lower()
+    for keywords, title in topic_rules:
+        if any(str(keyword).lower() in lowered for keyword in keywords):
+            return title
+
+    sentence = re.split(r"[。！？!?；;\n\r]", cleaned, maxsplit=1)[0]
+    sentence = re.sub(r"^(请帮我分析一下|请帮我做|请帮我|帮我分析一下|帮我做|分析一下|看一下|帮我|请|用|基于)\s*", "", sentence).strip()
+    return _clip_title(sentence or cleaned, max_chars)
+
+
+def _normalize_title_source(content: str) -> str:
+    cleaned = content.strip()
+    cleaned = re.sub(r"\[Uploaded file:[^\]]+\]", "文档", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\[Swarm Team Mode\][\s\S]*?\n\n", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"```[\s\S]*?```", " ", cleaned)
+    cleaned = re.sub(r"[#>*_`~]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip(" -:：,，")
+
+
+def _clip_title(title: str, max_chars: int) -> str:
+    compact = re.sub(r"\s+", " ", title).strip(" -:：,，")
+    if len(compact) <= max_chars:
+        return compact
+    return compact[:max_chars].rstrip(" -:：,，")

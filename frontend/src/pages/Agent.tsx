@@ -56,9 +56,55 @@ const CONNECTOR_CHECK_PROMPT =
 const CONNECTOR_PORTFOLIO_PROMPT =
   "Use the selected trading connector profile to summarize my account, positions, concentration, cash, and portfolio risk. Do not place or modify orders.";
 const MODEL_PROVIDER_STORAGE_PREFIX = "hyper_trading_selected_model_provider";
+const SESSION_TITLE_MAX_CHARS = 18;
+const TITLE_TICKER_STOPWORDS = new Set(["API", "CSV", "DOC", "EXCEL", "HTML", "IM", "LLM", "PDF", "RAG", "URL", "WORD"]);
 
 function modelProviderStorageKey(organizationId: string): string {
   return `${MODEL_PROVIDER_STORAGE_PREFIX}:${organizationId}`;
+}
+
+function generateShortSessionTitle(content: string, maxChars = SESSION_TITLE_MAX_CHARS): string {
+  const cleaned = normalizeTitleSource(content);
+  if (!cleaned) return "";
+  const tickers = (cleaned.match(/(?<!\d)\d{6}\.(?:SZ|SH|BJ)(?![A-Z0-9])|\b[A-Z]{1,6}(?:\.[A-Z]{1,4})?\b/gi) ?? [])
+    .map((item) => item.toUpperCase())
+    .filter((item) => !TITLE_TICKER_STOPWORDS.has(item));
+  if (tickers.length > 1) return clipSessionTitle(`${tickers[0].toUpperCase()}等标的分析`, maxChars);
+  if (tickers.length === 1) return clipSessionTitle(`${tickers[0].toUpperCase()}分析`, maxChars);
+
+  const lowered = cleaned.toLowerCase();
+  const rules: Array<[string[], string]> = [
+    [["回测", "backtest"], "策略回测"],
+    [["量化", "策略", "因子", "alpha"], "量化策略研究"],
+    [["研报", "财报", "估值", "基本面"], "基本面研究"],
+    [["rag", "知识库", "文档", "pdf"], "知识库问答"],
+    [["模型", "provider", "llm"], "模型配置"],
+    [["im", "通道", "telegram", "slack"], "IM通道配置"],
+  ];
+  for (const [keywords, title] of rules) {
+    if (keywords.some((keyword) => lowered.includes(keyword))) return title;
+  }
+
+  const sentence = cleaned.split(/[。！？!?；;\n\r]/, 1)[0]
+    .replace(/^(请帮我分析一下|请帮我做|请帮我|帮我分析一下|帮我做|分析一下|看一下|帮我|请|用|基于)\s*/, "")
+    .trim();
+  return clipSessionTitle(sentence || cleaned, maxChars);
+}
+
+function normalizeTitleSource(content: string): string {
+  return content
+    .trim()
+    .replace(/\[Uploaded file:[^\]]+\]/gi, "文档")
+    .replace(/\[Swarm Team Mode\][\s\S]*?\n\n/i, "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/[#>*_`~]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s\-:：,，]+|[\s\-:：,，]+$/g, "");
+}
+
+function clipSessionTitle(title: string, maxChars: number): string {
+  const compact = title.replace(/\s+/g, " ").replace(/^[\s\-:：,，]+|[\s\-:：,，]+$/g, "");
+  return compact.length > maxChars ? compact.slice(0, maxChars).replace(/[\s\-:：,，]+$/g, "") : compact;
 }
 
 /* ---------- Connector runtime channel ----------
@@ -1003,7 +1049,7 @@ export function Agent() {
       let sid = act().sessionId;
       if (!sid) {
         const session = await api.createSession(
-          prompt.slice(0, 50),
+          generateShortSessionTitle(prompt),
           selectedModelProviderIdForRequest ? { model_provider_id: selectedModelProviderIdForRequest } : undefined,
         );
         sid = session.session_id;
@@ -1025,7 +1071,7 @@ export function Agent() {
     let sid = act().sessionId;
     if (sid) return sid;
     const session = await api.createSession(
-      title.slice(0, 50),
+      generateShortSessionTitle(title),
       selectedModelProviderIdForRequest ? { model_provider_id: selectedModelProviderIdForRequest } : undefined,
     );
     sid = session.session_id;

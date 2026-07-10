@@ -143,6 +143,22 @@ export const api = {
 
   // Swarm API
   listSwarmPresets: () => request<SwarmPreset[]>("/swarm/presets"),
+  listSwarmPresetAgents: (presetName: string) =>
+    request<SwarmPresetAgentList>(`/swarm/presets/${encodeURIComponent(presetName)}/agents`),
+  createSwarmPresetAgent: (presetName: string, body: SwarmPresetAgentRequest) =>
+    request<SwarmPresetAgent>(`/swarm/presets/${encodeURIComponent(presetName)}/agents`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateSwarmPresetAgent: (presetName: string, agentId: string, body: SwarmPresetAgentRequest) =>
+    request<SwarmPresetAgent>(`/swarm/presets/${encodeURIComponent(presetName)}/agents/${encodeURIComponent(agentId)}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  deleteSwarmPresetAgent: (presetName: string, agentId: string) =>
+    request<{ agent_id: string; removed_task_ids: string[] }>(`/swarm/presets/${encodeURIComponent(presetName)}/agents/${encodeURIComponent(agentId)}`, {
+      method: "DELETE",
+    }),
   createSwarmRun: (preset_name: string, user_vars: Record<string, string>) =>
     request<{ id: string; status: string }>("/swarm/runs", {
       method: "POST",
@@ -1288,4 +1304,38 @@ export interface MessageItem {
   created_at: string;
   linked_attempt_id?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface SwarmPresetAgent {
+  id: string;
+  role: string;
+  system_prompt: string;
+  tools: string[];
+  skills: string[];
+  max_iterations: number;
+  timeout_seconds: number;
+  model_name?: string | null;
+  model_provider_id?: string | null;
+  max_retries: number;
+  task_count?: number;
+}
+
+export interface SwarmPresetAgentList {
+  preset_name: string;
+  title: string;
+  description: string;
+  agents: SwarmPresetAgent[];
+}
+
+export interface SwarmPresetAgentRequest {
+  id: string;
+  role: string;
+  system_prompt: string;
+  tools: string[];
+  skills: string[];
+  max_iterations: number;
+  timeout_seconds: number;
+  model_name?: string | null;
+  model_provider_id?: string | null;
+  max_retries: number;
 }

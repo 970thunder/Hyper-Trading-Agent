@@ -9,18 +9,63 @@ behavior under editable installs and built wheels.
 from __future__ import annotations
 
 import uuid
+import json
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from string import Formatter
+from typing import Any
 
 import yaml
 
+from src.config.paths import get_runtime_root
 from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask, TaskStatus
 from src.swarm.task_store import topological_layers, validate_dag
 
 PRESETS_DIR = Path(__file__).resolve().parent / "presets"
 _INTERNAL_TEMPLATE_VARS = {"upstream_context"}
+_PRESET_OVERRIDES_DIRNAME = "swarm-presets"
+
+
+def _preset_override_path(name: str) -> Path:
+    return get_runtime_root() / _PRESET_OVERRIDES_DIRNAME / f"{name}.json"
+
+
+def _load_base_preset(name: str) -> dict:
+    path = PRESETS_DIR / f"{name}.yaml"
+    if not path.exists():
+        available = [p.stem for p in PRESETS_DIR.glob("*.yaml")] if PRESETS_DIR.exists() else []
+        raise FileNotFoundError(
+            f"Preset {name!r} not found. Available: {available}"
+        )
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
+def _load_override(name: str) -> dict:
+    path = _preset_override_path(name)
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid swarm preset override for {name}: {exc}") from exc
+    return data if isinstance(data, dict) else {}
+
+
+def _write_override(name: str, data: dict[str, Any]) -> None:
+    path = _preset_override_path(name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _apply_override(base: dict, override: dict) -> dict:
+    data = dict(base)
+    for key in ("agents", "tasks", "variables", "title", "description"):
+        if key in override:
+            data[key] = override[key]
+    return data
 
 
 def load_preset(name: str) -> dict:
@@ -35,13 +80,7 @@ def load_preset(name: str) -> dict:
     Raises:
         FileNotFoundError: If the preset file does not exist.
     """
-    path = PRESETS_DIR / f"{name}.yaml"
-    if not path.exists():
-        available = [p.stem for p in PRESETS_DIR.glob("*.yaml")] if PRESETS_DIR.exists() else []
-        raise FileNotFoundError(
-            f"Preset {name!r} not found. Available: {available}"
-        )
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+    return _apply_override(_load_base_preset(name), _load_override(name))
 
 
 def list_presets() -> list[dict]:
@@ -56,7 +95,7 @@ def list_presets() -> list[dict]:
     results: list[dict] = []
     for path in sorted(PRESETS_DIR.glob("*.yaml")):
         try:
-            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            data = load_preset(path.stem)
         except Exception:
             continue
 
@@ -69,6 +108,111 @@ def list_presets() -> list[dict]:
         })
 
     return results
+
+
+def list_preset_agents(preset_name: str) -> dict:
+    """Return editable agent definitions for a preset."""
+    data = load_preset(preset_name)
+    task_counts: Counter[str] = Counter()
+    for task in data.get("tasks", []):
+        agent_id = str(task.get("agent_id") or "")
+        if agent_id:
+            task_counts[agent_id] += 1
+    return {
+        "preset_name": data.get("name", preset_name),
+        "title": data.get("title", ""),
+        "description": data.get("description", ""),
+        "agents": [
+            {**agent, "task_count": task_counts.get(str(agent.get("id")), 0)}
+            for agent in data.get("agents", [])
+        ],
+    }
+
+
+def save_preset_agent(preset_name: str, agent_payload: dict[str, Any], *, create: bool = False) -> dict:
+    """Create or update a preset agent override."""
+    data = load_preset(preset_name)
+    agents = [dict(agent) for agent in data.get("agents", [])]
+    tasks = [dict(task) for task in data.get("tasks", [])]
+    agent = _normalize_agent_payload(agent_payload)
+    existing_idx = next((idx for idx, item in enumerate(agents) if item.get("id") == agent["id"]), None)
+    if create and existing_idx is not None:
+        raise ValueError(f"Agent {agent['id']} already exists")
+    if not create and existing_idx is None:
+        raise KeyError(agent["id"])
+    if existing_idx is None:
+        agents.append(agent)
+    else:
+        agents[existing_idx] = agent
+    _write_override(preset_name, {"agents": agents, "tasks": tasks})
+    return {**agent, "task_count": sum(1 for task in tasks if task.get("agent_id") == agent["id"])}
+
+
+def delete_preset_agent(preset_name: str, agent_id: str) -> dict:
+    """Delete an agent and any tasks that depend on its removed tasks."""
+    data = load_preset(preset_name)
+    agents = [dict(agent) for agent in data.get("agents", [])]
+    tasks = [dict(task) for task in data.get("tasks", [])]
+    if not any(agent.get("id") == agent_id for agent in agents):
+        raise KeyError(agent_id)
+
+    removed_task_ids = {str(task.get("id")) for task in tasks if task.get("agent_id") == agent_id}
+    changed = True
+    while changed:
+        changed = False
+        for task in tasks:
+            task_id = str(task.get("id") or "")
+            if task_id in removed_task_ids:
+                continue
+            depends_on = {str(dep) for dep in task.get("depends_on", [])}
+            input_from = {str(value) for value in (task.get("input_from") or {}).values()}
+            if depends_on & removed_task_ids or input_from & removed_task_ids:
+                removed_task_ids.add(task_id)
+                changed = True
+
+    next_agents = [agent for agent in agents if agent.get("id") != agent_id]
+    next_tasks = []
+    for task in tasks:
+        task_id = str(task.get("id") or "")
+        if task_id in removed_task_ids:
+            continue
+        task["depends_on"] = [dep for dep in task.get("depends_on", []) if dep not in removed_task_ids]
+        task["input_from"] = {
+            key: value for key, value in (task.get("input_from") or {}).items()
+            if value not in removed_task_ids
+        }
+        next_tasks.append(task)
+
+    _write_override(preset_name, {"agents": next_agents, "tasks": next_tasks})
+    return {"agent_id": agent_id, "removed_task_ids": sorted(removed_task_ids)}
+
+
+def _normalize_agent_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    agent = SwarmAgentSpec(
+        id=str(payload.get("id") or "").strip(),
+        role=str(payload.get("role") or "").strip(),
+        system_prompt=str(payload.get("system_prompt") or "").strip(),
+        tools=_split_string_list(payload.get("tools")),
+        skills=_split_string_list(payload.get("skills")),
+        max_iterations=int(payload.get("max_iterations") or 25),
+        timeout_seconds=int(payload.get("timeout_seconds") or 300),
+        model_name=(str(payload.get("model_name") or "").strip() or None),
+        model_provider_id=(str(payload.get("model_provider_id") or "").strip() or None),
+        max_retries=int(payload.get("max_retries") or 2),
+    )
+    if not agent.id:
+        raise ValueError("agent id is required")
+    return agent.model_dump(exclude_none=True)
+
+
+def _split_string_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        raw = value
+    elif isinstance(value, str):
+        raw = value.replace("\n", ",").split(",")
+    else:
+        raw = []
+    return [str(item).strip() for item in raw if str(item).strip()]
 
 
 def _declared_variable_names(raw_variables: list) -> set[str]:
@@ -246,6 +390,7 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
             max_iterations=agent_data.get("max_iterations", 25),
             timeout_seconds=agent_data.get("timeout_seconds", 300),
             model_name=agent_data.get("model_name"),
+            model_provider_id=agent_data.get("model_provider_id"),
             max_retries=agent_data.get("max_retries", 2),
         ))
 

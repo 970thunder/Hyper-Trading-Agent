@@ -9,7 +9,9 @@ import {
   KeyRound,
   Loader2,
   MessageSquareMore,
+  Pencil,
   Play,
+  Plus,
   RefreshCw,
   RotateCcw,
   Save,
@@ -17,6 +19,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Square,
+  Trash2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -40,6 +43,10 @@ import {
   type LLMProviderOption,
   type LLMSettings,
   type ModelUsage,
+  type SwarmPreset,
+  type SwarmPresetAgent,
+  type SwarmPresetAgentList,
+  type SwarmPresetAgentRequest,
 } from "@/lib/api";
 import { getApiAuthKey, setApiAuthKey } from "@/lib/apiAuth";
 import { cn } from "@/lib/utils";
@@ -65,6 +72,19 @@ interface ModelProviderFormState {
   max_retries: number;
   enabled: boolean;
   is_default: boolean;
+}
+
+interface SwarmAgentFormState {
+  id: string;
+  role: string;
+  system_prompt: string;
+  tools: string;
+  skills: string;
+  max_iterations: number;
+  timeout_seconds: number;
+  model_name: string;
+  model_provider_id: string;
+  max_retries: number;
 }
 
 type SettingsSection =
@@ -129,6 +149,29 @@ function toModelProviderForm(settings: LLMSettings | null, provider?: LLMProvide
   };
 }
 
+function toSwarmAgentForm(agent?: SwarmPresetAgent): SwarmAgentFormState {
+  return {
+    id: agent?.id ?? "",
+    role: agent?.role ?? "",
+    system_prompt: agent?.system_prompt ?? "",
+    tools: (agent?.tools ?? []).join(", "),
+    skills: (agent?.skills ?? []).join(", "),
+    max_iterations: agent?.max_iterations ?? 25,
+    timeout_seconds: agent?.timeout_seconds ?? 300,
+    model_name: agent?.model_name ?? "",
+    model_provider_id: agent?.model_provider_id ?? "",
+    max_retries: agent?.max_retries ?? 2,
+  };
+}
+
+function splitList(value: string): string[] {
+  return value
+    .replace(/\n/g, ",")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function isSettingsSection(value: string | null): value is SettingsSection {
   return SETTINGS_SECTIONS.some((section) => section.id === value);
 }
@@ -161,9 +204,14 @@ export function Settings() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [modelUsage, setModelUsage] = useState<ModelUsage[]>([]);
   const [channelStatus, setChannelStatus] = useState<ChannelRuntimeStatus | null>(null);
+  const [swarmPresets, setSwarmPresets] = useState<SwarmPreset[]>([]);
+  const [selectedSwarmPreset, setSelectedSwarmPreset] = useState("quant_strategy_desk");
+  const [swarmAgentList, setSwarmAgentList] = useState<SwarmPresetAgentList | null>(null);
   const [form, setForm] = useState<LLMFormState | null>(null);
   const [modelProviderForm, setModelProviderForm] = useState<ModelProviderFormState>(() => toModelProviderForm(null));
   const [editingModelProviderId, setEditingModelProviderId] = useState<string | null>(null);
+  const [swarmAgentForm, setSwarmAgentForm] = useState<SwarmAgentFormState>(() => toSwarmAgentForm());
+  const [editingSwarmAgentId, setEditingSwarmAgentId] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [localApiKey, setLocalApiKeyState] = useState(() => getApiAuthKey());
   const [clearApiKey, setClearApiKey] = useState(false);
@@ -173,6 +221,8 @@ export function Settings() {
   const [saving, setSaving] = useState(false);
   const [modelProviderSaving, setModelProviderSaving] = useState(false);
   const [modelProviderTestingId, setModelProviderTestingId] = useState<string | null>(null);
+  const [swarmAgentSaving, setSwarmAgentSaving] = useState(false);
+  const [deletingSwarmAgentId, setDeletingSwarmAgentId] = useState<string | null>(null);
   const [dataSaving, setDataSaving] = useState(false);
   const [knowledgeSaving, setKnowledgeSaving] = useState(false);
   const [knowledgeSearching, setKnowledgeSearching] = useState(false);
@@ -214,10 +264,91 @@ export function Settings() {
     setCommercialModelProviders(await api.listCommercialModelProviders());
   };
 
+  const loadSwarmPresets = async (preferredPreset = selectedSwarmPreset) => {
+    const presets = await api.listSwarmPresets();
+    setSwarmPresets(presets);
+    const nextPreset = presets.some((preset) => preset.name === preferredPreset)
+      ? preferredPreset
+      : presets[0]?.name || "quant_strategy_desk";
+    setSelectedSwarmPreset(nextPreset);
+    if (nextPreset) {
+      setSwarmAgentList(await api.listSwarmPresetAgents(nextPreset));
+    } else {
+      setSwarmAgentList(null);
+    }
+  };
+
+  const loadSwarmAgents = async (presetName: string) => {
+    setSelectedSwarmPreset(presetName);
+    setSwarmAgentList(await api.listSwarmPresetAgents(presetName));
+    setEditingSwarmAgentId(null);
+    setSwarmAgentForm(toSwarmAgentForm());
+  };
+
   const loadAuditAndUsage = async () => {
     const [logs, usage] = await Promise.all([api.listAuditLogs(50), api.listModelUsage(100)]);
     setAuditLogs(logs);
     setModelUsage(usage);
+  };
+
+  const modelOptions = useMemo(() => {
+    const options = new Set<string>();
+    settings?.providers?.forEach((provider) => {
+      provider.model_options?.forEach((model) => options.add(model));
+      if (provider.default_model) options.add(provider.default_model);
+    });
+    commercialModelProviders.forEach((provider) => {
+      if (provider.model) options.add(provider.model);
+    });
+    if (swarmAgentForm.model_name) options.add(swarmAgentForm.model_name);
+    return Array.from(options).sort();
+  }, [commercialModelProviders, settings?.providers, swarmAgentForm.model_name]);
+
+  const commercialModelProviderById = useMemo(() => {
+    return new Map(commercialModelProviders.map((provider) => [provider.id, provider]));
+  }, [commercialModelProviders]);
+
+  const selectedSwarmModelValue = swarmAgentForm.model_provider_id
+    ? `provider:${swarmAgentForm.model_provider_id}`
+    : swarmAgentForm.model_name
+      ? `model:${swarmAgentForm.model_name}`
+      : "";
+
+  const setSwarmAgentModel = (value: string) => {
+    if (!value) {
+      setSwarmAgentForm((prev) => ({ ...prev, model_provider_id: "", model_name: "" }));
+      return;
+    }
+    if (value.startsWith("provider:")) {
+      const providerId = value.slice("provider:".length);
+      const provider = commercialModelProviderById.get(providerId);
+      setSwarmAgentForm((prev) => ({
+        ...prev,
+        model_provider_id: providerId,
+        model_name: provider?.model ?? prev.model_name,
+      }));
+      return;
+    }
+    if (value.startsWith("model:")) {
+      setSwarmAgentForm((prev) => ({
+        ...prev,
+        model_provider_id: "",
+        model_name: value.slice("model:".length),
+      }));
+    }
+  };
+
+  const swarmAgentModelLabel = (agent: SwarmPresetAgent) => {
+    if (agent.model_provider_id) {
+      const provider = commercialModelProviderById.get(agent.model_provider_id);
+      if (provider) {
+        return `${provider.provider} / ${provider.model}${provider.is_default ? ` (${t("settings.modelProviders.default")})` : ""}`;
+      }
+      return agent.model_name
+        ? `${agent.model_name} (${agent.model_provider_id})`
+        : agent.model_provider_id;
+    }
+    return agent.model_name || t("settings.swarmAgents.defaultModel");
   };
 
   useEffect(() => {
@@ -275,6 +406,7 @@ export function Settings() {
             loadCommercialModels(),
             loadCommercialKnowledge(),
             loadAuditAndUsage(),
+            loadSwarmPresets(),
           ]);
         } else {
           setPrincipal(null);
@@ -502,6 +634,67 @@ export function Settings() {
     } catch (error) {
       const message = error instanceof Error ? error.message : t("settings.unknownError");
       toast.error(t("settings.modelProviderActions.deleteFailed", { message }));
+    }
+  };
+
+  const editSwarmAgent = (agent: SwarmPresetAgent) => {
+    setEditingSwarmAgentId(agent.id);
+    setSwarmAgentForm(toSwarmAgentForm(agent));
+  };
+
+  const resetSwarmAgentForm = () => {
+    setEditingSwarmAgentId(null);
+    setSwarmAgentForm(toSwarmAgentForm());
+  };
+
+  const submitSwarmAgent = async (event: FormEvent) => {
+    event.preventDefault();
+    const payload: SwarmPresetAgentRequest = {
+      id: swarmAgentForm.id.trim(),
+      role: swarmAgentForm.role.trim(),
+      system_prompt: swarmAgentForm.system_prompt.trim(),
+      tools: splitList(swarmAgentForm.tools),
+      skills: splitList(swarmAgentForm.skills),
+      max_iterations: swarmAgentForm.max_iterations,
+      timeout_seconds: swarmAgentForm.timeout_seconds,
+      model_name: swarmAgentForm.model_name.trim() || null,
+      model_provider_id: swarmAgentForm.model_provider_id.trim() || null,
+      max_retries: swarmAgentForm.max_retries,
+    };
+    if (!payload.id) {
+      toast.error(t("settings.swarmAgents.idRequired"));
+      return;
+    }
+    setSwarmAgentSaving(true);
+    try {
+      if (editingSwarmAgentId) {
+        await api.updateSwarmPresetAgent(selectedSwarmPreset, editingSwarmAgentId, payload);
+        toast.success(t("settings.swarmAgents.updated"));
+      } else {
+        await api.createSwarmPresetAgent(selectedSwarmPreset, payload);
+        toast.success(t("settings.swarmAgents.created"));
+      }
+      resetSwarmAgentForm();
+      await loadSwarmAgents(selectedSwarmPreset);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.swarmAgents.saveFailed", { message }));
+    } finally {
+      setSwarmAgentSaving(false);
+    }
+  };
+
+  const deleteSwarmAgent = async (agent: SwarmPresetAgent) => {
+    setDeletingSwarmAgentId(agent.id);
+    try {
+      const result = await api.deleteSwarmPresetAgent(selectedSwarmPreset, agent.id);
+      await loadSwarmAgents(selectedSwarmPreset);
+      toast.success(t("settings.swarmAgents.deleted", { count: result.removed_task_ids.length }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.swarmAgents.deleteFailed", { message }));
+    } finally {
+      setDeletingSwarmAgentId(null);
     }
   };
 
@@ -1145,19 +1338,162 @@ export function Settings() {
   };
 
   const renderAgentPolicy = () => (
-    <section className={sectionCardClass}>
-      <div className="mb-5 flex items-center gap-2">
-        <Brain className="h-4 w-4 text-primary" />
-        <h2 className="text-base font-semibold">{t("settings.agentPolicy.title")}</h2>
-      </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        <MetricCard label={t("settings.agentPolicy.responseStyle")} value={t("settings.agentPolicy.professional")} />
-        <MetricCard label={t("settings.agentPolicy.emojiPolicy")} value={t("settings.agentPolicy.forbidden")} />
-        <MetricCard label={t("settings.agentPolicy.citationPolicy")} value={t("settings.agentPolicy.requiredWhenUsingRag")} />
-        <MetricCard label={t("settings.agentPolicy.outputLanguage")} value={t("settings.agentPolicy.matchUser")} />
-      </div>
-      <p className="mt-4 text-sm text-muted-foreground">{t("settings.agentPolicy.description")}</p>
-    </section>
+    <div className="space-y-5">
+      <section className={sectionCardClass}>
+        <div className="mb-5 flex items-center gap-2">
+          <Brain className="h-4 w-4 text-primary" />
+          <h2 className="text-base font-semibold">{t("settings.agentPolicy.title")}</h2>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <MetricCard label={t("settings.agentPolicy.responseStyle")} value={t("settings.agentPolicy.professional")} />
+          <MetricCard label={t("settings.agentPolicy.emojiPolicy")} value={t("settings.agentPolicy.forbidden")} />
+          <MetricCard label={t("settings.agentPolicy.citationPolicy")} value={t("settings.agentPolicy.requiredWhenUsingRag")} />
+          <MetricCard label={t("settings.agentPolicy.outputLanguage")} value={t("settings.agentPolicy.matchUser")} />
+        </div>
+        <p className="mt-4 text-sm text-muted-foreground">{t("settings.agentPolicy.description")}</p>
+      </section>
+
+      <section className={sectionCardClass}>
+        <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Brain className="h-4 w-4 text-primary" />
+              <h2 className="text-base font-semibold">{t("settings.swarmAgents.title")}</h2>
+            </div>
+            <p className="max-w-3xl text-sm text-muted-foreground">{t("settings.swarmAgents.description")}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => loadSwarmPresets().catch((error) => toast.error(t("settings.swarmAgents.loadFailed", { message: error instanceof Error ? error.message : t("settings.unknownError") })))}
+            className="inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          >
+            <RefreshCw className="h-4 w-4" />
+            {t("settings.refresh")}
+          </button>
+        </div>
+
+        <div className="mb-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+          <label className="grid gap-2">
+            <span className={labelClass}>{t("settings.swarmAgents.preset")}</span>
+            <select
+              value={selectedSwarmPreset}
+              onChange={(event) => loadSwarmAgents(event.target.value).catch((error) => toast.error(t("settings.swarmAgents.loadFailed", { message: error instanceof Error ? error.message : t("settings.unknownError") })))}
+              className={fieldClass}
+            >
+              {swarmPresets.map((preset) => (
+                <option key={preset.name} value={preset.name}>{preset.title || preset.name}</option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={resetSwarmAgentForm}
+            className="inline-flex items-center justify-center gap-2 self-end rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" />
+            {t("settings.swarmAgents.newAgent")}
+          </button>
+        </div>
+
+        <div className="grid gap-5 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.1fr)]">
+          <div className="overflow-hidden rounded-md border">
+            <div className="border-b bg-muted/20 px-3 py-2 text-sm font-semibold">
+              {swarmAgentList?.title || selectedSwarmPreset}
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">{t("settings.swarmAgents.agent")}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t("settings.swarmAgents.model")}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t("settings.swarmAgents.actions")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {swarmAgentList?.agents.length ? swarmAgentList.agents.map((agent) => (
+                  <tr key={agent.id} className={cn("border-t", editingSwarmAgentId === agent.id && "bg-primary/5")}>
+                    <td className="px-3 py-2 align-top">
+                      <div className="font-medium">{agent.role || agent.id}</div>
+                      <div className="text-xs text-muted-foreground">{agent.id} · {t("settings.swarmAgents.taskCount", { count: agent.task_count ?? 0 })}</div>
+                    </td>
+                    <td className="max-w-[220px] truncate px-3 py-2 align-top text-xs text-muted-foreground" title={swarmAgentModelLabel(agent)}>
+                      {swarmAgentModelLabel(agent)}
+                    </td>
+                    <td className="px-3 py-2 text-right align-top">
+                      <div className="inline-flex items-center gap-1">
+                        <button type="button" onClick={() => editSwarmAgent(agent)} className="rounded-md border px-2 py-1 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button type="button" onClick={() => deleteSwarmAgent(agent)} disabled={deletingSwarmAgentId === agent.id} className="rounded-md border px-2 py-1 text-xs text-muted-foreground transition hover:border-destructive/40 hover:text-destructive disabled:opacity-50">
+                          {deletingSwarmAgentId === agent.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={3} className="px-3 py-8 text-center text-sm text-muted-foreground">{t("settings.swarmAgents.empty")}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <form onSubmit={submitSwarmAgent} className="rounded-md border bg-muted/10 p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold">{editingSwarmAgentId ? t("settings.swarmAgents.editAgent") : t("settings.swarmAgents.createAgent")}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">{t("settings.swarmAgents.formHint")}</p>
+              </div>
+              {editingSwarmAgentId ? (
+                <button type="button" onClick={resetSwarmAgentForm} className="rounded-md border px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground">
+                  {t("settings.cancel")}
+                </button>
+              ) : null}
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <TextField label={t("settings.swarmAgents.id")} value={swarmAgentForm.id} onChange={(value) => setSwarmAgentForm((prev) => ({ ...prev, id: value }))} />
+              <TextField label={t("settings.swarmAgents.role")} value={swarmAgentForm.role} onChange={(value) => setSwarmAgentForm((prev) => ({ ...prev, role: value }))} />
+              <label className="grid gap-2 md:col-span-2">
+                <span className={labelClass}>{t("settings.swarmAgents.model")}</span>
+                <select value={selectedSwarmModelValue} onChange={(event) => setSwarmAgentModel(event.target.value)} className={fieldClass}>
+                  <option value="">{t("settings.swarmAgents.defaultModel")}</option>
+                  {commercialModelProviders.length ? (
+                    <optgroup label={t("settings.swarmAgents.configuredModels")}>
+                      {commercialModelProviders.map((provider) => (
+                        <option key={provider.id} value={`provider:${provider.id}`}>
+                          {provider.provider} / {provider.model}{provider.is_default ? ` (${t("settings.modelProviders.default")})` : ""}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
+                  <optgroup label={t("settings.swarmAgents.compatibleModelNames")}>
+                    {modelOptions.map((model) => (
+                      <option key={model} value={`model:${model}`}>{model}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </label>
+              <NumberField label={t("settings.swarmAgents.maxIterations")} value={swarmAgentForm.max_iterations} min={1} max={200} step={1} onChange={(value) => setSwarmAgentForm((prev) => ({ ...prev, max_iterations: value }))} />
+              <NumberField label={t("settings.swarmAgents.timeoutSeconds")} value={swarmAgentForm.timeout_seconds} min={10} max={7200} step={10} onChange={(value) => setSwarmAgentForm((prev) => ({ ...prev, timeout_seconds: value }))} />
+              <NumberField label={t("settings.swarmAgents.maxRetries")} value={swarmAgentForm.max_retries} min={0} max={10} step={1} onChange={(value) => setSwarmAgentForm((prev) => ({ ...prev, max_retries: value }))} />
+              <label className="grid gap-2">
+                <span className={labelClass}>{t("settings.swarmAgents.tools")}</span>
+                <textarea value={swarmAgentForm.tools} onChange={(event) => setSwarmAgentForm((prev) => ({ ...prev, tools: event.target.value }))} className={`${fieldClass} min-h-24`} />
+              </label>
+              <label className="grid gap-2">
+                <span className={labelClass}>{t("settings.swarmAgents.skills")}</span>
+                <textarea value={swarmAgentForm.skills} onChange={(event) => setSwarmAgentForm((prev) => ({ ...prev, skills: event.target.value }))} className={`${fieldClass} min-h-24`} />
+              </label>
+              <label className="grid gap-2 md:col-span-2">
+                <span className={labelClass}>{t("settings.swarmAgents.systemPrompt")}</span>
+                <textarea value={swarmAgentForm.system_prompt} onChange={(event) => setSwarmAgentForm((prev) => ({ ...prev, system_prompt: event.target.value }))} className={`${fieldClass} min-h-52 font-mono text-xs`} />
+              </label>
+            </div>
+            <PrimaryButton type="submit" disabled={swarmAgentSaving} loading={swarmAgentSaving} label={editingSwarmAgentId ? t("settings.swarmAgents.update") : t("settings.swarmAgents.create")} className="mt-4" />
+          </form>
+        </div>
+      </section>
+    </div>
   );
 
   const renderSecurity = () => (

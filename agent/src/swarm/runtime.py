@@ -18,7 +18,7 @@ from concurrent.futures import (
 )
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from src.config.schema import AgentConfig
 from src.swarm import grounding
@@ -88,6 +88,8 @@ class SwarmRuntime:
         user_vars: dict[str, str],
         live_callback: Callable | None = None,
         include_shell_tools: bool = False,
+        model_provider_runtimes: dict[str, dict[str, Any]] | None = None,
+        default_model_provider_runtime: dict[str, Any] | None = None,
     ) -> SwarmRun:
         """Start a swarm run. Returns immediately, execution happens in background.
 
@@ -116,6 +118,15 @@ class SwarmRuntime:
             logger.warning("Stale-run reaper failed", exc_info=True)
 
         run = build_run_from_preset(preset_name, user_vars)
+        if model_provider_runtimes or default_model_provider_runtime:
+            run.agents = [
+                self._apply_agent_model_runtime(
+                    agent,
+                    model_provider_runtimes or {},
+                    default_model_provider_runtime=default_model_provider_runtime,
+                )
+                for agent in run.agents
+            ]
         validate_dag(run.tasks)
 
         # Capture which provider/model the run was launched against so the
@@ -126,6 +137,9 @@ class SwarmRuntime:
         # remain visible on SwarmAgentSpec.model_name.
         run.provider = (os.getenv("LANGCHAIN_PROVIDER") or "").strip().lower() or None
         run.model = (os.getenv("LANGCHAIN_MODEL_NAME") or "").strip() or None
+        if default_model_provider_runtime:
+            run.provider = str(default_model_provider_runtime.get("provider") or run.provider or "").strip() or None
+            run.model = str(default_model_provider_runtime.get("model") or run.model or "").strip() or None
 
         self._store.create_run(run)
 
@@ -144,6 +158,35 @@ class SwarmRuntime:
         thread.start()
 
         return run
+
+    @staticmethod
+    def _apply_agent_model_runtime(
+        agent: SwarmAgentSpec,
+        model_provider_runtimes: dict[str, dict[str, Any]],
+        *,
+        default_model_provider_runtime: dict[str, Any] | None = None,
+    ) -> SwarmAgentSpec:
+        provider_id = (agent.model_provider_id or "").strip()
+        if not provider_id:
+            if default_model_provider_runtime:
+                runtime = default_model_provider_runtime
+            else:
+                return agent
+        else:
+            runtime = model_provider_runtimes.get(provider_id)
+        if not runtime:
+            return agent
+        return agent.model_copy(
+            update={
+                "model_name": runtime.get("model") or agent.model_name,
+                "llm_provider": runtime.get("provider"),
+                "llm_base_url": runtime.get("base_url"),
+                "llm_api_key": runtime.get("api_key"),
+                "llm_temperature": runtime.get("temperature"),
+                "llm_timeout_seconds": runtime.get("timeout_seconds"),
+                "llm_max_retries": runtime.get("max_retries"),
+            }
+        )
 
     def cancel_run(self, run_id: str) -> bool:
         """Signal cancellation for a running swarm.
