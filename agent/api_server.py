@@ -638,6 +638,10 @@ async def require_local_or_auth(
     loopback clients so an API server bound to 0.0.0.0 cannot accept remote
     credential reads or writes in dev mode.
     """
+    if request.method.upper() not in _SAFE_BROWSER_METHODS:
+        _reject_cross_site_browser_request(request)
+    if _is_local_client(request):
+        return
     if _configured_api_key():
         if _has_commercial_role(request):
             return
@@ -664,6 +668,9 @@ async def require_settings_write_auth(
     DNS rebinding.
     """
     api_key = _configured_api_key()
+    _reject_cross_site_browser_request(request)
+    if _is_local_client(request):
+        return
     if api_key:
         if _has_commercial_role(request, {"owner", "admin"}):
             return

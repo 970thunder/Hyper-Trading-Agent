@@ -219,6 +219,45 @@ def test_authorized_client_can_write_llm_settings_when_api_key_configured(
     assert "OPENAI_BASE_URL=https://api.openai.com/v1" in env_path.read_text(encoding="utf-8")
 
 
+def test_loopback_can_write_llm_settings_when_api_key_configured(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+    env_path = tmp_path / ".env"
+    env_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(api_server, "ENV_PATH", env_path)
+
+    response = _local_client().put(
+        "/settings/llm",
+        headers={"host": "127.0.0.1:8899", "origin": "http://127.0.0.1:8899"},
+        json=_llm_settings_payload("https://api.openai.com/v1"),
+    )
+
+    assert response.status_code == 200
+    assert "OPENAI_BASE_URL=https://api.openai.com/v1" in env_path.read_text(encoding="utf-8")
+
+
+def test_remote_cannot_write_llm_settings_without_bearer_when_api_key_configured(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("API_AUTH_KEY", "secret")
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
+    env_path = tmp_path / ".env"
+    env_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(api_server, "ENV_PATH", env_path)
+
+    response = _remote_client().put(
+        "/settings/llm",
+        json=_llm_settings_payload("https://api.openai.com/v1"),
+    )
+
+    assert response.status_code == 401
+    assert env_path.read_text(encoding="utf-8") == ""
+
+
 def test_local_dev_can_write_llm_settings_when_api_key_unset(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,

@@ -49,6 +49,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...rest,
     headers: mergedHeaders,
+    credentials: "include",
   });
   if (!res.ok) {
     throw await errorFromResponse(res);
@@ -77,7 +78,7 @@ export interface UploadResult {
 async function uploadFile(file: File): Promise<UploadResult> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BASE}/upload`, { method: "POST", headers: authHeaders(), body: form });
+  const res = await fetch(`${BASE}/upload`, { method: "POST", headers: authHeaders(), body: form, credentials: "include" });
   if (!res.ok) {
     throw await errorFromResponse(res);
   }
