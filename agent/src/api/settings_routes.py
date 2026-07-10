@@ -399,6 +399,11 @@ def register_settings_routes(
                 LLM_API_KEY_PLACEHOLDERS,
             ):
                 updates[provider.api_key_env] = current_values[provider.api_key_env]
+            elif host_ref._is_configured_secret(
+                os.environ.get(provider.api_key_env, ""),
+                LLM_API_KEY_PLACEHOLDERS,
+            ):
+                updates[provider.api_key_env] = os.environ.get(provider.api_key_env, "")
         elif payload.clear_api_key:
             os.environ.pop("OPENAI_API_KEY", None)
 

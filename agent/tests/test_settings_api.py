@@ -114,6 +114,30 @@ def test_update_llm_settings_persists_project_env(
     assert "sk-or-v1-your-key-here" not in env_text
 
 
+def test_update_llm_settings_preserves_runtime_api_key_when_input_blank(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "runtime-secret-value")
+    response = client.put(
+        "/settings/llm",
+        json={
+            "provider": "openrouter",
+            "model_name": "deepseek/deepseek-v4-pro",
+            "base_url": "https://openrouter.ai/api/v1",
+            "temperature": 0.1,
+            "timeout_seconds": 45,
+            "max_retries": 1,
+            "reasoning_effort": "max",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["api_key_configured"] is True
+    assert "runtime-secret-value" not in response.text
+    assert "OPENROUTER_API_KEY=runtime-secret-value" in (tmp_path / ".env").read_text(encoding="utf-8")
+
+
 def test_get_data_source_settings_treats_placeholder_as_unconfigured(
     client: TestClient, tmp_path: Path,
 ) -> None:
