@@ -40,6 +40,7 @@ class SessionResponse(BaseModel):
 class SendMessageRequest(BaseModel):
     """Send chat message: natural-language strategy description."""
     content: str = Field(..., description="Natural language strategy description", min_length=1, max_length=5000)
+    model_provider_id: Optional[str] = Field(None, description="Commercial organization model provider id")
 
 
 class MessageResponse(BaseModel):
@@ -622,6 +623,7 @@ def register_sessions_routes(app: FastAPI) -> None:
         if not svc:
             raise HTTPException(status_code=501, detail="Session runtime not enabled")
         commercial_principal = None
+        commercial_model_provider = None
         host = _host()
         if host is not None and hasattr(host, "_commercial_principal_from_request"):
             principal = host._commercial_principal_from_request(http_request)
@@ -632,12 +634,24 @@ def register_sessions_routes(app: FastAPI) -> None:
                     "email": principal.email,
                     "role": principal.role,
                 }
+                try:
+                    from src.commercial.store import CommercialStore
+
+                    commercial_model_provider = CommercialStore().resolve_model_provider_runtime(
+                        principal,
+                        payload.model_provider_id,
+                    )
+                except KeyError as exc:
+                    raise HTTPException(status_code=404, detail="model provider not found") from exc
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
         try:
             result = await svc.send_message(
                 session_id=session_id,
                 content=payload.content,
                 include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
                 commercial_principal=commercial_principal,
+                commercial_model_provider=commercial_model_provider,
             )
             return result
         except ValueError as exc:

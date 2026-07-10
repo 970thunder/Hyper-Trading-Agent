@@ -29,6 +29,9 @@ import {
   type CommercialKnowledgeBackendStatus,
   type CommercialKnowledgeDocument,
   type CommercialKnowledgeSearchResult,
+  type CommercialModelProvider,
+  type CommercialModelProviderCreateRequest,
+  type CommercialModelProviderUpdateRequest,
   type CommercialPrincipal,
   type DataSourceSettings,
   type KnowledgeDocument,
@@ -49,6 +52,19 @@ interface LLMFormState {
   timeout_seconds: number;
   max_retries: number;
   reasoning_effort: string;
+}
+
+interface ModelProviderFormState {
+  provider: string;
+  model: string;
+  base_url: string;
+  api_key: string;
+  clear_api_key: boolean;
+  temperature: number;
+  timeout_seconds: number;
+  max_retries: number;
+  enabled: boolean;
+  is_default: boolean;
 }
 
 type SettingsSection =
@@ -97,6 +113,22 @@ function toForm(settings: LLMSettings): LLMFormState {
   };
 }
 
+function toModelProviderForm(settings: LLMSettings | null, provider?: LLMProviderOption): ModelProviderFormState {
+  const selected = provider ?? settings?.providers?.[0];
+  return {
+    provider: selected?.name ?? settings?.provider ?? "siliconflow",
+    model: selected?.default_model ?? settings?.model_name ?? "",
+    base_url: selected?.default_base_url ?? settings?.base_url ?? "",
+    api_key: "",
+    clear_api_key: false,
+    temperature: settings?.temperature ?? 0,
+    timeout_seconds: settings?.timeout_seconds ?? 120,
+    max_retries: settings?.max_retries ?? 2,
+    enabled: true,
+    is_default: false,
+  };
+}
+
 function isSettingsSection(value: string | null): value is SettingsSection {
   return SETTINGS_SECTIONS.some((section) => section.id === value);
 }
@@ -121,6 +153,7 @@ export function Settings() {
   const [knowledgeDocuments, setKnowledgeDocuments] = useState<KnowledgeDocument[]>([]);
   const [principal, setPrincipal] = useState<CommercialPrincipal | null>(null);
   const [knowledgeBases, setKnowledgeBases] = useState<CommercialKnowledgeBase[]>([]);
+  const [commercialModelProviders, setCommercialModelProviders] = useState<CommercialModelProvider[]>([]);
   const [knowledgeBackendStatus, setKnowledgeBackendStatus] = useState<CommercialKnowledgeBackendStatus | null>(null);
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [commercialDocuments, setCommercialDocuments] = useState<CommercialKnowledgeDocument[]>([]);
@@ -129,6 +162,8 @@ export function Settings() {
   const [modelUsage, setModelUsage] = useState<ModelUsage[]>([]);
   const [channelStatus, setChannelStatus] = useState<ChannelRuntimeStatus | null>(null);
   const [form, setForm] = useState<LLMFormState | null>(null);
+  const [modelProviderForm, setModelProviderForm] = useState<ModelProviderFormState>(() => toModelProviderForm(null));
+  const [editingModelProviderId, setEditingModelProviderId] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [localApiKey, setLocalApiKeyState] = useState(() => getApiAuthKey());
   const [clearApiKey, setClearApiKey] = useState(false);
@@ -136,6 +171,8 @@ export function Settings() {
   const [clearTushareToken, setClearTushareToken] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [modelProviderSaving, setModelProviderSaving] = useState(false);
+  const [modelProviderTestingId, setModelProviderTestingId] = useState<string | null>(null);
   const [dataSaving, setDataSaving] = useState(false);
   const [knowledgeSaving, setKnowledgeSaving] = useState(false);
   const [knowledgeSearching, setKnowledgeSearching] = useState(false);
@@ -173,6 +210,10 @@ export function Settings() {
     }
   };
 
+  const loadCommercialModels = async () => {
+    setCommercialModelProviders(await api.listCommercialModelProviders());
+  };
+
   const loadAuditAndUsage = async () => {
     const [logs, usage] = await Promise.all([api.listAuditLogs(50), api.listModelUsage(100)]);
     setAuditLogs(logs);
@@ -196,6 +237,7 @@ export function Settings() {
         if (llmResult.status === "fulfilled") {
           setSettings(llmResult.value);
           setForm(toForm(llmResult.value));
+          setModelProviderForm(toModelProviderForm(llmResult.value));
         } else {
           const message = llmResult.reason instanceof Error ? llmResult.reason.message : t("settings.unknownError");
           nextErrors.models = message;
@@ -230,6 +272,7 @@ export function Settings() {
         if (principalResult.status === "fulfilled") {
           setPrincipal(principalResult.value);
           await Promise.allSettled([
+            loadCommercialModels(),
             loadCommercialKnowledge(),
             loadAuditAndUsage(),
           ]);
@@ -310,6 +353,37 @@ export function Settings() {
     setClearApiKey(false);
   };
 
+  const onCommercialProviderChange = (name: string) => {
+    const provider = providers.find((item) => item.name === name);
+    setModelProviderForm((current) => ({
+      ...current,
+      provider: provider?.name ?? name,
+      model: provider?.default_model ?? current.model,
+      base_url: provider?.default_base_url ?? current.base_url,
+    }));
+  };
+
+  const resetModelProviderForm = () => {
+    setEditingModelProviderId(null);
+    setModelProviderForm(toModelProviderForm(settings));
+  };
+
+  const editModelProvider = (provider: CommercialModelProvider) => {
+    setEditingModelProviderId(provider.id);
+    setModelProviderForm({
+      provider: provider.provider,
+      model: provider.model,
+      base_url: provider.base_url,
+      api_key: "",
+      clear_api_key: false,
+      temperature: provider.temperature,
+      timeout_seconds: provider.timeout_seconds,
+      max_retries: provider.max_retries,
+      enabled: Boolean(provider.enabled),
+      is_default: Boolean(provider.is_default),
+    });
+  };
+
   const submitLocalApiKey = (event: FormEvent) => {
     event.preventDefault();
     setApiAuthKey(localApiKey);
@@ -337,6 +411,88 @@ export function Settings() {
       toast.error(t("settings.saveLlmSettingsFailed", { message }));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const submitModelProvider = async (event: FormEvent) => {
+    event.preventDefault();
+    setModelProviderSaving(true);
+    const payload: CommercialModelProviderCreateRequest | CommercialModelProviderUpdateRequest = {
+      provider: modelProviderForm.provider,
+      model: modelProviderForm.model.trim(),
+      base_url: modelProviderForm.base_url.trim(),
+      api_key: modelProviderForm.api_key.trim() || undefined,
+      clear_api_key: modelProviderForm.clear_api_key,
+      temperature: modelProviderForm.temperature,
+      timeout_seconds: modelProviderForm.timeout_seconds,
+      max_retries: modelProviderForm.max_retries,
+      enabled: modelProviderForm.enabled,
+      is_default: modelProviderForm.is_default,
+    };
+    try {
+      if (editingModelProviderId) {
+        await api.updateCommercialModelProvider(editingModelProviderId, payload);
+        toast.success(t("settings.modelProviderActions.updated"));
+      } else {
+        await api.createCommercialModelProvider(payload as CommercialModelProviderCreateRequest);
+        toast.success(t("settings.modelProviderActions.created"));
+      }
+      resetModelProviderForm();
+      await loadCommercialModels();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.modelProviderActions.saveFailed", { message }));
+    } finally {
+      setModelProviderSaving(false);
+    }
+  };
+
+  const testModelProvider = async (id: string) => {
+    setModelProviderTestingId(id);
+    try {
+      const result = await api.testCommercialModelProvider(id);
+      if (result.reachable) {
+        toast.success(t("settings.modelProviderActions.testOk"));
+      } else {
+        toast.error(t("settings.modelProviderActions.testFailed"));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.modelProviderActions.testFailedWithMessage", { message }));
+    } finally {
+      setModelProviderTestingId(null);
+    }
+  };
+
+  const setDefaultModelProvider = async (id: string) => {
+    try {
+      await api.setDefaultCommercialModelProvider(id);
+      await loadCommercialModels();
+      toast.success(t("settings.modelProviderActions.defaultUpdated"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.modelProviderActions.defaultFailed", { message }));
+    }
+  };
+
+  const toggleModelProvider = async (provider: CommercialModelProvider) => {
+    try {
+      await api.updateCommercialModelProvider(provider.id, { enabled: !Boolean(provider.enabled) });
+      await loadCommercialModels();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.modelProviderActions.saveFailed", { message }));
+    }
+  };
+
+  const deleteModelProvider = async (provider: CommercialModelProvider) => {
+    try {
+      await api.deleteCommercialModelProvider(provider.id);
+      await loadCommercialModels();
+      toast.success(t("settings.modelProviderActions.deleted"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.modelProviderActions.deleteFailed", { message }));
     }
   };
 
@@ -511,6 +667,154 @@ export function Settings() {
 
   const renderModelSettings = () => {
     if (!form || !settings) return unavailable(loadErrors.models || t("settings.unavailable"));
+    if (principal) {
+      const selectedCommercialProvider = providers.find((item) => item.name === modelProviderForm.provider);
+      return (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.65fr)]">
+          <section className={sectionCardClass}>
+            <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Server className="h-4 w-4 text-primary" />
+                  <h2 className="text-base font-semibold">{t("settings.modelProviders.title")}</h2>
+                </div>
+                <p className="text-sm text-muted-foreground">{t("settings.modelProviders.description")}</p>
+              </div>
+              <button type="button" onClick={() => loadCommercialModels().catch((error) => toast.error(error instanceof Error ? error.message : t("settings.unknownError")))} className="inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground">
+                <RefreshCw className="h-4 w-4" />
+                {t("settings.refresh")}
+              </button>
+            </div>
+
+            {commercialModelProviders.length === 0 ? (
+              <div className="rounded-lg border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+                {t("settings.modelProviders.empty")}
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {commercialModelProviders.map((provider) => (
+                  <div key={provider.id} className="rounded-xl border bg-background p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="truncate text-sm font-semibold">{provider.model}</span>
+                          <StatusPill active={Boolean(provider.enabled)} on={t("settings.modelProviders.enabled")} off={t("settings.modelProviders.disabled")} />
+                          {Boolean(provider.is_default) ? (
+                            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                              {t("settings.modelProviders.default")}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          {provider.provider} · {provider.base_url}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {t("settings.modelProviders.params", {
+                            temperature: provider.temperature,
+                            timeout: provider.timeout_seconds,
+                            retries: provider.max_retries,
+                          })}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => editModelProvider(provider)} className="rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground">
+                          {t("settings.modelProviderActions.edit")}
+                        </button>
+                        <button type="button" onClick={() => testModelProvider(provider.id)} disabled={modelProviderTestingId === provider.id} className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50">
+                          {modelProviderTestingId === provider.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                          {t("settings.modelProviderActions.test")}
+                        </button>
+                        <button type="button" onClick={() => toggleModelProvider(provider)} disabled={Boolean(provider.is_default) && Boolean(provider.enabled)} className="rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50">
+                          {Boolean(provider.enabled) ? t("settings.modelProviderActions.disable") : t("settings.modelProviderActions.enable")}
+                        </button>
+                        <button type="button" onClick={() => setDefaultModelProvider(provider.id)} disabled={Boolean(provider.is_default) || !Boolean(provider.enabled)} className="rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50">
+                          {t("settings.modelProviderActions.setDefault")}
+                        </button>
+                        <button type="button" onClick={() => deleteModelProvider(provider)} disabled={Boolean(provider.is_default)} className="rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-destructive/40 hover:text-destructive disabled:opacity-50">
+                          {t("settings.modelProviderActions.delete")}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <form onSubmit={submitModelProvider} className={sectionCardClass}>
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <SlidersHorizontal className="h-4 w-4 text-primary" />
+                  <h2 className="text-base font-semibold">
+                    {editingModelProviderId ? t("settings.modelProviderForm.editTitle") : t("settings.modelProviderForm.createTitle")}
+                  </h2>
+                </div>
+                <p className="text-sm text-muted-foreground">{t("settings.modelProviderForm.description")}</p>
+              </div>
+              {editingModelProviderId ? (
+                <button type="button" onClick={resetModelProviderForm} className="rounded-md border px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground">
+                  {t("settings.modelProviderActions.cancelEdit")}
+                </button>
+              ) : null}
+            </div>
+
+            <div className="grid gap-4">
+              <label className="grid gap-2">
+                <span className={labelClass}>{t("settings.provider")}</span>
+                <select value={modelProviderForm.provider} onChange={(event) => onCommercialProviderChange(event.target.value)} className={fieldClass}>
+                  {providers.map((provider) => (
+                    <option key={provider.name} value={provider.name}>{provider.label}</option>
+                  ))}
+                </select>
+              </label>
+              <TextField label={t("settings.model")} value={modelProviderForm.model} onChange={(value) => setModelProviderForm({ ...modelProviderForm, model: value })} />
+              <label className="grid gap-2">
+                <span className={labelClass}>{t("settings.baseUrl")}</span>
+                <div className="flex gap-2">
+                  <input value={modelProviderForm.base_url} onChange={(event) => setModelProviderForm({ ...modelProviderForm, base_url: event.target.value })} className={fieldClass} placeholder={selectedCommercialProvider?.default_base_url} />
+                  <button
+                    type="button"
+                    onClick={() => setModelProviderForm({
+                      ...modelProviderForm,
+                      model: selectedCommercialProvider?.default_model ?? modelProviderForm.model,
+                      base_url: selectedCommercialProvider?.default_base_url ?? modelProviderForm.base_url,
+                    })}
+                    className="inline-flex shrink-0 items-center rounded-md border px-3 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    title={t("settings.useProviderDefaults")}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                  </button>
+                </div>
+              </label>
+              <TextField label="API key" value={modelProviderForm.api_key} onChange={(value) => setModelProviderForm({ ...modelProviderForm, api_key: value, clear_api_key: false })} type="password" placeholder={editingModelProviderId ? t("settings.modelProviderForm.keepExistingKey") : ""} />
+              {editingModelProviderId ? (
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <input type="checkbox" checked={modelProviderForm.clear_api_key} onChange={(event) => setModelProviderForm({ ...modelProviderForm, clear_api_key: event.target.checked, api_key: event.target.checked ? "" : modelProviderForm.api_key })} className="h-3.5 w-3.5 accent-primary" />
+                  {t("settings.clearApiKey")}
+                </label>
+              ) : null}
+              <div className="grid grid-cols-3 gap-3">
+                <NumberField label={t("settings.temperature")} value={modelProviderForm.temperature} min={0} max={2} step={0.1} onChange={(value) => setModelProviderForm({ ...modelProviderForm, temperature: value })} />
+                <NumberField label={t("settings.timeoutSeconds")} value={modelProviderForm.timeout_seconds} min={1} max={3600} step={1} onChange={(value) => setModelProviderForm({ ...modelProviderForm, timeout_seconds: value })} />
+                <NumberField label={t("settings.maxRetries")} value={modelProviderForm.max_retries} min={0} max={20} step={1} onChange={(value) => setModelProviderForm({ ...modelProviderForm, max_retries: value })} />
+              </div>
+              <div className="grid gap-2 rounded-md border bg-muted/20 p-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={modelProviderForm.enabled} onChange={(event) => setModelProviderForm({ ...modelProviderForm, enabled: event.target.checked })} className="h-4 w-4 accent-primary" />
+                  {t("settings.modelProviders.enabled")}
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={modelProviderForm.is_default} onChange={(event) => setModelProviderForm({ ...modelProviderForm, is_default: event.target.checked })} className="h-4 w-4 accent-primary" />
+                  {t("settings.modelProviderForm.makeDefault")}
+                </label>
+              </div>
+              <PrimaryButton type="submit" disabled={modelProviderSaving || !modelProviderForm.model.trim() || !modelProviderForm.base_url.trim()} loading={modelProviderSaving} label={editingModelProviderId ? t("settings.modelProviderActions.update") : t("settings.modelProviderActions.create")} />
+            </div>
+          </form>
+        </div>
+      );
+    }
     return (
       <form onSubmit={submit} className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.75fr)]">
         <section className={sectionCardClass}>

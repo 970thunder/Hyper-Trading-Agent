@@ -113,10 +113,11 @@
     "disconnected": "فُقد الاتصال"
   },
   "welcome": {
-    "title": "Vibe-Trading",
+    "title": "Hyper Trading Agent",
     "subtitle": "تداول بالذكاء مع فريقك من الوكلاء الماليين المحترفين",
     "describePrompt": "صف استراتيجية تداول لتبدأ.",
     "tryExample": "جرّب مثالًا:",
+    "tabHint": "Switch categories without leaving the composer",
     "categories": {
       "multiMarketBacktest": "اختبار عكسي لأسواق متعددة",
       "researchAnalysis": "البحث والتحليل",
@@ -315,6 +316,43 @@
     "unknownError": "Unknown error",
     "optional": "Optional",
     "modelProviderHint": "Choose the provider profile used by Agent runs. Organization-level provider management is planned for the commercial edition.",
+    "modelProviders": {
+      "title": "Organization model providers",
+      "description": "Manage multiple LLM providers for this organization. Agent chats can switch between enabled models per conversation.",
+      "empty": "No organization model provider yet. Add one on the right to enable model switching in Agent chat.",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "default": "Default",
+      "params": "temperature={{temperature}}, timeout={{timeout}}s, retries={{retries}}"
+    },
+    "modelProviderForm": {
+      "createTitle": "Add model provider",
+      "editTitle": "Edit model provider",
+      "description": "Keys are encrypted server-side and are never returned to the browser.",
+      "keepExistingKey": "Leave blank to keep existing key",
+      "makeDefault": "Use as organization default"
+    },
+    "modelProviderActions": {
+      "create": "Add provider",
+      "created": "Model provider added.",
+      "update": "Update provider",
+      "updated": "Model provider updated.",
+      "edit": "Edit",
+      "cancelEdit": "Cancel edit",
+      "test": "Test",
+      "testOk": "Model provider is reachable.",
+      "testFailed": "Model provider test failed.",
+      "testFailedWithMessage": "Model provider test failed: {{message}}",
+      "enable": "Enable",
+      "disable": "Disable",
+      "setDefault": "Set default",
+      "defaultUpdated": "Default model updated.",
+      "defaultFailed": "Failed to set default model: {{message}}",
+      "delete": "Delete",
+      "deleted": "Model provider deleted.",
+      "deleteFailed": "Failed to delete model provider: {{message}}",
+      "saveFailed": "Failed to save model provider: {{message}}"
+    },
     "nav": {
       "overview": "Overview",
       "models": "Model Configuration",
@@ -490,7 +528,16 @@
     "moreOptions": "خيارات إضافية",
     "uploadPdf": "رفع مستند PDF",
     "researchGoal": "هدف البحث",
-    "agentSwarm": "سرب الوكلاء"
+    "agentSwarm": "سرب الوكلاء",
+    "modelPicker": {
+      "label": "Model",
+      "title": "Switch model",
+      "description": "Choose an enabled organization model for the next Agent attempt.",
+      "default": "Default",
+      "localFallback": "Local settings",
+      "availableCount": "{{count}} models available",
+      "localOnly": "Using local model settings"
+    }
   },
   "runDetail": {
     "title": "تفاصيل التشغيل",

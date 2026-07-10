@@ -563,7 +563,18 @@ def provider_diagnostics() -> dict[str, Any]:
     }
 
 
-def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any:
+def build_llm(
+    *,
+    model_name: Optional[str] = None,
+    callbacks: Any = None,
+    provider: Optional[str] = None,
+    base_url: Optional[str] = None,
+    api_key: Optional[str] = None,
+    temperature: Optional[float] = None,
+    timeout_seconds: Optional[int] = None,
+    max_retries: Optional[int] = None,
+    reasoning_effort: Optional[str] = None,
+) -> Any:
     """Construct a ChatOpenAI instance.
 
     Args:
@@ -580,26 +591,26 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
     name = model_name or os.getenv("LANGCHAIN_MODEL_NAME", "").strip()
     if not name:
         raise RuntimeError("LANGCHAIN_MODEL_NAME is not set")
-    temperature = float(os.getenv("LANGCHAIN_TEMPERATURE", "0.0"))
-    provider = os.getenv("LANGCHAIN_PROVIDER", "openai").lower()
-    caps = get_provider_capabilities(provider, name)
-    if provider in {"openai-codex", "openai_codex"}:
+    effective_temperature = temperature if temperature is not None else float(os.getenv("LANGCHAIN_TEMPERATURE", "0.0"))
+    effective_provider = (provider or os.getenv("LANGCHAIN_PROVIDER", "openai")).lower()
+    caps = get_provider_capabilities(effective_provider, name)
+    if effective_provider in {"openai-codex", "openai_codex"}:
         from src.providers.openai_codex import OpenAICodexLLM
 
-        effort = os.getenv("LANGCHAIN_REASONING_EFFORT", "").strip().lower()
+        effort = (reasoning_effort if reasoning_effort is not None else os.getenv("LANGCHAIN_REASONING_EFFORT", "")).strip().lower()
         return OpenAICodexLLM(
             model=name,
-            temperature=temperature,
-            timeout=int(os.getenv("TIMEOUT_SECONDS", "120")),
+            temperature=effective_temperature,
+            timeout=timeout_seconds if timeout_seconds is not None else int(os.getenv("TIMEOUT_SECONDS", "120")),
             reasoning_effort=effort or None,
         )
 
-    if provider == "deepseek":
+    if effective_provider == "deepseek":
         adapter_mode = _deepseek_adapter_mode()
         if adapter_mode != "openai-compatible":
             native_llm = _build_native_deepseek(
                 model=name,
-                temperature=temperature,
+                temperature=effective_temperature,
                 callbacks=callbacks,
             )
             if native_llm is not None:
@@ -613,25 +624,29 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         raise RuntimeError("langchain-openai is not installed")
     # MiniMax requires temperature in (0.0, 1.0] — clamp to 0.01 when the
     # default 0.0 is used to avoid an API validation error.
-    if provider == "minimax" and temperature <= 0.0:
-        temperature = 0.01
+    if effective_provider == "minimax" and effective_temperature <= 0.0:
+        effective_temperature = 0.01
     # Moonshot kimi-k2.x reasoning models reject any temperature other than 1
     # ("invalid temperature: only 1 is allowed for this model").
-    if caps.name == "moonshot" and name.lower().startswith("kimi-k2") and temperature != 1.0:
+    if caps.name == "moonshot" and name.lower().startswith("kimi-k2") and effective_temperature != 1.0:
         logger.info("Forcing temperature=1.0 for %s (provider requirement)", name)
-        temperature = 1.0
+        effective_temperature = 1.0
     # Optional reasoning activation for relays requiring opt-in (e.g. OpenRouter).
     # Moonshot/DeepSeek official APIs emit reasoning by default and ignore this field.
-    effort = os.getenv("LANGCHAIN_REASONING_EFFORT", "").strip().lower()
+    effort = (reasoning_effort if reasoning_effort is not None else os.getenv("LANGCHAIN_REASONING_EFFORT", "")).strip().lower()
     kwargs: dict[str, Any] = {
         "model": name,
-        "temperature": temperature,
-        "timeout": int(os.getenv("TIMEOUT_SECONDS", "120")),
-        "max_retries": int(os.getenv("MAX_RETRIES", "2")),
+        "temperature": effective_temperature,
+        "timeout": timeout_seconds if timeout_seconds is not None else int(os.getenv("TIMEOUT_SECONDS", "120")),
+        "max_retries": max_retries if max_retries is not None else int(os.getenv("MAX_RETRIES", "2")),
         "callbacks": callbacks,
         "extra_body": {"reasoning": {"effort": effort}} if effort and caps.openrouter_reasoning_body else None,
-        "vibe_provider": provider,
+        "vibe_provider": effective_provider,
     }
+    if api_key is not None:
+        kwargs["api_key"] = api_key
+    if base_url:
+        kwargs["base_url"] = _normalize_ollama_base_url(base_url) if effective_provider == "ollama" else base_url
     if caps.default_headers:
         headers = dict(caps.default_headers)
         if caps.name == "moonshot":

@@ -103,10 +103,15 @@ export const api = {
   getRunCode: (id: string) => request<Record<string, string>>(`/runs/${id}/code`),
   getRunPine: (id: string) => request<PineScriptResult>(`/runs/${id}/pine`),
   listSessions: () => request<SessionItem[]>("/sessions"),
-  createSession: (title?: string) => request<SessionItem>("/sessions", { method: "POST", body: JSON.stringify({ title: title || "" }) }),
+  createSession: (title?: string, config?: Record<string, unknown>) =>
+    request<SessionItem>("/sessions", { method: "POST", body: JSON.stringify({ title: title || "", config }) }),
   deleteSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}`, { method: "DELETE" }),
   renameSession: (sid: string, title: string) => request<{ status: string }>(`/sessions/${sid}`, { method: "PATCH", body: JSON.stringify({ title }) }),
-  sendMessage: (sid: string, content: string) => request<{ message_id: string; attempt_id: string }>(`/sessions/${sid}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
+  sendMessage: (sid: string, content: string, options?: { model_provider_id?: string }) =>
+    request<{ message_id: string; attempt_id: string }>(`/sessions/${sid}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content, model_provider_id: options?.model_provider_id || undefined }),
+    }),
   cancelSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}/cancel`, { method: "POST" }),
   getSessionMessages: (sid: string) => request<MessageItem[]>(`/sessions/${sid}/messages`),
   createGoal: (sid: string, body: CreateGoalRequest) =>
@@ -192,6 +197,19 @@ export const api = {
     request<CommercialModelProvider>("/models/providers", {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+  updateCommercialModelProvider: (id: string, body: CommercialModelProviderUpdateRequest) =>
+    request<CommercialModelProvider>(`/models/providers/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  setDefaultCommercialModelProvider: (id: string) =>
+    request<CommercialModelProvider>(`/models/providers/${encodeURIComponent(id)}/default`, {
+      method: "POST",
+    }),
+  deleteCommercialModelProvider: (id: string) =>
+    request<{ status: string; provider_id: string }>(`/models/providers/${encodeURIComponent(id)}`, {
+      method: "DELETE",
     }),
   testCommercialModelProvider: (id: string) =>
     request<{ status: string; reachable: boolean; provider_id: string }>(`/models/providers/${encodeURIComponent(id)}/test`, {
@@ -464,6 +482,19 @@ export interface CommercialModelProviderCreateRequest {
   model: string;
   base_url: string;
   api_key?: string;
+  temperature?: number;
+  timeout_seconds?: number;
+  max_retries?: number;
+  enabled?: boolean;
+  is_default?: boolean;
+}
+
+export interface CommercialModelProviderUpdateRequest {
+  provider?: string;
+  model?: string;
+  base_url?: string;
+  api_key?: string;
+  clear_api_key?: boolean;
   temperature?: number;
   timeout_seconds?: number;
   max_retries?: number;

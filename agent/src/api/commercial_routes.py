@@ -51,6 +51,19 @@ class ModelProviderCreateRequest(BaseModel):
     is_default: bool = False
 
 
+class ModelProviderUpdateRequest(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+    base_url: str | None = None
+    api_key: str = ""
+    clear_api_key: bool = False
+    temperature: float | None = None
+    timeout_seconds: int | None = None
+    max_retries: int | None = None
+    enabled: bool | None = None
+    is_default: bool | None = None
+
+
 class KnowledgeBaseCreateRequest(BaseModel):
     name: str
     description: str = ""
@@ -191,6 +204,45 @@ def register_commercial_routes(app: FastAPI) -> None:
         principal: Principal = Depends(_require_role("owner", "admin")),
     ):
         return _store().create_model_provider(principal, payload.model_dump())
+
+    @app.patch("/models/providers/{provider_id}")
+    async def update_model_provider(
+        provider_id: str,
+        payload: ModelProviderUpdateRequest,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        try:
+            return _store().update_model_provider(
+                principal,
+                provider_id,
+                payload.model_dump(exclude_unset=True),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="model provider not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.post("/models/providers/{provider_id}/default")
+    async def set_default_model_provider(
+        provider_id: str,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        try:
+            return _store().set_default_model_provider(principal, provider_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="model provider not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.delete("/models/providers/{provider_id}")
+    async def delete_model_provider(provider_id: str, principal: Principal = Depends(_require_role("owner", "admin"))):
+        try:
+            _store().delete_model_provider(principal, provider_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="model provider not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return {"status": "deleted", "provider_id": provider_id}
 
     @app.post("/models/providers/{provider_id}/test")
     async def test_model_provider(provider_id: str, principal: Principal = Depends(_require_role("owner", "admin"))):

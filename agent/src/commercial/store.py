@@ -652,6 +652,7 @@ class CommercialStore:
         principal: Principal,
         summary: dict[str, Any],
         *,
+        provider_id: str = "",
         session_id: str = "",
         attempt_id: str = "",
         run_id: str = "",
@@ -669,6 +670,7 @@ class CommercialStore:
             prompt_tokens=int(totals.get("input_tokens") or 0),
             completion_tokens=int(totals.get("output_tokens") or 0),
             total_tokens=total_tokens,
+            provider_id=provider_id,
             session_id=session_id,
             attempt_id=attempt_id,
             run_id=run_id,
@@ -725,11 +727,91 @@ class CommercialStore:
         self.audit(principal, "model_provider.create", "model_provider", provider_id, {"provider": payload.get("provider"), "model": payload.get("model")})
         return self.get_model_provider(principal, provider_id)
 
+    def update_model_provider(self, principal: Principal, provider_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        current = self.get_model_provider(principal, provider_id)
+        updates: dict[str, Any] = {}
+        for key in ("provider", "model", "base_url"):
+            if key in payload and str(payload.get(key) or "").strip():
+                updates[key] = str(payload.get(key) or "").strip()
+        for key in ("temperature",):
+            if key in payload and payload.get(key) is not None:
+                updates[key] = float(payload[key])
+        for key in ("timeout_seconds", "max_retries"):
+            if key in payload and payload.get(key) is not None:
+                updates[key] = int(payload[key])
+        for key in ("enabled", "is_default"):
+            if key in payload and payload.get(key) is not None:
+                updates[key] = 1 if payload[key] else 0
+
+        api_key = str(payload.get("api_key") or "")
+        clear_api_key = bool(payload.get("clear_api_key"))
+        if api_key:
+            updates["api_key_ciphertext"] = encrypt_secret(api_key)
+            updates["api_key_fingerprint"] = _secret_fingerprint(api_key)
+        elif clear_api_key:
+            updates["api_key_ciphertext"] = ""
+            updates["api_key_fingerprint"] = ""
+
+        if not updates:
+            return current
+
+        updates["updated_at"] = utcnow()
+        with self._connect() as conn:
+            if updates.get("is_default") == 1:
+                conn.execute(
+                    "UPDATE model_providers SET is_default = 0 WHERE organization_id = ?",
+                    (principal.organization_id,),
+                )
+            assignments = ", ".join(f"{key} = ?" for key in updates)
+            conn.execute(
+                f"UPDATE model_providers SET {assignments} WHERE id = ? AND organization_id = ?",
+                (*updates.values(), provider_id, principal.organization_id),
+            )
+        self.audit(
+            principal,
+            "model_provider.update",
+            "model_provider",
+            provider_id,
+            {"provider": payload.get("provider") or current.get("provider"), "model": payload.get("model") or current.get("model")},
+        )
+        return self.get_model_provider(principal, provider_id)
+
+    def set_default_model_provider(self, principal: Principal, provider_id: str) -> dict[str, Any]:
+        provider = self.get_model_provider(principal, provider_id)
+        if not bool(provider.get("enabled")):
+            raise ValueError("disabled model provider cannot be default")
+        now = utcnow()
+        with self._connect() as conn:
+            conn.execute("UPDATE model_providers SET is_default = 0 WHERE organization_id = ?", (principal.organization_id,))
+            conn.execute(
+                "UPDATE model_providers SET is_default = 1, updated_at = ? WHERE id = ? AND organization_id = ?",
+                (now, provider_id, principal.organization_id),
+            )
+        self.audit(principal, "model_provider.default", "model_provider", provider_id, {"model": provider.get("model")})
+        return self.get_model_provider(principal, provider_id)
+
+    def delete_model_provider(self, principal: Principal, provider_id: str) -> None:
+        provider = self.get_model_provider(principal, provider_id)
+        if bool(provider.get("is_default")):
+            raise ValueError("default model provider cannot be deleted")
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM model_providers WHERE id = ? AND organization_id = ?",
+                (provider_id, principal.organization_id),
+            )
+        self.audit(principal, "model_provider.delete", "model_provider", provider_id, {"model": provider.get("model")})
+
     def get_model_provider(self, principal: Principal, provider_id: str) -> dict[str, Any]:
         providers = [p for p in self.list_model_providers(principal) if p["id"] == provider_id]
         if not providers:
             raise KeyError(provider_id)
         return providers[0]
+
+    def get_default_model_provider(self, principal: Principal) -> dict[str, Any] | None:
+        providers = [p for p in self.list_model_providers(principal) if bool(p.get("enabled"))]
+        if not providers:
+            return None
+        return next((p for p in providers if bool(p.get("is_default"))), providers[0])
 
     def get_model_provider_secret(self, principal: Principal, provider_id: str) -> str:
         with self._connect() as conn:
@@ -744,6 +826,29 @@ class CommercialStore:
         if row is None:
             raise KeyError(provider_id)
         return decrypt_secret(str(row["api_key_ciphertext"] or ""))
+
+    def resolve_model_provider_runtime(
+        self,
+        principal: Principal,
+        provider_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        provider = self.get_model_provider(principal, provider_id) if provider_id else self.get_default_model_provider(principal)
+        if provider is None:
+            return None
+        if not bool(provider.get("enabled")):
+            raise ValueError("model provider is disabled")
+        secret = self.get_model_provider_secret(principal, str(provider["id"]))
+        return {
+            "provider_id": provider["id"],
+            "provider": provider["provider"],
+            "model": provider["model"],
+            "base_url": provider["base_url"],
+            "api_key": secret,
+            "temperature": provider["temperature"],
+            "timeout_seconds": provider["timeout_seconds"],
+            "max_retries": provider["max_retries"],
+            "is_default": bool(provider.get("is_default")),
+        }
 
     # --- knowledge base ---
 

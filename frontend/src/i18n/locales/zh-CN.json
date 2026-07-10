@@ -113,10 +113,11 @@
     "disconnected": "连接已断开"
   },
   "welcome": {
-    "title": "Vibe-Trading",
-    "subtitle": "与你的专业金融智能体团队一起进行 vibe trading",
+    "title": "Hyper Trading Agent",
+    "subtitle": "面向专业投研与量化策略开发的金融智能体平台",
     "describePrompt": "描述一个交易策略即可开始。",
     "tryExample": "试试示例：",
+    "tabHint": "切换分类，无需滚动浏览全部示例",
     "categories": {
       "multiMarketBacktest": "多市场回测",
       "researchAnalysis": "研究与分析",
@@ -315,6 +316,43 @@
     "unknownError": "未知错误",
     "optional": "可选",
     "modelProviderHint": "选择 Agent 运行使用的模型提供商配置。商业版会进一步提供组织级模型管理。",
+    "modelProviders": {
+      "title": "组织模型提供商",
+      "description": "为当前组织管理多个 LLM 提供商。Agent 对话可以按会话切换已启用模型。",
+      "empty": "暂无组织模型提供商。请在右侧新增一个模型，以启用 Agent 对话中的模型切换。",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "default": "默认",
+      "params": "温度={{temperature}}，超时={{timeout}} 秒，重试={{retries}} 次"
+    },
+    "modelProviderForm": {
+      "createTitle": "新增模型提供商",
+      "editTitle": "编辑模型提供商",
+      "description": "密钥会在服务端加密保存，不会返回到浏览器。",
+      "keepExistingKey": "留空以保留现有密钥",
+      "makeDefault": "设为组织默认模型"
+    },
+    "modelProviderActions": {
+      "create": "新增提供商",
+      "created": "模型提供商已新增。",
+      "update": "更新提供商",
+      "updated": "模型提供商已更新。",
+      "edit": "编辑",
+      "cancelEdit": "取消编辑",
+      "test": "测试",
+      "testOk": "模型提供商可访问。",
+      "testFailed": "模型提供商测试失败。",
+      "testFailedWithMessage": "模型提供商测试失败：{{message}}",
+      "enable": "启用",
+      "disable": "禁用",
+      "setDefault": "设为默认",
+      "defaultUpdated": "默认模型已更新。",
+      "defaultFailed": "设置默认模型失败：{{message}}",
+      "delete": "删除",
+      "deleted": "模型提供商已删除。",
+      "deleteFailed": "删除模型提供商失败：{{message}}",
+      "saveFailed": "保存模型提供商失败：{{message}}"
+    },
     "nav": {
       "overview": "概览",
       "models": "模型配置",
@@ -490,7 +528,16 @@
     "moreOptions": "更多选项",
     "uploadPdf": "上传 PDF 文档",
     "researchGoal": "研究目标",
-    "agentSwarm": "智能体蜂群"
+    "agentSwarm": "智能体团队",
+    "modelPicker": {
+      "label": "模型",
+      "title": "切换模型",
+      "description": "选择一个已启用的组织模型，用于下一次 Agent 执行。",
+      "default": "默认",
+      "localFallback": "本地设置",
+      "availableCount": "{{count}} 个模型可用",
+      "localOnly": "使用本地模型设置"
+    }
   },
   "runDetail": {
     "title": "运行详情",

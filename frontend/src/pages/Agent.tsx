@@ -1,11 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState, useMemo, useCallback, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Send, Loader2, ArrowDown, Square, Download, Plus, Paperclip, X, Users, Target, ChevronDown, Pencil, Check, Play, OctagonX, Activity, Ban, CheckCircle2, Landmark } from "lucide-react";
+import { Send, Loader2, ArrowDown, Square, Download, Plus, Paperclip, X, Users, Target, ChevronDown, Pencil, Check, Play, OctagonX, Activity, Ban, CheckCircle2, Landmark, Cpu } from "lucide-react";
 import { toast } from "sonner";
 import { useAgentStore } from "@/stores/agent";
 import { useSSE } from "@/hooks/useSSE";
-import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted, type LiveStatus } from "@/lib/api";
+import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type CommercialModelProvider, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted, type LiveStatus } from "@/lib/api";
 import { isReportWorthyRun } from "@/lib/runReports";
 import type { AgentMessage, ToolCallEntry } from "@/types/agent";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
@@ -266,6 +266,10 @@ export function Agent() {
   const sessionId = useAgentStore(s => s.sessionId);
   const toolCalls = useAgentStore(s => s.toolCalls);
   const sessionLoading = useAgentStore(s => s.sessionLoading);
+  const selectedModelProviderId = useAgentStore(s => s.selectedModelProviderId);
+  const setSelectedModelProviderId = useAgentStore(s => s.setSelectedModelProviderId);
+  const [modelProviders, setModelProviders] = useState<CommercialModelProvider[]>([]);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
 
   const { connect, disconnect, onStatusChange } = useSSE();
 
@@ -836,6 +840,30 @@ export function Agent() {
     }).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    api.listCommercialModelProviders()
+      .then((providers) => {
+        if (!alive) return;
+        setModelProviders(providers);
+        const enabled = providers.filter((provider) => Boolean(provider.enabled));
+        const selectedStillValid = selectedModelProviderId
+          ? enabled.some((provider) => provider.id === selectedModelProviderId)
+          : false;
+        if (!selectedStillValid) {
+          const fallback = enabled.find((provider) => Boolean(provider.is_default)) ?? enabled[0];
+          setSelectedModelProviderId(fallback?.id ?? null);
+        }
+      })
+      .catch(() => {
+        if (!alive) return;
+        setModelProviders([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [selectedModelProviderId, setSelectedModelProviderId]);
+
   /* Safety timeout: if streaming but no SSE event for sseTimeoutMsRef.current ms, reset to idle */
   useEffect(() => {
     if (status !== "streaming") return;
@@ -856,6 +884,18 @@ export function Agent() {
     return () => clearInterval(timer);
   }, [status]);
 
+  const enabledModelProviders = useMemo(
+    () => modelProviders.filter((provider) => Boolean(provider.enabled)),
+    [modelProviders],
+  );
+  const selectedModelProvider = useMemo(
+    () => enabledModelProviders.find((provider) => provider.id === selectedModelProviderId)
+      ?? enabledModelProviders.find((provider) => Boolean(provider.is_default))
+      ?? enabledModelProviders[0],
+    [enabledModelProviders, selectedModelProviderId],
+  );
+  const selectedModelProviderIdForRequest = selectedModelProvider?.id;
+
   const runPrompt = async (prompt: string) => {
     if (!prompt.trim() || status === "streaming") return;
 
@@ -874,7 +914,7 @@ export function Agent() {
         act().setStatus("streaming");
         forceScrollToBottom();
         setupSSE(sid);
-        const sent = await api.sendMessage(sid, kickoff);
+        const sent = await api.sendMessage(sid, kickoff, { model_provider_id: selectedModelProviderIdForRequest });
         void syncCompletedAttempt(sid, sent.attempt_id);
       } catch (error) {
         act().setStatus("idle");
@@ -904,13 +944,16 @@ export function Agent() {
     try {
       let sid = act().sessionId;
       if (!sid) {
-        const session = await api.createSession(prompt.slice(0, 50));
+        const session = await api.createSession(
+          prompt.slice(0, 50),
+          selectedModelProviderIdForRequest ? { model_provider_id: selectedModelProviderIdForRequest } : undefined,
+        );
         sid = session.session_id;
         act().setSessionId(sid);
         setSearchParams({ session: sid }, { replace: true });
       }
       setupSSE(sid);
-      const sent = await api.sendMessage(sid, finalPrompt);
+      const sent = await api.sendMessage(sid, finalPrompt, { model_provider_id: selectedModelProviderIdForRequest });
       void syncCompletedAttempt(sid, sent.attempt_id);
     } catch (error) {
       act().setStatus("error");
@@ -923,14 +966,17 @@ export function Agent() {
   const ensureGoalSession = useCallback(async (title: string): Promise<string> => {
     let sid = act().sessionId;
     if (sid) return sid;
-    const session = await api.createSession(title.slice(0, 50));
+    const session = await api.createSession(
+      title.slice(0, 50),
+      selectedModelProviderIdForRequest ? { model_provider_id: selectedModelProviderIdForRequest } : undefined,
+    );
     sid = session.session_id;
     pendingGoalSessionRef.current = sid;
     act().setSessionId(sid);
     setSearchParams({ session: sid }, { replace: true });
     setupSSE(sid);
     return sid;
-  }, [setSearchParams, setupSSE]);
+  }, [selectedModelProviderIdForRequest, setSearchParams, setupSSE]);
 
   const handleSubmit = (e: FormEvent) => { e.preventDefault(); runPrompt(input.trim()); };
 
@@ -1022,7 +1068,7 @@ export function Agent() {
     inputRef.current?.focus();
     try {
       setupSSE(sessionId);
-      const sent = await api.sendMessage(sessionId, prompt);
+      const sent = await api.sendMessage(sessionId, prompt, { model_provider_id: selectedModelProviderIdForRequest });
       void syncCompletedAttempt(sessionId, sent.attempt_id);
     } catch (error) {
       act().setStatus("error");
@@ -1030,7 +1076,7 @@ export function Agent() {
       toast.error(message);
       act().addMessage({ id: "", type: "error", content: message, timestamp: Date.now() });
     }
-  }, [forceScrollToBottom, goalSnapshot, sessionId, setupSSE, status, syncCompletedAttempt]);
+  }, [forceScrollToBottom, goalSnapshot, selectedModelProviderIdForRequest, sessionId, setupSSE, status, syncCompletedAttempt]);
 
   const handleRetry = useCallback((errorMsg: AgentMessage) => {
     if (status === "streaming") return;
@@ -1279,6 +1325,68 @@ export function Agent() {
 
       <form onSubmit={handleSubmit} className="border-t p-4 bg-background/80 backdrop-blur-sm">
         <div className="max-w-3xl mx-auto space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setModelMenuOpen((open) => !open)}
+                disabled={status === "streaming" || enabledModelProviders.length === 0}
+                className="inline-flex max-w-full items-center gap-2 rounded-xl border bg-card/80 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:text-foreground hover:shadow-md disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+                title={t("agent.modelPicker.title")}
+              >
+                <Cpu className="h-3.5 w-3.5 text-primary" />
+                <span className="shrink-0">{t("agent.modelPicker.label")}</span>
+                <span className="max-w-[14rem] truncate text-foreground">
+                  {selectedModelProvider ? selectedModelProvider.model : t("agent.modelPicker.localFallback")}
+                </span>
+                <ChevronDown className={["h-3.5 w-3.5 transition-transform", modelMenuOpen ? "rotate-180" : ""].join(" ")} />
+              </button>
+              {modelMenuOpen && enabledModelProviders.length > 0 && (
+                <div className="absolute bottom-full left-0 z-50 mb-2 w-[22rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border bg-popover shadow-xl">
+                  <div className="border-b px-3 py-2">
+                    <div className="text-xs font-semibold text-foreground">{t("agent.modelPicker.title")}</div>
+                    <div className="text-[11px] text-muted-foreground">{t("agent.modelPicker.description")}</div>
+                  </div>
+                  <div className="max-h-64 overflow-auto p-1">
+                    {enabledModelProviders.map((provider) => {
+                      const active = provider.id === selectedModelProvider?.id;
+                      return (
+                        <button
+                          key={provider.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedModelProviderId(provider.id);
+                            setModelMenuOpen(false);
+                          }}
+                          className={[
+                            "group grid w-full gap-1 rounded-lg px-3 py-2 text-left transition-all duration-200",
+                            active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                          ].join(" ")}
+                        >
+                          <span className="flex items-center justify-between gap-3">
+                            <span className="truncate text-sm font-medium">{provider.model}</span>
+                            {Boolean(provider.is_default) && (
+                              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                                {t("agent.modelPicker.default")}
+                              </span>
+                            )}
+                          </span>
+                          <span className="truncate text-[11px] opacity-80">
+                            {provider.provider} · {provider.base_url}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              {enabledModelProviders.length > 0
+                ? t("agent.modelPicker.availableCount", { count: enabledModelProviders.length })
+                : t("agent.modelPicker.localOnly")}
+            </div>
+          </div>
           {/* Swarm preset badge */}
           {swarmPreset && (
             <div className="flex items-center gap-1">

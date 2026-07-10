@@ -90,6 +90,7 @@ class SessionService:
         *,
         include_shell_tools: bool = False,
         commercial_principal: Dict[str, Any] | None = None,
+        commercial_model_provider: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Send a message to a session and trigger execution.
 
@@ -119,12 +120,23 @@ class SessionService:
         session.config["include_shell_tools"] = include_shell_tools
         if commercial_principal:
             session.config["commercial_principal"] = commercial_principal
+        if commercial_model_provider:
+            session.config["commercial_model_provider"] = {
+                key: value for key, value in commercial_model_provider.items() if key != "api_key"
+            }
         session.last_attempt_id = attempt.attempt_id
         session.updated_at = datetime.now().isoformat()
         self.store.update_session(session)
         self.event_bus.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": content})
 
-        asyncio.create_task(self._run_attempt(session, attempt, include_shell_tools=include_shell_tools))
+        asyncio.create_task(
+            self._run_attempt(
+                session,
+                attempt,
+                include_shell_tools=include_shell_tools,
+                commercial_model_provider=commercial_model_provider,
+            )
+        )
         return {"message_id": message.message_id, "attempt_id": attempt.attempt_id}
 
     def get_messages(self, session_id: str, limit: int = 100) -> list[Message]:
@@ -146,7 +158,14 @@ class SessionService:
         loop.cancel()
         return True
 
-    async def _run_attempt(self, session: Session, attempt: Attempt, *, include_shell_tools: bool = False) -> None:
+    async def _run_attempt(
+        self,
+        session: Session,
+        attempt: Attempt,
+        *,
+        include_shell_tools: bool = False,
+        commercial_model_provider: Dict[str, Any] | None = None,
+    ) -> None:
         """Execute an Attempt in the background."""
         attempt.mark_running()
         self.store.update_attempt(attempt)
@@ -159,6 +178,7 @@ class SessionService:
                 messages=messages,
                 include_shell_tools=include_shell_tools,
                 session_config=dict(session.config),
+                commercial_model_provider=commercial_model_provider,
             )
             if result.get("status") == "success":
                 attempt.mark_completed(summary=result.get("content", ""))
@@ -201,6 +221,7 @@ class SessionService:
         *,
         include_shell_tools: bool = False,
         session_config: Optional[Dict[str, Any]] = None,
+        commercial_model_provider: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Execute an attempt with the V5 AgentLoop.
 
@@ -222,7 +243,16 @@ class SessionService:
         from src.memory.persistent import PersistentMemory
         from src.config.loader import load_runtime_agent_config, sanitize_session_overrides
 
-        llm = ChatLLM()
+        model_provider = commercial_model_provider or (session_config or {}).get("commercial_model_provider")
+        llm = ChatLLM(
+            model_name=str(model_provider.get("model")) if isinstance(model_provider, dict) else None,
+            provider=str(model_provider.get("provider")) if isinstance(model_provider, dict) else None,
+            base_url=str(model_provider.get("base_url")) if isinstance(model_provider, dict) else None,
+            api_key=(str(model_provider.get("api_key") or "") or None) if isinstance(model_provider, dict) else None,
+            temperature=float(model_provider.get("temperature")) if isinstance(model_provider, dict) else None,
+            timeout_seconds=int(model_provider.get("timeout_seconds")) if isinstance(model_provider, dict) else None,
+            max_retries=int(model_provider.get("max_retries")) if isinstance(model_provider, dict) else None,
+        )
         pm = PersistentMemory()
 
         session_id = attempt.session_id
@@ -321,6 +351,7 @@ class SessionService:
             CommercialStore().record_llm_usage_summary(
                 principal,
                 summary,
+                provider_id=str((session_config.get("commercial_model_provider") or {}).get("provider_id") or ""),
                 session_id=session_id,
                 attempt_id=attempt_id,
                 run_id=run_dir.name,

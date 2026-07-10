@@ -220,14 +220,35 @@ class ChatLLM:
         model_name: Model name.
     """
 
-    def __init__(self, model_name: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        model_name: Optional[str] = None,
+        *,
+        provider: Optional[str] = None,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        temperature: Optional[float] = None,
+        timeout_seconds: Optional[int] = None,
+        max_retries: Optional[int] = None,
+        reasoning_effort: Optional[str] = None,
+    ) -> None:
         """Initialize ChatLLM.
 
         Args:
             model_name: Model name; defaults to the environment variable value.
         """
         self.model_name = model_name
-        self._llm = build_llm(model_name=model_name)
+        self.provider = provider
+        self._llm = build_llm(
+            model_name=model_name,
+            provider=provider,
+            base_url=base_url,
+            api_key=api_key,
+            temperature=temperature,
+            timeout_seconds=timeout_seconds,
+            max_retries=max_retries,
+            reasoning_effort=reasoning_effort,
+        )
 
     def chat(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None, timeout: Optional[int] = None) -> LLMResponse:
         """Call the LLM synchronously.
@@ -304,7 +325,7 @@ class ChatLLM:
                 on_text_chunk(pending_text)
             return response
         except Exception as exc:
-            provider = os.getenv("LANGCHAIN_PROVIDER", "openai").strip().lower() or "openai"
+            provider = self.provider or os.getenv("LANGCHAIN_PROVIDER", "openai").strip().lower() or "openai"
             model = self.model_name or os.getenv("LANGCHAIN_MODEL_NAME", "").strip() or "(unset)"
             raise ProviderStreamError(provider=provider, model=model, original=exc) from exc
 

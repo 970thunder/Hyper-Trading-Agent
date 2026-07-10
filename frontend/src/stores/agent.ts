@@ -9,6 +9,7 @@ interface AgentState {
   sessionId: string | null;
   status: "idle" | "streaming" | "error";
   streamingText: string;
+  selectedModelProviderId: string | null;
 
   /** The session currently streaming on the backend. Survives switchSession
    *  so the sidebar spinner persists when the user navigates away. */
@@ -23,6 +24,7 @@ interface AgentState {
   appendDelta: (delta: string) => void;
   setStatus: (s: AgentState["status"]) => void;
   setSessionId: (id: string | null) => void;
+  setSelectedModelProviderId: (id: string | null) => void;
   loadHistory: (msgs: AgentMessage[]) => void;
 
   addToolCall: (entry: ToolCallEntry) => void;
@@ -52,6 +54,7 @@ export const useAgentStore = create<AgentState>((set) => ({
   sessionId: null,
   status: "idle",
   streamingText: "",
+  selectedModelProviderId: localStorage.getItem("hyper_trading_selected_model_provider") || null,
   streamingSessionId: null,
   toolCalls: [],
   sseStatus: "disconnected",
@@ -75,6 +78,14 @@ export const useAgentStore = create<AgentState>((set) => ({
       return patch;
     }),
   setSessionId: (sessionId) => set({ sessionId }),
+  setSelectedModelProviderId: (selectedModelProviderId) => {
+    if (selectedModelProviderId) {
+      localStorage.setItem("hyper_trading_selected_model_provider", selectedModelProviderId);
+    } else {
+      localStorage.removeItem("hyper_trading_selected_model_provider");
+    }
+    set({ selectedModelProviderId });
+  },
   loadHistory: (msgs) => set({ messages: msgs }),
 
   addToolCall: (entry) =>

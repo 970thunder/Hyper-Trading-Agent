@@ -64,6 +64,64 @@ def test_model_provider_hides_raw_key_and_audits(tmp_path):
     assert any(row["action"] == "model_provider.create" for row in logs)
 
 
+def test_model_provider_update_default_delete_and_runtime_resolution(tmp_path):
+    store = CommercialStore(tmp_path / "commercial.db")
+    principal, _ = store.register_owner(
+        email="owner@example.com",
+        password="password123",
+        organization_name="Acme Research",
+    )
+
+    first = store.create_model_provider(
+        principal,
+        {
+            "provider": "siliconflow",
+            "model": "deepseek-ai/DeepSeek-V4-Flash",
+            "base_url": "https://api.siliconflow.cn/v1",
+            "api_key": "sk-first-secret",
+            "is_default": True,
+        },
+    )
+    second = store.create_model_provider(
+        principal,
+        {
+            "provider": "openrouter",
+            "model": "deepseek/deepseek-chat",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key": "sk-second-secret",
+        },
+    )
+
+    updated = store.update_model_provider(
+        principal,
+        second["id"],
+        {"model": "deepseek/deepseek-r1", "api_key": "", "temperature": 0.2},
+    )
+
+    assert updated["model"] == "deepseek/deepseek-r1"
+    assert updated["temperature"] == 0.2
+    assert store.get_model_provider_secret(principal, second["id"]) == "sk-second-secret"
+    assert "sk-second-secret" not in str(updated)
+
+    defaulted = store.set_default_model_provider(principal, second["id"])
+    assert defaulted["is_default"] == 1
+    assert store.get_default_model_provider(principal)["id"] == second["id"]
+
+    with pytest.raises(ValueError, match="default"):
+        store.delete_model_provider(principal, second["id"])
+
+    store.delete_model_provider(principal, first["id"])
+    assert all(provider["id"] != first["id"] for provider in store.list_model_providers(principal))
+
+    runtime = store.resolve_model_provider_runtime(principal, second["id"])
+    assert runtime["provider_id"] == second["id"]
+    assert runtime["api_key"] == "sk-second-secret"
+
+    store.update_model_provider(principal, second["id"], {"enabled": False})
+    with pytest.raises(ValueError, match="disabled"):
+        store.resolve_model_provider_runtime(principal, second["id"])
+
+
 def test_commercial_knowledge_base_ingest_search_and_delete(tmp_path):
     store = CommercialStore(tmp_path / "commercial.db")
     principal, _ = store.register_owner(

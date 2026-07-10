@@ -16,7 +16,7 @@ describe("WelcomeScreen", () => {
     render(<WelcomeScreen onExample={onExample} />);
     expect(screen.getByText("Finance Skills Library")).toBeInTheDocument();
     expect(screen.getByText("Swarm Agent Teams")).toBeInTheDocument();
-    expect(screen.getByText("Shadow Account Backtest")).toBeInTheDocument();
+    expect(screen.getByText("Options & Derivatives")).toBeInTheDocument();
   });
 
   it("renders example categories", () => {
