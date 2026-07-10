@@ -4,9 +4,17 @@
     "label": "SiliconFlow",
     "api_key_env": "SILICONFLOW_API_KEY",
     "base_url_env": "SILICONFLOW_BASE_URL",
-    "default_model": "deepseek-ai/DeepSeek-V4-Flash",
+    "default_model": "deepseek-ai/DeepSeek-V3.2",
     "default_base_url": "https://api.siliconflow.cn/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "model_options": [
+      "deepseek-ai/DeepSeek-V3.2",
+      "deepseek-ai/DeepSeek-V3.1",
+      "deepseek-ai/DeepSeek-R1",
+      "Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+      "moonshotai/Kimi-K2-Instruct"
+    ]
   },
   {
     "name": "openrouter",
@@ -15,7 +23,15 @@
     "base_url_env": "OPENROUTER_BASE_URL",
     "default_model": "deepseek/deepseek-v4-pro",
     "default_base_url": "https://openrouter.ai/api/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "model_options": [
+      "deepseek/deepseek-v4-pro",
+      "deepseek/deepseek-chat-v3.1",
+      "deepseek/deepseek-r1",
+      "qwen/qwen3-coder",
+      "anthropic/claude-sonnet-4",
+      "openai/gpt-5.1"
+    ]
   },
   {
     "name": "openai",
@@ -24,7 +40,15 @@
     "base_url_env": "OPENAI_BASE_URL",
     "default_model": "gpt-5.5",
     "default_base_url": "https://api.openai.com/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "model_options": [
+      "gpt-5.5",
+      "gpt-5.1",
+      "gpt-5.1-mini",
+      "gpt-5.1-nano",
+      "gpt-4.1",
+      "gpt-4.1-mini"
+    ]
   },
   {
     "name": "openai-codex",
@@ -35,7 +59,11 @@
     "default_base_url": "https://chatgpt.com/backend-api/codex/responses",
     "api_key_required": false,
     "auth_type": "oauth",
-    "login_command": "vibe-trading provider login openai-codex"
+    "login_command": "vibe-trading provider login openai-codex",
+    "model_options": [
+      "openai-codex/gpt-5.3-codex",
+      "openai-codex/gpt-5.2-codex"
+    ]
   },
   {
     "name": "deepseek",
@@ -44,7 +72,13 @@
     "base_url_env": "DEEPSEEK_BASE_URL",
     "default_model": "deepseek-v4-pro",
     "default_base_url": "https://api.deepseek.com/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "model_options": [
+      "deepseek-v4-pro",
+      "deepseek-chat",
+      "deepseek-reasoner",
+      "deepseek-v3.2"
+    ]
   },
   {
     "name": "gemini",
@@ -53,7 +87,13 @@
     "base_url_env": "GEMINI_BASE_URL",
     "default_model": "gemini-3.5-flash",
     "default_base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-    "api_key_required": true
+    "api_key_required": true,
+    "model_options": [
+      "gemini-3.5-flash",
+      "gemini-3.5-pro",
+      "gemini-2.5-flash",
+      "gemini-2.5-pro"
+    ]
   },
   {
     "name": "groq",
@@ -62,7 +102,12 @@
     "base_url_env": "GROQ_BASE_URL",
     "default_model": "meta-llama/llama-4-maverick-17b-128e-instruct",
     "default_base_url": "https://api.groq.com/openai/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "model_options": [
+      "meta-llama/llama-4-maverick-17b-128e-instruct",
+      "llama-3.3-70b-versatile",
+      "openai/gpt-oss-120b"
+    ]
   },
   {
     "name": "dashscope",
@@ -71,7 +116,13 @@
     "base_url_env": "DASHSCOPE_BASE_URL",
     "default_model": "qwen-plus-latest",
     "default_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "model_options": [
+      "qwen-plus-latest",
+      "qwen-max-latest",
+      "qwen-turbo-latest",
+      "qwen3-coder-plus"
+    ]
   },
   {
     "name": "qwen",
@@ -80,7 +131,13 @@
     "base_url_env": "DASHSCOPE_BASE_URL",
     "default_model": "qwen-plus-latest",
     "default_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "model_options": [
+      "qwen-plus-latest",
+      "qwen-max-latest",
+      "qwen-turbo-latest",
+      "qwen3-coder-plus"
+    ]
   },
   {
     "name": "zhipu",
@@ -89,7 +146,13 @@
     "base_url_env": "ZHIPU_BASE_URL",
     "default_model": "glm-5.1",
     "default_base_url": "https://open.bigmodel.cn/api/paas/v4",
-    "api_key_required": true
+    "api_key_required": true,
+    "model_options": [
+      "glm-5.1",
+      "glm-4.6",
+      "glm-4.5",
+      "glm-z1-flash"
+    ]
   },
   {
     "name": "glm",
@@ -98,7 +161,13 @@
     "base_url_env": "ZHIPU_BASE_URL",
     "default_model": "glm-5.1",
     "default_base_url": "https://open.bigmodel.cn/api/paas/v4",
-    "api_key_required": true
+    "api_key_required": true,
+    "model_options": [
+      "glm-5.1",
+      "glm-4.6",
+      "glm-4.5",
+      "glm-z1-flash"
+    ]
   },
   {
     "name": "moonshot",
@@ -107,7 +176,13 @@
     "base_url_env": "MOONSHOT_BASE_URL",
     "default_model": "kimi-k2.6",
     "default_base_url": "https://api.moonshot.ai/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "model_options": [
+      "kimi-k2.6",
+      "kimi-k2-0905-preview",
+      "moonshot-v1-128k",
+      "moonshot-v1-32k"
+    ]
   },
   {
     "name": "minimax",
@@ -116,7 +191,11 @@
     "base_url_env": "MINIMAX_BASE_URL",
     "default_model": "MiniMax-M3",
     "default_base_url": "https://api.minimax.io/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "model_options": [
+      "MiniMax-M3",
+      "MiniMax-Text-01"
+    ]
   },
   {
     "name": "mimo",
@@ -125,7 +204,10 @@
     "base_url_env": "MIMO_BASE_URL",
     "default_model": "MiMo-72B-A27B",
     "default_base_url": "https://api.xiaomimimo.com/v1",
-    "api_key_required": true
+    "api_key_required": true,
+    "model_options": [
+      "MiMo-72B-A27B"
+    ]
   },
   {
     "name": "zai",
@@ -134,7 +216,12 @@
     "base_url_env": "ZAI_BASE_URL",
     "default_model": "glm-5.1",
     "default_base_url": "https://api.z.ai/api/coding/paas/v4",
-    "api_key_required": true
+    "api_key_required": true,
+    "model_options": [
+      "glm-5.1",
+      "glm-4.6",
+      "glm-4.5"
+    ]
   },
   {
     "name": "ollama",
@@ -143,6 +230,12 @@
     "base_url_env": "OLLAMA_BASE_URL",
     "default_model": "qwen2.5:32b",
     "default_base_url": "http://localhost:11434",
-    "api_key_required": false
+    "api_key_required": false,
+    "model_options": [
+      "qwen2.5:32b",
+      "qwen3:32b",
+      "deepseek-r1:32b",
+      "llama3.3:70b"
+    ]
   }
 ]

@@ -908,5 +908,28 @@
     "password": "密码",
     "submit": "登录",
     "failed": "登录失败"
+  },
+  "executionTrace": {
+    "title": "执行轨迹",
+    "reasoning": "推理分析",
+    "reasoningChars": "{{count}} 字符",
+    "running": "运行中",
+    "done": "完成",
+    "failed": "失败",
+    "runningSummary": "{{running}}/{{total}} 个步骤运行中",
+    "failedSummary": "{{failed}}/{{total}} 个步骤失败",
+    "doneSummary": "{{total}} 个步骤已完成",
+    "step": "步骤 {{index}}",
+    "args": "参数：",
+    "completedCount": "{{count}} 已完成",
+    "runningCount": "{{count}} 运行中",
+    "failedCount": "{{count}} 失败",
+    "kind": {
+      "rag": "RAG 检索",
+      "skill": "技能",
+      "document": "文档",
+      "search": "搜索",
+      "tool": "工具"
+    }
   }
 }

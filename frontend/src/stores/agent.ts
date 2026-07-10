@@ -54,7 +54,7 @@ export const useAgentStore = create<AgentState>((set) => ({
   sessionId: null,
   status: "idle",
   streamingText: "",
-  selectedModelProviderId: localStorage.getItem("hyper_trading_selected_model_provider") || null,
+  selectedModelProviderId: null,
   streamingSessionId: null,
   toolCalls: [],
   sseStatus: "disconnected",
@@ -78,14 +78,7 @@ export const useAgentStore = create<AgentState>((set) => ({
       return patch;
     }),
   setSessionId: (sessionId) => set({ sessionId }),
-  setSelectedModelProviderId: (selectedModelProviderId) => {
-    if (selectedModelProviderId) {
-      localStorage.setItem("hyper_trading_selected_model_provider", selectedModelProviderId);
-    } else {
-      localStorage.removeItem("hyper_trading_selected_model_provider");
-    }
-    set({ selectedModelProviderId });
-  },
+  setSelectedModelProviderId: (selectedModelProviderId) => set({ selectedModelProviderId }),
   loadHistory: (msgs) => set({ messages: msgs }),
 
   addToolCall: (entry) =>

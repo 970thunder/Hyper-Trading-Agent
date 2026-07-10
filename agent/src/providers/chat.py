@@ -95,6 +95,7 @@ class ProviderStreamError(RuntimeError):
         self.original = original
         self.status_code: Optional[int] = getattr(original, "status_code", None)
         safe_message = _redact_provider_error(str(original))
+        self.user_message = _classify_provider_error(provider, model, self.status_code, safe_message)
         super().__init__(
             f"provider_stream_error provider={provider} model={model}: "
             f"{type(original).__name__}: {safe_message}"
@@ -126,6 +127,25 @@ def _redact_provider_error(message: str) -> str:
         if any(marker in key.upper() for marker in sensitive_markers):
             redacted = redacted.replace(value, "[redacted]")
     return redacted
+
+
+def _classify_provider_error(provider: str, model: str, status_code: Optional[int], message: str) -> str:
+    """Return a user-facing provider failure reason without leaking secrets."""
+    normalized = message.lower()
+    prefix = f"Model provider failed: provider={provider} model={model}"
+    if "insufficient" in normalized and ("balance" in normalized or "quota" in normalized or "credit" in normalized):
+        return f"{prefix}. The provider account balance or quota is insufficient. Recharge the account or switch to another enabled model."
+    if "invalid api key" in normalized or "incorrect api key" in normalized or "unauthorized" in normalized:
+        return f"{prefix}. The API key is invalid or unauthorized. Update the key in Settings > Model Configuration."
+    if status_code == 401:
+        return f"{prefix}. Authentication failed. Check the provider API key."
+    if status_code == 403:
+        return f"{prefix}. The provider rejected the request. Check account permissions, balance, regional policy, or model access."
+    if status_code == 429 or "rate limit" in normalized:
+        return f"{prefix}. Rate limit reached. Wait, reduce concurrency, or switch to another model."
+    if status_code and status_code >= 500:
+        return f"{prefix}. The provider service is temporarily unavailable."
+    return f"{prefix}. {message}"
 
 
 _DSML_BAR = r"(?:\|\||｜｜)"

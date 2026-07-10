@@ -908,5 +908,28 @@
     "password": "Password",
     "submit": "Sign in",
     "failed": "Sign in failed"
+  },
+  "executionTrace": {
+    "title": "Execution trace",
+    "reasoning": "Reasoning",
+    "reasoningChars": "{{count}} chars",
+    "running": "Running",
+    "done": "Done",
+    "failed": "Failed",
+    "runningSummary": "{{running}}/{{total}} steps running",
+    "failedSummary": "{{failed}}/{{total}} steps failed",
+    "doneSummary": "{{total}} steps completed",
+    "step": "Step {{index}}",
+    "args": "Args:",
+    "completedCount": "{{count}} done",
+    "runningCount": "{{count}} running",
+    "failedCount": "{{count}} failed",
+    "kind": {
+      "rag": "RAG",
+      "skill": "Skill",
+      "document": "Document",
+      "search": "Search",
+      "tool": "Tool"
+    }
   }
 }

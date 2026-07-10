@@ -28,12 +28,19 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
     let latestTool = "";
     let latestThinking = "";
     // Merge tool_call + tool_result pairs into "steps"
-    const steps: Array<{ tool: string; label: string; status: "running" | "ok" | "error"; elapsed_ms?: number }> = [];
+    const steps: Array<{
+      tool: string;
+      label: string;
+      status: "running" | "ok" | "error";
+      elapsed_ms?: number;
+      args?: Record<string, string>;
+      preview?: string;
+    }> = [];
 
     for (const m of messages) {
       if (m.type === "thinking" && m.content) latestThinking = m.content;
       if (m.type === "tool_call") {
-        steps.push({ tool: m.tool || "", label: toolLabel(m.tool), status: m.status === "running" ? "running" : "ok", elapsed_ms: undefined });
+        steps.push({ tool: m.tool || "", label: toolLabel(m.tool), status: m.status === "running" ? "running" : "ok", elapsed_ms: undefined, args: m.args });
         if (m.status === "running") latestTool = m.tool || "";
       }
       if (m.type === "tool_result") {
@@ -41,6 +48,7 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
         if (existing) {
           existing.status = m.status === "ok" ? "ok" : "error";
           existing.elapsed_ms = m.elapsed_ms;
+          existing.preview = m.content;
         }
         if (m.elapsed_ms) totalMs += m.elapsed_ms;
       }

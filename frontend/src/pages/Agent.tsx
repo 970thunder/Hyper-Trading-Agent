@@ -13,7 +13,7 @@ import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { ThinkingTimeline } from "@/components/chat/ThinkingTimeline";
 import { ConversationTimeline } from "@/components/chat/ConversationTimeline";
-import { ToolProgressIndicator } from "@/components/chat/ToolProgressIndicator";
+import { AgentExecutionTrace } from "@/components/chat/AgentExecutionTrace";
 import { MandateProposalCard } from "@/components/chat/MandateProposalCard";
 import { RunnerStatus } from "@/components/chat/RunnerStatus";
 import { SwarmStatusCard } from "@/components/chat/SwarmStatusCard";
@@ -55,6 +55,11 @@ const CONNECTOR_CHECK_PROMPT =
   "List my trading connector profiles, show which one is selected, then check that selected connector. If it is not ready, tell me exactly what setup step is missing. Do not place or modify orders.";
 const CONNECTOR_PORTFOLIO_PROMPT =
   "Use the selected trading connector profile to summarize my account, positions, concentration, cash, and portfolio risk. Do not place or modify orders.";
+const MODEL_PROVIDER_STORAGE_PREFIX = "hyper_trading_selected_model_provider";
+
+function modelProviderStorageKey(organizationId: string): string {
+  return `${MODEL_PROVIDER_STORAGE_PREFIX}:${organizationId}`;
+}
 
 /* ---------- Connector runtime channel ----------
  * Mandate proposals and live-action chips render as standalone timeline items,
@@ -256,6 +261,8 @@ export function Agent() {
    * items (audit M2: always-available global halt — SPEC Consent §4). */
   const [liveStatus, setLiveStatus] = useState<LiveStatus | null>(null);
   const [reasoningActive, setReasoningActive] = useState(false);
+  const [reasoningChars, setReasoningChars] = useState(0);
+  const [attemptStartedAt, setAttemptStartedAt] = useState<number | null>(null);
   /* The status endpoint is not wired on every backend; a 404/501 hides the panel
    * and removes status from the kill-switch visibility condition. */
   const [liveStatusUnavailable, setLiveStatusUnavailable] = useState(false);
@@ -269,6 +276,7 @@ export function Agent() {
   const selectedModelProviderId = useAgentStore(s => s.selectedModelProviderId);
   const setSelectedModelProviderId = useAgentStore(s => s.setSelectedModelProviderId);
   const [modelProviders, setModelProviders] = useState<CommercialModelProvider[]>([]);
+  const [modelProviderOrgId, setModelProviderOrgId] = useState<string | null>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
 
   const { connect, disconnect, onStatusChange } = useSSE();
@@ -429,6 +437,7 @@ export function Agent() {
         if (completed) {
           if (act().sessionId !== sid) return true;
           setReasoningActive(false);
+          setAttemptStartedAt(null);
           act().clearStreaming();
           act().setStatus("idle");
           useAgentStore.setState({ toolCalls: [] });
@@ -449,6 +458,16 @@ export function Agent() {
     sseSessionRef.current = sid;
 
     const touch = () => { lastEventRef.current = Date.now(); };
+    const explicitToolEventId = (d: Record<string, unknown>) => {
+      const value = d.call_id || d.tool_call_id;
+      return typeof value === "string" && value ? value : "";
+    };
+    const resolveToolEventId = (d: Record<string, unknown>, toolName: string) => {
+      const explicit = explicitToolEventId(d);
+      if (explicit) return explicit;
+      const latest = [...act().toolCalls].reverse().find((tc) => tc.tool === toolName && tc.status === "running");
+      return latest?.id || toolName;
+    };
 
     connect(api.sseUrl(sid, { replay: "active" }), {
       text_delta: (d) => {
@@ -457,9 +476,10 @@ export function Agent() {
         act().appendDelta(String(d.delta || ""));
         scrollToBottom();
       },
-      reasoning_delta: () => {
+      reasoning_delta: (d) => {
         touch();
         setReasoningActive(true);
+        setReasoningChars((current) => Math.max(current, Number(d.chars || 0)));
         if (act().status !== "streaming") act().setStatus("streaming");
         scrollToBottom();
       },
@@ -476,11 +496,13 @@ export function Agent() {
         touch();
         setReasoningActive(false);
         const toolName = String(d.tool || "");
+        const toolId = explicitToolEventId(d) || `${toolName || "tool"}-${String(d.iter || "")}-${Date.now()}`;
         // Only update toolCalls tracker (no message creation during streaming)
         act().addToolCall({
-          id: toolName, tool: toolName,
+          id: toolId, tool: toolName,
           arguments: (d.arguments as Record<string, string>) ?? {},
           status: "running", timestamp: Date.now(),
+          iteration: typeof d.iter === "number" ? d.iter : undefined,
         });
         scrollToBottom();
       },
@@ -488,10 +510,11 @@ export function Agent() {
       tool_result: (d) => {
         touch();
         const toolName = String(d.tool || "");
+        const toolId = resolveToolEventId(d, toolName);
         // Drop any in-flight coalesced progress for this tool.
-        pendingProgressRef.current.delete(toolName);
+        pendingProgressRef.current.delete(toolId);
         // Only update tracker (no message creation during streaming)
-        act().updateToolCall(toolName, {
+        act().updateToolCall(toolId, {
           status: d.status === "ok" ? "ok" : "error",
           preview: String(d.preview || ""),
           elapsed_ms: Number(d.elapsed_ms || 0),
@@ -512,7 +535,8 @@ export function Agent() {
         if (act().status !== "streaming") act().setStatus("streaming");
         const toolName = String(d.tool || "");
         if (!toolName) return;
-        act().updateToolCall(toolName, {
+        const toolId = resolveToolEventId(d, toolName);
+        act().updateToolCall(toolId, {
           elapsed_s: Number(d.elapsed_s || 0),
         });
       },
@@ -521,21 +545,22 @@ export function Agent() {
         touch();
         const toolName = String(d.tool || "");
         if (!toolName) return;
+        const toolId = resolveToolEventId(d, toolName);
         const payload: NonNullable<ToolCallEntry["progress"]> = {};
         if (typeof d.stage === "string" && d.stage) payload.stage = d.stage;
         if (typeof d.message === "string" && d.message) payload.message = d.message;
         if (typeof d.current === "number") payload.current = d.current;
         if (typeof d.total === "number") payload.total = d.total;
         // Coalesce: keep latest payload per tool, flush once per animation frame.
-        pendingProgressRef.current.set(toolName, payload);
+        pendingProgressRef.current.set(toolId, payload);
         if (progressRafRef.current) return;
         progressRafRef.current = requestAnimationFrame(() => {
           progressRafRef.current = 0;
           const pending = pendingProgressRef.current;
           if (pending.size === 0) return;
           const store = act();
-          for (const [tool, progress] of pending) {
-            store.updateToolCall(tool, { progress });
+          for (const [toolId, progress] of pending) {
+            store.updateToolCall(toolId, { progress });
           }
           pending.clear();
         });
@@ -545,6 +570,9 @@ export function Agent() {
 
       "attempt.created": () => {
         touch();
+        setAttemptStartedAt(Date.now());
+        setReasoningChars(0);
+        useAgentStore.setState({ toolCalls: [] });
         // Backend has created a new attempt — ensure streaming state is active
         // even if we connected mid-stream (SSE replay / page reload).
         if (act().status !== "streaming") act().setStatus("streaming");
@@ -552,6 +580,7 @@ export function Agent() {
 
       "attempt.started": () => {
         touch();
+        setAttemptStartedAt((current) => current || Date.now());
         // Backend has begun executing the attempt. Re-affirm streaming state
         // so the UI shows a working indicator for reconnects and fresh loads.
         if (act().status !== "streaming") act().setStatus("streaming");
@@ -560,6 +589,7 @@ export function Agent() {
       "attempt.completed": async (d) => {
         touch();
         setReasoningActive(false);
+        setAttemptStartedAt(null);
         const s = act();
         // Build ThinkingTimeline summary from accumulated toolCalls
         const completedTools = s.toolCalls;
@@ -625,6 +655,7 @@ export function Agent() {
       "attempt.failed": (d) => {
         touch();
         setReasoningActive(false);
+        setAttemptStartedAt(null);
         act().clearStreaming();
         act().addMessage({ id: "", type: "error", content: String(d.error || "Execution failed"), timestamp: Date.now() });
         act().setStatus("idle");
@@ -842,27 +873,47 @@ export function Agent() {
 
   useEffect(() => {
     let alive = true;
-    api.listCommercialModelProviders()
-      .then((providers) => {
+    async function loadModelProviders() {
+      try {
+        const me = await api.getCommercialMe();
+        const providers = await api.listCommercialModelProviders();
         if (!alive) return;
-        setModelProviders(providers);
         const enabled = providers.filter((provider) => Boolean(provider.enabled));
-        const selectedStillValid = selectedModelProviderId
-          ? enabled.some((provider) => provider.id === selectedModelProviderId)
-          : false;
-        if (!selectedStillValid) {
-          const fallback = enabled.find((provider) => Boolean(provider.is_default)) ?? enabled[0];
-          setSelectedModelProviderId(fallback?.id ?? null);
+        const scopedKey = modelProviderStorageKey(me.organization_id);
+        const storedScoped = localStorage.getItem(scopedKey);
+        const storedLegacy = localStorage.getItem(MODEL_PROVIDER_STORAGE_PREFIX);
+        const preferredId = storedScoped || storedLegacy || selectedModelProviderId;
+        const preferred = preferredId ? enabled.find((provider) => provider.id === preferredId) : undefined;
+        const fallback = enabled.find((provider) => Boolean(provider.is_default)) ?? enabled[0];
+        const nextId = preferred?.id ?? fallback?.id ?? null;
+        setModelProviderOrgId(me.organization_id);
+        setModelProviders(providers);
+        setSelectedModelProviderId(nextId);
+        localStorage.removeItem(MODEL_PROVIDER_STORAGE_PREFIX);
+        if (nextId) {
+          localStorage.setItem(scopedKey, nextId);
+        } else {
+          localStorage.removeItem(scopedKey);
         }
-      })
-      .catch(() => {
+      } catch {
         if (!alive) return;
+        setModelProviderOrgId(null);
         setModelProviders([]);
-      });
+        setSelectedModelProviderId(null);
+      }
+    }
+    void loadModelProviders();
     return () => {
       alive = false;
     };
-  }, [selectedModelProviderId, setSelectedModelProviderId]);
+  }, [setSelectedModelProviderId]);
+
+  const selectModelProvider = useCallback((providerId: string) => {
+    setSelectedModelProviderId(providerId);
+    if (modelProviderOrgId) {
+      localStorage.setItem(modelProviderStorageKey(modelProviderOrgId), providerId);
+    }
+  }, [modelProviderOrgId, setSelectedModelProviderId]);
 
   /* Safety timeout: if streaming but no SSE event for sseTimeoutMsRef.current ms, reset to idle */
   useEffect(() => {
@@ -877,6 +928,7 @@ export function Agent() {
     const timer = setInterval(() => {
       if (lastEventRef.current && Date.now() - lastEventRef.current > sseTimeoutMsRef.current && act().status === "streaming") {
         setReasoningActive(false);
+        setAttemptStartedAt(null);
         act().setStatus("idle");
         toast.warning(t('agent.executionTimedOut'));
       }
@@ -911,6 +963,9 @@ export function Agent() {
         toast.success(t('agent.researchGoalAttached'));
         const kickoff = goalKickoffPrompt(prompt);
         act().addMessage({ id: "", type: "user", content: kickoff, timestamp: Date.now() });
+        setAttemptStartedAt(Date.now());
+        setReasoningChars(0);
+        useAgentStore.setState({ toolCalls: [] });
         act().setStatus("streaming");
         forceScrollToBottom();
         setupSSE(sid);
@@ -937,6 +992,9 @@ export function Agent() {
     }
     setInput("");
     act().addMessage({ id: "", type: "user", content: finalPrompt, timestamp: Date.now() });
+    setAttemptStartedAt(Date.now());
+    setReasoningChars(0);
+    useAgentStore.setState({ toolCalls: [] });
     act().setStatus("streaming");
     forceScrollToBottom();
     inputRef.current?.focus();
@@ -982,6 +1040,7 @@ export function Agent() {
 
   const handleCancel = async () => {
     setReasoningActive(false);
+    setAttemptStartedAt(null);
     if (!sessionId) {
       act().setStatus("idle");
       return;
@@ -1063,6 +1122,9 @@ export function Agent() {
     if (!sessionId || !goalSnapshot || status === "streaming") return;
     const prompt = goalContinuePrompt(goalSnapshot);
     act().addMessage({ id: "", type: "user", content: prompt, timestamp: Date.now() });
+    setAttemptStartedAt(Date.now());
+    setReasoningChars(0);
+    useAgentStore.setState({ toolCalls: [] });
     act().setStatus("streaming");
     forceScrollToBottom();
     inputRef.current?.focus();
@@ -1280,21 +1342,18 @@ export function Agent() {
             <div className="flex gap-3">
               <AgentAvatar />
               <div className="flex-1 min-w-0 space-y-1.5">
-                {reasoningActive && !streamingText && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
-                    <span>{t('agent.reasoning')}</span>
-                  </div>
-                )}
                 {streamingText && (
                   <div className="prose prose-sm dark:prose-invert max-w-none leading-relaxed">
                     {streamingText}
                     <span className="inline-block w-0.5 h-4 bg-primary ml-0.5 animate-pulse align-middle" />
                   </div>
                 )}
-                {status === "streaming" && toolCalls.length > 0 && (
-                  <ToolProgressIndicator toolCalls={toolCalls} />
-                )}
+                <AgentExecutionTrace
+                  toolCalls={toolCalls}
+                  reasoningActive={reasoningActive}
+                  reasoningChars={reasoningChars}
+                  startedAt={attemptStartedAt}
+                />
               </div>
             </div>
           )}
@@ -1355,7 +1414,7 @@ export function Agent() {
                           key={provider.id}
                           type="button"
                           onClick={() => {
-                            setSelectedModelProviderId(provider.id);
+                            selectModelProvider(provider.id);
                             setModelMenuOpen(false);
                           }}
                           className={[

@@ -65,6 +65,7 @@ export interface ToolCallEntry {
   status: "running" | "ok" | "error";
   preview?: string;
   elapsed_ms?: number;
+  iteration?: number;
   /** Live elapsed seconds while the tool is running (heartbeat). */
   elapsed_s?: number;
   /**

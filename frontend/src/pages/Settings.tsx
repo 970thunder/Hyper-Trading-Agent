@@ -330,6 +330,15 @@ export function Settings() {
     () => providers.find((provider) => provider.name === form?.provider),
     [form?.provider, providers],
   );
+  const modelOptionsFor = (provider?: LLMProviderOption, currentModel?: string) => {
+    const values = provider?.model_options?.length
+      ? provider.model_options
+      : provider?.default_model
+        ? [provider.default_model]
+        : [];
+    const merged = currentModel && !values.includes(currentModel) ? [currentModel, ...values] : values;
+    return Array.from(new Set(merged.filter(Boolean)));
+  };
 
   const applyProviderDefaults = (provider = selectedProvider) => {
     if (!provider || !form) return;
@@ -768,7 +777,20 @@ export function Settings() {
                   ))}
                 </select>
               </label>
-              <TextField label={t("settings.model")} value={modelProviderForm.model} onChange={(value) => setModelProviderForm({ ...modelProviderForm, model: value })} />
+              <label className="grid gap-2">
+                <span className={labelClass}>{t("settings.model")}</span>
+                <select
+                  value={modelProviderForm.model}
+                  onChange={(event) => setModelProviderForm({ ...modelProviderForm, model: event.target.value })}
+                  className={fieldClass}
+                  required
+                >
+                  {modelOptionsFor(selectedCommercialProvider, modelProviderForm.model).map((model) => (
+                    <option key={model} value={model}>{model}</option>
+                  ))}
+                </select>
+                <span className={hintClass}>{t("settings.modelIdHint")}</span>
+              </label>
               <label className="grid gap-2">
                 <span className={labelClass}>{t("settings.baseUrl")}</span>
                 <div className="flex gap-2">
@@ -837,7 +859,11 @@ export function Settings() {
             <label className="grid gap-2">
               <span className={labelClass}>{t("settings.model")}</span>
               <div className="flex gap-2">
-                <input value={form.model_name} onChange={(event) => setForm({ ...form, model_name: event.target.value })} className={fieldClass} required />
+                <select value={form.model_name} onChange={(event) => setForm({ ...form, model_name: event.target.value })} className={fieldClass} required>
+                  {modelOptionsFor(selectedProvider, form.model_name).map((model) => (
+                    <option key={model} value={model}>{model}</option>
+                  ))}
+                </select>
                 <button type="button" onClick={() => applyProviderDefaults()} className="inline-flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground" title={t("settings.useProviderDefaults")}>
                   <RotateCcw className="h-4 w-4" />
                   <span className="hidden sm:inline">{t("settings.useProviderDefaults")}</span>
