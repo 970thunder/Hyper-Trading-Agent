@@ -262,7 +262,37 @@ export const api = {
     }),
   getCommercialIngestionJob: (knowledgeBaseId: string, jobId: string) =>
     request<CommercialIngestionJob>(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/ingestion-jobs/${encodeURIComponent(jobId)}`),
-  listAuditLogs: (limit?: number) => request<AuditLog[]>(`/audit-logs${limit ? `?limit=${encodeURIComponent(String(limit))}` : ""}`),
+  listCommercialIngestionJobs: (knowledgeBaseId: string, limit?: number) =>
+    request<CommercialIngestionJob[]>(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/ingestion-jobs${limit ? `?limit=${encodeURIComponent(String(limit))}` : ""}`),
+  retryCommercialIngestionJob: (knowledgeBaseId: string, jobId: string) =>
+    request<CommercialKnowledgeDocument | CommercialIngestionJob>(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/ingestion-jobs/${encodeURIComponent(jobId)}/retry`, {
+      method: "POST",
+    }),
+  cancelCommercialIngestionJob: (knowledgeBaseId: string, jobId: string) =>
+    request<CommercialIngestionJob>(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/ingestion-jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: "POST",
+    }),
+  reindexCommercialKnowledgeDocument: (knowledgeBaseId: string, documentId: string) =>
+    request<CommercialKnowledgeDocument>(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(documentId)}/reindex`, {
+      method: "POST",
+    }),
+  listToolPolicies: () => request<ToolPolicy[]>("/tools/policies"),
+  updateToolPolicy: (toolName: string, body: ToolPolicyUpdateRequest) =>
+    request<ToolPolicy>(`/tools/policies/${encodeURIComponent(toolName)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  listAuditLogs: (limit?: number, filters?: AuditLogFilters) => {
+    const q = new URLSearchParams();
+    if (limit) q.set("limit", String(limit));
+    if (filters?.type) q.set("type", filters.type);
+    if (filters?.actor) q.set("actor", filters.actor);
+    if (filters?.resource) q.set("resource", filters.resource);
+    if (filters?.from) q.set("from", filters.from);
+    if (filters?.to) q.set("to", filters.to);
+    const qs = q.toString();
+    return request<AuditLog[]>(`/audit-logs${qs ? `?${qs}` : ""}`);
+  },
   listModelUsage: (limit?: number) => request<ModelUsage[]>(`/usage/model-calls${limit ? `?limit=${encodeURIComponent(String(limit))}` : ""}`),
   getChannelStatus: () => request<ChannelRuntimeStatus>("/channels/status"),
   startChannels: () => request<ChannelRuntimeActionResponse>("/channels/start", { method: "POST" }),
@@ -531,6 +561,12 @@ export interface CommercialKnowledgeBackendStatus {
   organization_id: string;
   storage: string;
   target_storage: string;
+  vector_storage?: {
+    active: string;
+    configured: string;
+    pgvector_configured: boolean;
+    pgvector_available: boolean;
+  };
   primary: {
     provider: string;
     model: string;
@@ -561,6 +597,11 @@ export interface CommercialKnowledgeDocument {
   created_at: string;
   updated_at: string;
   ingestion_job_id?: string;
+  ingestion_status?: string | null;
+  ingestion_progress?: number | null;
+  ingestion_error?: string | null;
+  ingestion_started_at?: string | null;
+  ingestion_completed_at?: string | null;
 }
 
 export interface CommercialKnowledgeDocumentCreateRequest {
@@ -600,9 +641,43 @@ export interface CommercialIngestionJob {
   knowledge_base_id: string;
   document_id?: string | null;
   status: string;
+  progress: number;
   error: string;
   created_at: string;
   updated_at: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+export type ToolRiskLevel = "low" | "medium" | "high" | "critical";
+
+export interface ToolPolicy {
+  organization_id?: string;
+  tool_name: string;
+  description: string;
+  is_readonly: boolean;
+  risk_level: ToolRiskLevel;
+  permission_scope: string;
+  requires_approval: boolean;
+  enabled: boolean;
+  enabled_by_default?: boolean;
+  source?: string;
+  updated_at?: string;
+}
+
+export interface ToolPolicyUpdateRequest {
+  risk_level?: ToolRiskLevel;
+  permission_scope?: string;
+  requires_approval?: boolean;
+  enabled?: boolean;
+}
+
+export interface AuditLogFilters {
+  type?: string;
+  actor?: string;
+  resource?: string;
+  from?: string;
+  to?: string;
 }
 
 export interface AuditLog {

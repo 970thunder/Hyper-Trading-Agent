@@ -530,6 +530,8 @@ class AgentLoop:
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
         max_iterations: int = 50,
         persistent_memory: Optional[Any] = None,
+        commercial_principal: Optional[Dict[str, Any]] = None,
+        commercial_attempt_id: str = "",
     ) -> None:
         """Initialize AgentLoop.
 
@@ -551,6 +553,8 @@ class AgentLoop:
         self._previous_summary: str = ""
         self._persistent_memory = persistent_memory
         self._run_iteration: int = 0
+        self._commercial_principal_payload = dict(commercial_principal or {})
+        self._commercial_attempt_id = commercial_attempt_id
 
     def cancel(self) -> None:
         """Cancel the current loop.
@@ -1278,6 +1282,33 @@ class AgentLoop:
             Tuple of (result_str, elapsed_ms).
         """
         readonly = self._is_tool_readonly(tool_name)
+        policy = self._effective_tool_policy(tool_name)
+        if policy and not bool(policy.get("enabled", True)):
+            result = json.dumps(
+                {
+                    "status": "error",
+                    "error_code": "tool_policy_disabled",
+                    "tool": tool_name,
+                    "risk_level": policy.get("risk_level", "unknown"),
+                    "message": "Tool is disabled by organization policy.",
+                },
+                ensure_ascii=False,
+            )
+            self._audit_tool_call(tool_name, args, result, 0, call_id=call_id, policy=policy)
+            return result, 0
+        if policy and bool(policy.get("requires_approval", False)):
+            result = json.dumps(
+                {
+                    "status": "error",
+                    "error_code": "tool_approval_required",
+                    "tool": tool_name,
+                    "risk_level": policy.get("risk_level", "unknown"),
+                    "message": "Tool requires human approval before execution.",
+                },
+                ensure_ascii=False,
+            )
+            self._audit_tool_call(tool_name, args, result, 0, call_id=call_id, policy=policy)
+            return result, 0
         timed_out = threading.Event()
 
         def _on_progress(event: ProgressEvent) -> None:
@@ -1374,7 +1405,9 @@ class AgentLoop:
             finally:
                 finished.set()
                 _set_emitter(None)
-            return result or "", _elapsed_ms()
+            elapsed = _elapsed_ms()
+            self._audit_tool_call(tool_name, args, result or "", elapsed, call_id=call_id, policy=policy)
+            return result or "", elapsed
 
         # Readonly tools run in a worker thread so a hung tool becomes a
         # bounded error: late results are discarded and the emitters are
@@ -1405,7 +1438,11 @@ class AgentLoop:
                     "timeout", f"Tool exceeded {timeout_label} timeout"
                 )
                 return (
-                    json.dumps(
+                    self._audit_and_return_tool_timeout(
+                        tool_name,
+                        args,
+                        call_id,
+                        policy,
                         {
                             "status": "error",
                             "error_code": "tool_timeout",
@@ -1413,13 +1450,103 @@ class AgentLoop:
                             "timeout_seconds": timeout,
                             "message": f"Tool exceeded {timeout_label} timeout",
                         },
-                        ensure_ascii=False,
+                        elapsed_ms,
                     ),
                     elapsed_ms,
                 )
         if exc is not None:
             raise exc
-        return result or "", _elapsed_ms()
+        elapsed = _elapsed_ms()
+        self._audit_tool_call(tool_name, args, result or "", elapsed, call_id=call_id, policy=policy)
+        return result or "", elapsed
+
+    def _audit_and_return_tool_timeout(
+        self,
+        tool_name: str,
+        args: Dict[str, Any],
+        call_id: str | None,
+        policy: dict[str, Any] | None,
+        payload: dict[str, Any],
+        elapsed_ms: int,
+    ) -> str:
+        result = json.dumps(payload, ensure_ascii=False)
+        self._audit_tool_call(tool_name, args, result, elapsed_ms, call_id=call_id, policy=policy)
+        return result
+
+    def _commercial_principal(self) -> Any | None:
+        payload = self._commercial_principal_payload
+        if not payload:
+            return None
+        try:
+            from src.commercial.store import Principal
+
+            return Principal(
+                user_id=str(payload["user_id"]),
+                organization_id=str(payload["organization_id"]),
+                email=str(payload.get("email") or ""),
+                role=str(payload.get("role") or "member"),
+            )
+        except Exception:
+            return None
+
+    def _tool_metadata(self, tool_name: str) -> dict[str, Any]:
+        get_tool = getattr(self.registry, "get", None)
+        if not callable(get_tool):
+            return {"tool_name": tool_name}
+        try:
+            tool_def = get_tool(tool_name)
+            if tool_def is not None:
+                return tool_def.governance_metadata()
+        except Exception:
+            return {"tool_name": tool_name}
+        return {"tool_name": tool_name}
+
+    def _effective_tool_policy(self, tool_name: str) -> dict[str, Any] | None:
+        principal = self._commercial_principal()
+        if principal is None:
+            return None
+        try:
+            from src.commercial.store import CommercialStore
+
+            return CommercialStore().get_effective_tool_policy(principal, tool_name, self._tool_metadata(tool_name))
+        except Exception:
+            logger.debug("tool policy lookup failed for %s", tool_name, exc_info=True)
+            return None
+
+    def _audit_tool_call(
+        self,
+        tool_name: str,
+        args: Dict[str, Any],
+        result: str,
+        elapsed_ms: int,
+        *,
+        call_id: str | None = None,
+        policy: dict[str, Any] | None = None,
+    ) -> None:
+        principal = self._commercial_principal()
+        if principal is None:
+            return
+        try:
+            from src.commercial.store import CommercialStore
+
+            status = "ok" if _is_tool_success(result) else "error"
+            run_id = Path(self.memory.run_dir).name if self.memory.run_dir else ""
+            CommercialStore().record_tool_audit(
+                principal,
+                tool_name=tool_name,
+                risk_level=str((policy or {}).get("risk_level") or self._tool_metadata(tool_name).get("risk_level") or "unknown"),
+                status=status,
+                elapsed_ms=elapsed_ms,
+                session_id=str(self._commercial_principal_payload.get("session_id") or ""),
+                attempt_id=self._commercial_attempt_id,
+                run_id=run_id,
+                call_id=call_id or "",
+                input_summary=redact_payload(args),
+                output_summary=result[:1000],
+                error="" if status == "ok" else result[:500],
+            )
+        except Exception:
+            logger.debug("tool audit write failed for %s", tool_name, exc_info=True)
 
     def _is_tool_readonly(self, tool_name: str) -> bool:
         """Return whether a tool is known to be side-effect free."""

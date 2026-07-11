@@ -43,15 +43,15 @@
 - [ ] Plan-Execute 执行模式
 - [ ] HITL 审批节点
 - [ ] 中断、恢复、取消
-- [ ] 工具权限与风险等级
-- [ ] 工具调用审计
-- [ ] 高风险交易能力默认关闭并要求确认
+- [x] 工具权限与风险等级
+- [x] 工具调用审计
+- [x] 高风险交易能力默认关闭并要求确认
 - [ ] Agent 工作区状态快照与恢复
 
 ## P2 RAG 与记忆
 - [ ] pgvector runtime adapter
 - [x] hybrid retrieval
-- [ ] ingestion job
+- [x] ingestion job
 - [x] citation UI
 - [ ] persistent memory 策略
 - [ ] 会话历史检索
@@ -61,7 +61,7 @@
 - [x] 本地 embedding fallback 向量化
 - [x] OpenAI-compatible embedding provider 优先向量化
 - [x] 知识库向量化状态与 fallback 原因可观测
-- [ ] 文档重建索引、失败重试、删除后清理 chunk
+- [x] 文档重建索引、失败重试、删除后清理 chunk
 - [ ] 知识库 ACL 与跨组织隔离测试
 
 ## P3 输出与展示
@@ -82,7 +82,7 @@
 - [x] Agent LLM 用量写入商业用量表
 - [x] 模型用量关联 session / attempt / run
 - [x] 模型用量关联组织模型 provider
-- [ ] Prometheus 指标
+- [x] Prometheus 指标
 - [ ] 管理后台
 - [ ] 交叉测试与评测集
 - [ ] API key 轮换与密钥加密迁移说明

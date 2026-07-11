@@ -26,6 +26,8 @@ from typing import Any
 DEFAULT_DB_PATH = Path.home() / ".vibe-trading" / "commercial" / "commercial.db"
 SESSION_TTL_DAYS = 14
 ROLES = {"owner", "admin", "member", "viewer"}
+JOB_STATUSES = {"pending", "running", "completed", "failed", "cancelled"}
+TOOL_RISK_LEVELS = {"low", "medium", "high", "critical"}
 EMBEDDING_DIMENSIONS = int(os.getenv("VIBE_TRADING_LOCAL_EMBEDDING_DIMENSIONS", "64"))
 _TOKEN_RE = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
 
@@ -49,6 +51,53 @@ def db_path() -> Path:
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:24]}"
+
+
+def _clamp_progress(value: int | float | None) -> int:
+    try:
+        return max(0, min(100, int(value or 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _summarize_value(value: Any, limit: int = 500) -> str:
+    try:
+        if isinstance(value, str):
+            text = value
+        else:
+            text = json.dumps(value, ensure_ascii=False, default=str)
+    except Exception:
+        text = str(value)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:limit]
+
+
+def default_tool_policy(tool_name: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return conservative default policy for a tool."""
+    meta = metadata or {}
+    name = tool_name.lower()
+    readonly = bool(meta.get("is_readonly", True))
+    risk = str(meta.get("risk_level") or "").lower()
+    if risk not in TOOL_RISK_LEVELS:
+        risk = "low" if readonly else "medium"
+    if any(part in name for part in ("bash", "shell", "write_file", "edit_file", "live", "order", "trade")):
+        risk = "high"
+    if any(part in name for part in ("halt", "mandate", "broker", "connector")) and not readonly:
+        risk = "high"
+    requires_approval = bool(meta.get("requires_approval", False)) or risk in {"high", "critical"}
+    enabled = bool(meta.get("enabled_by_default", True))
+    if risk in {"high", "critical"}:
+        enabled = False
+    scope = str(meta.get("permission_scope") or ("tool:read" if readonly else "tool:write"))
+    return {
+        "tool_name": tool_name,
+        "description": str(meta.get("description") or ""),
+        "is_readonly": readonly,
+        "risk_level": risk,
+        "permission_scope": scope,
+        "requires_approval": requires_approval,
+        "enabled": enabled,
+    }
 
 
 def _hash_password(password: str) -> str:
@@ -160,6 +209,8 @@ def _embedding_config() -> dict[str, Any]:
 
 def embedding_backend_status() -> dict[str, Any]:
     cfg = _embedding_config()
+    configured_storage = os.getenv("HYPER_TRADING_VECTOR_STORAGE", os.getenv("VIBE_TRADING_VECTOR_STORAGE", "sqlite-fts-local")).strip() or "sqlite-fts-local"
+    pgvector_dsn = os.getenv("HYPER_TRADING_PGVECTOR_DSN", os.getenv("DATABASE_URL", "")).strip()
     return {
         "primary": {
             "provider": cfg["provider"],
@@ -176,6 +227,12 @@ def embedding_backend_status() -> dict[str, Any]:
         },
         "storage": "sqlite-fts-local",
         "target_storage": "postgres-pgvector",
+        "vector_storage": {
+            "active": "sqlite-fts-local",
+            "configured": configured_storage,
+            "pgvector_configured": bool(pgvector_dsn),
+            "pgvector_available": configured_storage == "postgres-pgvector" and bool(pgvector_dsn),
+        },
     }
 
 
@@ -402,9 +459,12 @@ class CommercialStore:
                     knowledge_base_id TEXT NOT NULL,
                     document_id TEXT,
                     status TEXT NOT NULL,
+                    progress INTEGER NOT NULL DEFAULT 0,
                     error TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    started_at TEXT NOT NULL DEFAULT '',
+                    completed_at TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS knowledge_retrieval_logs (
                     id TEXT PRIMARY KEY,
@@ -414,6 +474,16 @@ class CommercialStore:
                     query TEXT NOT NULL,
                     result_count INTEGER NOT NULL,
                     created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS tool_policies (
+                    organization_id TEXT NOT NULL,
+                    tool_name TEXT NOT NULL,
+                    risk_level TEXT NOT NULL,
+                    permission_scope TEXT NOT NULL,
+                    requires_approval INTEGER NOT NULL DEFAULT 0,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (organization_id, tool_name)
                 );
                 """
             )
@@ -434,6 +504,16 @@ class CommercialStore:
                     conn.execute(f"ALTER TABLE model_call_usage ADD COLUMN {column_name} TEXT NOT NULL DEFAULT ''")
             if "metadata_json" not in existing_usage_columns:
                 conn.execute("ALTER TABLE model_call_usage ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'")
+            existing_job_columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(knowledge_ingestion_jobs)").fetchall()
+            }
+            if "progress" not in existing_job_columns:
+                conn.execute("ALTER TABLE knowledge_ingestion_jobs ADD COLUMN progress INTEGER NOT NULL DEFAULT 0")
+            if "started_at" not in existing_job_columns:
+                conn.execute("ALTER TABLE knowledge_ingestion_jobs ADD COLUMN started_at TEXT NOT NULL DEFAULT ''")
+            if "completed_at" not in existing_job_columns:
+                conn.execute("ALTER TABLE knowledge_ingestion_jobs ADD COLUMN completed_at TEXT NOT NULL DEFAULT ''")
 
     # --- auth / orgs ---
 
@@ -544,19 +624,174 @@ class CommercialStore:
                 (_new_id("aud"), organization_id, user_id, action, target_type, target_id, json.dumps(metadata or {}, ensure_ascii=False), utcnow()),
             )
 
-    def list_audit_logs(self, principal: Principal, limit: int = 100) -> list[dict[str, Any]]:
+    def list_audit_logs(
+        self,
+        principal: Principal,
+        limit: int = 100,
+        *,
+        action: str = "",
+        target_type: str = "",
+        user_id: str = "",
+        date_from: str = "",
+        date_to: str = "",
+    ) -> list[dict[str, Any]]:
+        where = ["organization_id = ?"]
+        params: list[Any] = [principal.organization_id]
+        if action:
+            where.append("action LIKE ?")
+            params.append(f"%{action}%")
+        if target_type:
+            where.append("target_type = ?")
+            params.append(target_type)
+        if user_id:
+            where.append("user_id = ?")
+            params.append(user_id)
+        if date_from:
+            where.append("created_at >= ?")
+            params.append(date_from)
+        if date_to:
+            where.append("created_at <= ?")
+            params.append(date_to)
+        params.append(max(1, min(limit, 500)))
         with self._connect() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT id, action, target_type, target_id, metadata_json, user_id, created_at
                 FROM audit_logs
-                WHERE organization_id = ?
+                WHERE {" AND ".join(where)}
                 ORDER BY created_at DESC
                 LIMIT ?
                 """,
-                (principal.organization_id, max(1, min(limit, 500))),
+                tuple(params),
             ).fetchall()
         return [dict(row) | {"metadata": json.loads(row["metadata_json"] or "{}")} for row in rows]
+
+    def record_tool_audit(
+        self,
+        principal: Principal,
+        *,
+        tool_name: str,
+        risk_level: str,
+        status: str,
+        elapsed_ms: int = 0,
+        session_id: str = "",
+        attempt_id: str = "",
+        run_id: str = "",
+        call_id: str = "",
+        input_summary: Any = "",
+        output_summary: Any = "",
+        error: str = "",
+    ) -> None:
+        self.audit(
+            principal,
+            "tool.call",
+            "tool",
+            tool_name,
+            {
+                "tool_name": tool_name,
+                "risk_level": risk_level,
+                "status": status,
+                "elapsed_ms": max(0, int(elapsed_ms or 0)),
+                "session_id": session_id,
+                "attempt_id": attempt_id,
+                "run_id": run_id,
+                "call_id": call_id,
+                "input_summary": _summarize_value(input_summary),
+                "output_summary": _summarize_value(output_summary),
+                "error": _summarize_value(error, 300),
+            },
+        )
+
+    def list_tool_policies(self, principal: Principal, tool_metadata: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        defaults = {str(item.get("tool_name") or ""): default_tool_policy(str(item.get("tool_name") or ""), item) for item in tool_metadata}
+        defaults = {name: policy for name, policy in defaults.items() if name}
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT tool_name, risk_level, permission_scope, requires_approval, enabled, updated_at
+                FROM tool_policies
+                WHERE organization_id = ?
+                """,
+                (principal.organization_id,),
+            ).fetchall()
+        overrides = {str(row["tool_name"]): dict(row) for row in rows}
+        merged: list[dict[str, Any]] = []
+        for name in sorted(defaults):
+            item = defaults[name] | {"organization_id": principal.organization_id, "source": "default", "updated_at": ""}
+            override = overrides.get(name)
+            if override:
+                item.update(
+                    {
+                        "risk_level": str(override["risk_level"]),
+                        "permission_scope": str(override["permission_scope"]),
+                        "requires_approval": bool(override["requires_approval"]),
+                        "enabled": bool(override["enabled"]),
+                        "updated_at": str(override["updated_at"]),
+                        "source": "organization",
+                    }
+                )
+            merged.append(item)
+        return merged
+
+    def update_tool_policy(self, principal: Principal, tool_name: str, payload: dict[str, Any], tool_metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+        tool_name = tool_name.strip()
+        if not tool_name:
+            raise ValueError("tool_name is required")
+        current = default_tool_policy(tool_name, tool_metadata or {})
+        risk_level = str(payload.get("risk_level", current["risk_level"]) or current["risk_level"]).lower()
+        if risk_level not in TOOL_RISK_LEVELS:
+            raise ValueError("invalid risk_level")
+        permission_scope = str(payload.get("permission_scope", current["permission_scope"]) or current["permission_scope"]).strip()
+        requires_approval = bool(payload.get("requires_approval", current["requires_approval"]))
+        enabled = bool(payload.get("enabled", current["enabled"]))
+        now = utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO tool_policies(organization_id, tool_name, risk_level, permission_scope, requires_approval, enabled, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(organization_id, tool_name) DO UPDATE SET
+                    risk_level = excluded.risk_level,
+                    permission_scope = excluded.permission_scope,
+                    requires_approval = excluded.requires_approval,
+                    enabled = excluded.enabled,
+                    updated_at = excluded.updated_at
+                """,
+                (principal.organization_id, tool_name, risk_level, permission_scope, int(requires_approval), int(enabled), now),
+            )
+        self.audit(principal, "tool_policy.update", "tool", tool_name, {"risk_level": risk_level, "enabled": enabled, "requires_approval": requires_approval})
+        return current | {
+            "organization_id": principal.organization_id,
+            "risk_level": risk_level,
+            "permission_scope": permission_scope,
+            "requires_approval": requires_approval,
+            "enabled": enabled,
+            "updated_at": now,
+            "source": "organization",
+        }
+
+    def get_effective_tool_policy(self, principal: Principal, tool_name: str, tool_metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+        default = default_tool_policy(tool_name, tool_metadata or {})
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT tool_name, risk_level, permission_scope, requires_approval, enabled, updated_at
+                FROM tool_policies
+                WHERE organization_id = ? AND tool_name = ?
+                """,
+                (principal.organization_id, tool_name),
+            ).fetchone()
+        if row is None:
+            return default | {"organization_id": principal.organization_id, "source": "default", "updated_at": ""}
+        return default | {
+            "organization_id": principal.organization_id,
+            "risk_level": str(row["risk_level"]),
+            "permission_scope": str(row["permission_scope"]),
+            "requires_approval": bool(row["requires_approval"]),
+            "enabled": bool(row["enabled"]),
+            "updated_at": str(row["updated_at"]),
+            "source": "organization",
+        }
 
     def list_usage(self, principal: Principal, limit: int = 100) -> list[dict[str, Any]]:
         with self._connect() as conn:
@@ -884,58 +1119,182 @@ class CommercialStore:
         from src.knowledge.store import _chunk_text, _normalize_text
 
         self._ensure_kb(principal, kb_id)
-        normalized = _normalize_text(text)
-        if not normalized:
-            raise ValueError("document text is empty")
-        chunks = _chunk_text(normalized)
-        source_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
         doc_id = _new_id("doc")
         job_id = _new_id("job")
         now = utcnow()
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO knowledge_ingestion_jobs(id, organization_id, knowledge_base_id, document_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'running', ?, ?)",
+                """
+                INSERT INTO knowledge_ingestion_jobs(
+                    id, organization_id, knowledge_base_id, document_id, status,
+                    progress, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, 'pending', 0, ?, ?)
+                """,
                 (job_id, principal.organization_id, kb_id, doc_id, now, now),
             )
-            conn.execute(
-                """
-                INSERT INTO knowledge_documents(id, organization_id, knowledge_base_id, title, source_uri, source_type, source_hash, status, chunk_count, metadata_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?)
-                """,
-                (doc_id, principal.organization_id, kb_id, title, source_uri, source_type, source_hash, len(chunks), json.dumps(metadata or {}, ensure_ascii=False), now, now),
-            )
-            for index, chunk in enumerate(chunks):
-                chunk_id = _new_id("chk")
-                embedding, embedding_metadata = _embedding_for_text(chunk)
-                chunk_metadata = {"source_type": source_type, **embedding_metadata}
-                embedding_json = json.dumps(embedding, separators=(",", ":"))
+        try:
+            normalized = _normalize_text(text)
+            if not normalized:
+                raise ValueError("document text is empty")
+            chunks = _chunk_text(normalized)
+            source_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+            with self._connect() as conn:
+                started_at = utcnow()
+                conn.execute(
+                    "UPDATE knowledge_ingestion_jobs SET status = 'running', progress = 5, started_at = ?, updated_at = ? WHERE id = ?",
+                    (started_at, started_at, job_id),
+                )
                 conn.execute(
                     """
-                    INSERT INTO knowledge_chunks(id, organization_id, knowledge_base_id, document_id, chunk_index, text, embedding_json, metadata_json, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO knowledge_documents(id, organization_id, knowledge_base_id, title, source_uri, source_type, source_hash, status, chunk_count, metadata_json, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'indexing', 0, ?, ?, ?)
                     """,
-                    (
-                        chunk_id,
-                        principal.organization_id,
-                        kb_id,
-                        doc_id,
-                        index,
-                        chunk,
-                        embedding_json,
-                        json.dumps(chunk_metadata, ensure_ascii=False),
-                        now,
-                    ),
+                    (doc_id, principal.organization_id, kb_id, title, source_uri, source_type, source_hash, json.dumps(metadata or {}, ensure_ascii=False), now, now),
+                )
+                self._replace_document_chunks(conn, principal, kb_id, doc_id, title, source_type, chunks, job_id=job_id)
+                completed_at = utcnow()
+                conn.execute(
+                    "UPDATE knowledge_documents SET status = 'ready', chunk_count = ?, updated_at = ? WHERE id = ?",
+                    (len(chunks), completed_at, doc_id),
                 )
                 conn.execute(
-                    "INSERT INTO knowledge_chunks_fts(chunk_id, organization_id, knowledge_base_id, document_id, title, text) VALUES (?, ?, ?, ?, ?, ?)",
-                    (chunk_id, principal.organization_id, kb_id, doc_id, title, chunk),
+                    "UPDATE knowledge_ingestion_jobs SET status = 'completed', progress = 100, error = '', completed_at = ?, updated_at = ? WHERE id = ?",
+                    (completed_at, completed_at, job_id),
                 )
+                conn.execute("UPDATE knowledge_bases SET updated_at = ? WHERE id = ?", (completed_at, kb_id))
+        except Exception as exc:
+            failed_at = utcnow()
+            with self._connect() as conn:
+                conn.execute(
+                    "UPDATE knowledge_ingestion_jobs SET status = 'failed', progress = 100, error = ?, completed_at = ?, updated_at = ? WHERE id = ?",
+                    (str(exc), failed_at, failed_at, job_id),
+                )
+                conn.execute(
+                    "UPDATE knowledge_documents SET status = 'failed', updated_at = ? WHERE id = ? AND organization_id = ?",
+                    (failed_at, doc_id, principal.organization_id),
+                )
+            raise
+        self.audit(principal, "knowledge_document.ingest", "knowledge_document", doc_id, {"knowledge_base_id": kb_id, "source_type": source_type, "job_id": job_id})
+        return self.get_knowledge_document(principal, kb_id, doc_id) | {"ingestion_job_id": job_id}
+
+    def _replace_document_chunks(
+        self,
+        conn: sqlite3.Connection,
+        principal: Principal,
+        kb_id: str,
+        doc_id: str,
+        title: str,
+        source_type: str,
+        chunks: list[str],
+        *,
+        job_id: str = "",
+    ) -> None:
+        conn.execute("DELETE FROM knowledge_chunks_fts WHERE document_id = ?", (doc_id,))
+        conn.execute("DELETE FROM knowledge_chunks WHERE document_id = ?", (doc_id,))
+        total = max(1, len(chunks))
+        for index, chunk in enumerate(chunks):
+            chunk_id = _new_id("chk")
+            embedding, embedding_metadata = _embedding_for_text(chunk)
+            chunk_metadata = {"source_type": source_type, **embedding_metadata}
+            embedding_json = json.dumps(embedding, separators=(",", ":"))
             conn.execute(
-                "UPDATE knowledge_ingestion_jobs SET status = 'completed', updated_at = ? WHERE id = ?",
-                (utcnow(), job_id),
+                """
+                INSERT INTO knowledge_chunks(id, organization_id, knowledge_base_id, document_id, chunk_index, text, embedding_json, metadata_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    chunk_id,
+                    principal.organization_id,
+                    kb_id,
+                    doc_id,
+                    index,
+                    chunk,
+                    embedding_json,
+                    json.dumps(chunk_metadata, ensure_ascii=False),
+                    utcnow(),
+                ),
             )
-            conn.execute("UPDATE knowledge_bases SET updated_at = ? WHERE id = ?", (utcnow(), kb_id))
-        self.audit(principal, "knowledge_document.ingest", "knowledge_document", doc_id, {"knowledge_base_id": kb_id, "source_type": source_type})
+            conn.execute(
+                "INSERT INTO knowledge_chunks_fts(chunk_id, organization_id, knowledge_base_id, document_id, title, text) VALUES (?, ?, ?, ?, ?, ?)",
+                (chunk_id, principal.organization_id, kb_id, doc_id, title, chunk),
+            )
+            if job_id and (index == len(chunks) - 1 or index % 4 == 0):
+                progress = 10 + int(((index + 1) / total) * 85)
+                conn.execute(
+                    "UPDATE knowledge_ingestion_jobs SET progress = ?, updated_at = ? WHERE id = ?",
+                    (_clamp_progress(progress), utcnow(), job_id),
+                )
+
+    def reindex_knowledge_document(self, principal: Principal, kb_id: str, doc_id: str) -> dict[str, Any]:
+        from src.knowledge.store import _chunk_text, _normalize_text
+
+        self._ensure_kb(principal, kb_id)
+        now = utcnow()
+        job_id = _new_id("job")
+        with self._connect() as conn:
+            doc = conn.execute(
+                """
+                SELECT id, title, source_type, metadata_json
+                FROM knowledge_documents
+                WHERE id = ? AND organization_id = ? AND knowledge_base_id = ?
+                """,
+                (doc_id, principal.organization_id, kb_id),
+            ).fetchone()
+            if doc is None:
+                raise KeyError(doc_id)
+            chunk_rows = conn.execute(
+                """
+                SELECT text FROM knowledge_chunks
+                WHERE document_id = ? AND organization_id = ? AND knowledge_base_id = ?
+                ORDER BY chunk_index
+                """,
+                (doc_id, principal.organization_id, kb_id),
+            ).fetchall()
+            original_text = "\n\n".join(str(row["text"]) for row in chunk_rows)
+            conn.execute(
+                """
+                INSERT INTO knowledge_ingestion_jobs(
+                    id, organization_id, knowledge_base_id, document_id, status,
+                    progress, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, 'pending', 0, ?, ?)
+                """,
+                (job_id, principal.organization_id, kb_id, doc_id, now, now),
+            )
+        try:
+            normalized = _normalize_text(original_text)
+            if not normalized:
+                raise ValueError("document text is empty")
+            chunks = _chunk_text(normalized)
+            started_at = utcnow()
+            with self._connect() as conn:
+                conn.execute(
+                    "UPDATE knowledge_ingestion_jobs SET status = 'running', progress = 5, started_at = ?, updated_at = ? WHERE id = ?",
+                    (started_at, started_at, job_id),
+                )
+                self._replace_document_chunks(conn, principal, kb_id, doc_id, str(doc["title"]), str(doc["source_type"]), chunks, job_id=job_id)
+                completed_at = utcnow()
+                conn.execute(
+                    "UPDATE knowledge_documents SET status = 'ready', chunk_count = ?, source_hash = ?, updated_at = ? WHERE id = ?",
+                    (len(chunks), hashlib.sha256(normalized.encode("utf-8")).hexdigest(), completed_at, doc_id),
+                )
+                conn.execute(
+                    "UPDATE knowledge_ingestion_jobs SET status = 'completed', progress = 100, error = '', completed_at = ?, updated_at = ? WHERE id = ?",
+                    (completed_at, completed_at, job_id),
+                )
+                conn.execute("UPDATE knowledge_bases SET updated_at = ? WHERE id = ?", (completed_at, kb_id))
+        except Exception as exc:
+            failed_at = utcnow()
+            with self._connect() as conn:
+                conn.execute(
+                    "UPDATE knowledge_documents SET status = 'failed', updated_at = ? WHERE id = ? AND organization_id = ?",
+                    (failed_at, doc_id, principal.organization_id),
+                )
+                conn.execute(
+                    "UPDATE knowledge_ingestion_jobs SET status = 'failed', progress = 100, error = ?, completed_at = ?, updated_at = ? WHERE id = ?",
+                    (str(exc), failed_at, failed_at, job_id),
+                )
+            raise
+        self.audit(principal, "knowledge_document.reindex", "knowledge_document", doc_id, {"knowledge_base_id": kb_id, "job_id": job_id})
         return self.get_knowledge_document(principal, kb_id, doc_id) | {"ingestion_job_id": job_id}
 
     def list_knowledge_documents(self, principal: Principal, kb_id: str) -> list[dict[str, Any]]:
@@ -943,10 +1302,24 @@ class CommercialStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, title, source_uri, source_type, status, chunk_count, created_at, updated_at
-                FROM knowledge_documents
-                WHERE organization_id = ? AND knowledge_base_id = ?
-                ORDER BY updated_at DESC
+                SELECT
+                    d.id, d.title, d.source_uri, d.source_type, d.status,
+                    d.chunk_count, d.created_at, d.updated_at,
+                    j.id AS ingestion_job_id,
+                    j.status AS ingestion_status,
+                    j.progress AS ingestion_progress,
+                    j.error AS ingestion_error,
+                    j.started_at AS ingestion_started_at,
+                    j.completed_at AS ingestion_completed_at
+                FROM knowledge_documents d
+                LEFT JOIN knowledge_ingestion_jobs j ON j.id = (
+                    SELECT id FROM knowledge_ingestion_jobs
+                    WHERE document_id = d.id AND organization_id = d.organization_id
+                    ORDER BY updated_at DESC
+                    LIMIT 1
+                )
+                WHERE d.organization_id = ? AND d.knowledge_base_id = ?
+                ORDER BY d.updated_at DESC
                 """,
                 (principal.organization_id, kb_id),
             ).fetchall()
@@ -968,6 +1341,8 @@ class CommercialStore:
             if row is None:
                 raise KeyError(doc_id)
             conn.execute("DELETE FROM knowledge_chunks_fts WHERE document_id = ?", (doc_id,))
+            conn.execute("DELETE FROM knowledge_chunks WHERE document_id = ?", (doc_id,))
+            conn.execute("DELETE FROM knowledge_ingestion_jobs WHERE document_id = ? AND organization_id = ?", (doc_id, principal.organization_id))
             conn.execute("DELETE FROM knowledge_documents WHERE id = ?", (doc_id,))
         self.audit(principal, "knowledge_document.delete", "knowledge_document", doc_id, {"knowledge_base_id": kb_id})
 
@@ -1100,7 +1475,7 @@ class CommercialStore:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT id, knowledge_base_id, document_id, status, error, created_at, updated_at
+                SELECT id, knowledge_base_id, document_id, status, progress, error, created_at, updated_at, started_at, completed_at
                 FROM knowledge_ingestion_jobs
                 WHERE id = ? AND organization_id = ? AND knowledge_base_id = ?
                 """,
@@ -1109,3 +1484,55 @@ class CommercialStore:
         if row is None:
             raise KeyError(job_id)
         return dict(row)
+
+    def list_ingestion_jobs(self, principal: Principal, kb_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        self._ensure_kb(principal, kb_id)
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, knowledge_base_id, document_id, status, progress, error, created_at, updated_at, started_at, completed_at
+                FROM knowledge_ingestion_jobs
+                WHERE organization_id = ? AND knowledge_base_id = ?
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (principal.organization_id, kb_id, max(1, min(limit, 200))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def retry_ingestion_job(self, principal: Principal, kb_id: str, job_id: str) -> dict[str, Any]:
+        job = self.get_ingestion_job(principal, kb_id, job_id)
+        doc_id = str(job.get("document_id") or "")
+        if not doc_id:
+            raise ValueError("job has no document to retry")
+        return self.reindex_knowledge_document(principal, kb_id, doc_id)
+
+    def cancel_ingestion_job(self, principal: Principal, kb_id: str, job_id: str) -> dict[str, Any]:
+        job = self.get_ingestion_job(principal, kb_id, job_id)
+        if str(job.get("status")) not in {"pending", "running"}:
+            raise ValueError("only pending or running jobs can be cancelled")
+        now = utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE knowledge_ingestion_jobs SET status = 'cancelled', progress = ?, completed_at = ?, updated_at = ? WHERE id = ? AND organization_id = ?",
+                (_clamp_progress(job.get("progress")), now, now, job_id, principal.organization_id),
+            )
+        self.audit(principal, "knowledge_ingestion.cancel", "knowledge_ingestion_job", job_id, {"knowledge_base_id": kb_id})
+        return self.get_ingestion_job(principal, kb_id, job_id)
+
+    def commercial_metrics(self) -> dict[str, int]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    (SELECT COUNT(*) FROM organizations) AS organizations,
+                    (SELECT COUNT(*) FROM knowledge_bases) AS knowledge_bases,
+                    (SELECT COUNT(*) FROM knowledge_ingestion_jobs) AS ingestion_jobs,
+                    (SELECT COUNT(*) FROM knowledge_ingestion_jobs WHERE status = 'failed') AS ingestion_jobs_failed,
+                    (SELECT COUNT(*) FROM model_call_usage) AS model_calls,
+                    (SELECT COUNT(*) FROM knowledge_retrieval_logs) AS retrievals,
+                    (SELECT COUNT(*) FROM audit_logs WHERE action = 'tool.call') AS tool_calls,
+                    (SELECT COUNT(*) FROM audit_logs WHERE action = 'tool.call' AND metadata_json LIKE '%\"status\": \"error\"%') AS tool_call_errors
+                """
+            ).fetchone()
+        return {str(key): int(row[key] or 0) for key in row.keys()}

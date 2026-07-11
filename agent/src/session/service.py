@@ -311,6 +311,11 @@ class SessionService:
             event_callback=event_callback,
             max_iterations=50,
             persistent_memory=pm,
+            commercial_principal={
+                **dict(session_config.get("commercial_principal") or {}),
+                "session_id": session_id,
+            } if isinstance(session_config.get("commercial_principal"), dict) else None,
+            commercial_attempt_id=attempt_id,
         )
         self._active_loops[session_id] = agent
 

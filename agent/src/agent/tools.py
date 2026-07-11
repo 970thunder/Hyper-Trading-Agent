@@ -25,6 +25,10 @@ class BaseTool(ABC):
     parameters: Dict[str, Any] = {}
     repeatable: bool = False
     is_readonly: bool = True
+    risk_level: str = "low"
+    permission_scope: str = "tool:read"
+    requires_approval: bool = False
+    enabled_by_default: bool = True
 
     @classmethod
     def check_available(cls) -> bool:
@@ -50,6 +54,24 @@ class BaseTool(ABC):
             },
         }
 
+    def governance_metadata(self) -> Dict[str, Any]:
+        """Return default governance metadata for commercial tool policy."""
+        risk_level = str(getattr(self, "risk_level", "") or "").strip().lower()
+        if risk_level not in {"low", "medium", "high", "critical"}:
+            risk_level = "low" if self.is_readonly else "medium"
+        permission_scope = str(getattr(self, "permission_scope", "") or "").strip()
+        if not permission_scope:
+            permission_scope = "tool:read" if self.is_readonly else "tool:write"
+        return {
+            "tool_name": self.name,
+            "description": self.description,
+            "is_readonly": bool(self.is_readonly),
+            "risk_level": risk_level,
+            "permission_scope": permission_scope,
+            "requires_approval": bool(getattr(self, "requires_approval", False)),
+            "enabled_by_default": bool(getattr(self, "enabled_by_default", True)),
+        }
+
 
 class ToolRegistry:
     """Tool registry."""
@@ -68,6 +90,10 @@ class ToolRegistry:
     def get_definitions(self) -> List[Dict[str, Any]]:
         """Return all tools in OpenAI function calling format."""
         return [t.to_openai_schema() for t in self._tools.values()]
+
+    def get_governance_metadata(self) -> List[Dict[str, Any]]:
+        """Return governance metadata for all registered tools."""
+        return [t.governance_metadata() for t in self._tools.values()]
 
     def execute(self, name: str, params: Dict[str, Any]) -> str:
         """Execute a tool and guarantee a valid JSON return value."""

@@ -33,6 +33,7 @@ import {
   type CommercialKnowledgeBackendStatus,
   type CommercialKnowledgeDocument,
   type CommercialKnowledgeSearchResult,
+  type CommercialIngestionJob,
   type CommercialModelProvider,
   type CommercialModelProviderCreateRequest,
   type CommercialModelProviderUpdateRequest,
@@ -48,6 +49,7 @@ import {
   type SwarmPresetAgent,
   type SwarmPresetAgentList,
   type SwarmPresetAgentRequest,
+  type ToolPolicy,
 } from "@/lib/api";
 import { getApiAuthKey, setApiAuthKey } from "@/lib/apiAuth";
 import { cn } from "@/lib/utils";
@@ -213,9 +215,11 @@ export function Settings() {
   const [knowledgeBackendStatus, setKnowledgeBackendStatus] = useState<CommercialKnowledgeBackendStatus | null>(null);
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [commercialDocuments, setCommercialDocuments] = useState<CommercialKnowledgeDocument[]>([]);
+  const [ingestionJobs, setIngestionJobs] = useState<CommercialIngestionJob[]>([]);
   const [knowledgeSearchResults, setKnowledgeSearchResults] = useState<Array<CommercialKnowledgeSearchResult | KnowledgeSearchResult>>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [modelUsage, setModelUsage] = useState<ModelUsage[]>([]);
+  const [toolPolicies, setToolPolicies] = useState<ToolPolicy[]>([]);
   const [channelStatus, setChannelStatus] = useState<ChannelRuntimeStatus | null>(null);
   const [swarmPresets, setSwarmPresets] = useState<SwarmPreset[]>([]);
   const [selectedSwarmPreset, setSelectedSwarmPreset] = useState("quant_strategy_desk");
@@ -238,6 +242,8 @@ export function Settings() {
   const [deletingSwarmAgentId, setDeletingSwarmAgentId] = useState<string | null>(null);
   const [dataSaving, setDataSaving] = useState(false);
   const [knowledgeSaving, setKnowledgeSaving] = useState(false);
+  const [knowledgeJobAction, setKnowledgeJobAction] = useState<string | null>(null);
+  const [toolPolicySaving, setToolPolicySaving] = useState<string | null>(null);
   const [knowledgeSearching, setKnowledgeSearching] = useState(false);
   const [knowledgePath, setKnowledgePath] = useState("");
   const [knowledgeTitle, setKnowledgeTitle] = useState("");
@@ -267,9 +273,15 @@ export function Settings() {
       : bases[0]?.id || "";
     setSelectedKnowledgeBaseId(nextId);
     if (nextId) {
-      setCommercialDocuments(await api.listCommercialKnowledgeDocuments(nextId));
+      const [docs, jobs] = await Promise.all([
+        api.listCommercialKnowledgeDocuments(nextId),
+        api.listCommercialIngestionJobs(nextId, 20).catch(() => []),
+      ]);
+      setCommercialDocuments(docs);
+      setIngestionJobs(jobs);
     } else {
       setCommercialDocuments([]);
+      setIngestionJobs([]);
     }
   };
 
@@ -302,6 +314,10 @@ export function Settings() {
     const [logs, usage] = await Promise.all([api.listAuditLogs(50), api.listModelUsage(100)]);
     setAuditLogs(logs);
     setModelUsage(usage);
+  };
+
+  const loadToolPolicies = async () => {
+    setToolPolicies(await api.listToolPolicies());
   };
 
   const modelOptions = useMemo(() => {
@@ -420,6 +436,7 @@ export function Settings() {
             loadCommercialKnowledge(),
             loadAuditAndUsage(),
             loadSwarmPresets(),
+            loadToolPolicies(),
           ]);
         } else {
           setPrincipal(null);
@@ -820,6 +837,70 @@ export function Settings() {
       toast.error(t("settings.knowledge.searchFailed", { message }));
     } finally {
       setKnowledgeSearching(false);
+    }
+  };
+
+  const reindexKnowledgeDocument = async (documentId: string) => {
+    if (!selectedKnowledgeBaseId) return;
+    setKnowledgeJobAction(`reindex:${documentId}`);
+    try {
+      await api.reindexCommercialKnowledgeDocument(selectedKnowledgeBaseId, documentId);
+      await refreshKnowledge();
+      toast.success(t("settings.knowledge.reindexStarted"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.knowledge.reindexFailed", { message }));
+    } finally {
+      setKnowledgeJobAction(null);
+    }
+  };
+
+  const retryIngestionJob = async (jobId: string) => {
+    if (!selectedKnowledgeBaseId) return;
+    setKnowledgeJobAction(`retry:${jobId}`);
+    try {
+      await api.retryCommercialIngestionJob(selectedKnowledgeBaseId, jobId);
+      await refreshKnowledge();
+      toast.success(t("settings.knowledge.retryStarted"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.knowledge.retryFailed", { message }));
+    } finally {
+      setKnowledgeJobAction(null);
+    }
+  };
+
+  const cancelIngestionJob = async (jobId: string) => {
+    if (!selectedKnowledgeBaseId) return;
+    setKnowledgeJobAction(`cancel:${jobId}`);
+    try {
+      await api.cancelCommercialIngestionJob(selectedKnowledgeBaseId, jobId);
+      await refreshKnowledge();
+      toast.success(t("settings.knowledge.cancelled"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.knowledge.cancelFailed", { message }));
+    } finally {
+      setKnowledgeJobAction(null);
+    }
+  };
+
+  const updateToolPolicy = async (policy: ToolPolicy, patch: Partial<ToolPolicy>) => {
+    setToolPolicySaving(policy.tool_name);
+    try {
+      const updated = await api.updateToolPolicy(policy.tool_name, {
+        risk_level: patch.risk_level,
+        permission_scope: patch.permission_scope,
+        requires_approval: patch.requires_approval,
+        enabled: patch.enabled,
+      });
+      setToolPolicies((prev) => prev.map((item) => item.tool_name === updated.tool_name ? updated : item));
+      toast.success(t("settings.agentPolicy.toolPolicySaved"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.agentPolicy.toolPolicySaveFailed", { message }));
+    } finally {
+      setToolPolicySaving(null);
     }
   };
 
@@ -1239,6 +1320,38 @@ export function Settings() {
             </div>
           </div>
 
+          {ingestionJobs.length ? (
+            <div className="mt-5 overflow-hidden rounded-md border">
+              <div className="border-b bg-muted/20 px-3 py-2 text-sm font-semibold">{t("settings.knowledge.ingestionJobs")}</div>
+              <div className="divide-y">
+                {ingestionJobs.slice(0, 6).map((job) => (
+                  <div key={job.id} className="grid gap-3 px-3 py-3 text-sm md:grid-cols-[minmax(0,1fr)_120px_100px_auto] md:items-center">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium" title={job.document_id || job.id}>{job.document_id || job.id}</div>
+                      <div className="mt-1 truncate text-xs text-muted-foreground" title={job.error || job.updated_at}>{job.error || job.updated_at}</div>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full bg-primary transition-all" style={{ width: `${Math.max(0, Math.min(100, Number(job.progress || 0)))}%` }} />
+                    </div>
+                    <div className="text-xs text-muted-foreground">{job.status} · {Number(job.progress || 0)}%</div>
+                    <div className="flex justify-end gap-2">
+                      {job.status === "failed" ? (
+                        <button type="button" onClick={() => retryIngestionJob(job.id)} disabled={knowledgeJobAction === `retry:${job.id}`} className="rounded-md border px-2 py-1 text-xs transition hover:bg-muted disabled:opacity-60">
+                          {knowledgeJobAction === `retry:${job.id}` ? t("settings.loading") : t("settings.knowledge.retry")}
+                        </button>
+                      ) : null}
+                      {job.status === "pending" || job.status === "running" ? (
+                        <button type="button" onClick={() => cancelIngestionJob(job.id)} disabled={knowledgeJobAction === `cancel:${job.id}`} className="rounded-md border px-2 py-1 text-xs text-muted-foreground transition hover:bg-muted disabled:opacity-60">
+                          {t("settings.knowledge.cancel")}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           {commercialDocuments.length ? (
             <KnowledgeDocumentTable
               rows={commercialDocuments.map((doc) => ({
@@ -1247,11 +1360,19 @@ export function Settings() {
                 chunkCount: doc.chunk_count,
                 source: doc.source_uri,
                 status: doc.status,
+                ingestionStatus: doc.ingestion_status || "",
+                ingestionProgress: Number(doc.ingestion_progress || 0),
+                ingestionError: doc.ingestion_error || "",
               }))}
               titleLabel={t("settings.knowledge.documentTitle")}
               chunksLabel={t("settings.knowledge.chunks")}
               sourceLabel={t("settings.knowledge.source")}
               statusLabel={t("settings.status")}
+              actionsLabel={t("settings.swarmAgents.actions")}
+              reindexLabel={t("settings.knowledge.reindex")}
+              loadingLabel={t("settings.loading")}
+              actionBusyId={knowledgeJobAction}
+              onReindex={reindexKnowledgeDocument}
             />
           ) : (
             <div className="mt-5 rounded-md border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
@@ -1364,6 +1485,68 @@ export function Settings() {
           <MetricCard label={t("settings.agentPolicy.outputLanguage")} value={t("settings.agentPolicy.matchUser")} />
         </div>
         <p className="mt-4 text-sm text-muted-foreground">{t("settings.agentPolicy.description")}</p>
+      </section>
+
+      <section className={sectionCardClass}>
+        <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-primary" />
+              <h2 className="text-base font-semibold">{t("settings.agentPolicy.toolGovernance")}</h2>
+            </div>
+            <p className="max-w-3xl text-sm text-muted-foreground">{t("settings.agentPolicy.toolGovernanceDesc")}</p>
+          </div>
+          <button type="button" onClick={() => loadToolPolicies().catch((error) => toast.error(t("settings.agentPolicy.toolPolicyLoadFailed", { message: error instanceof Error ? error.message : t("settings.unknownError") })))} className="inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground">
+            <RefreshCw className="h-4 w-4" />
+            {t("settings.refresh")}
+          </button>
+        </div>
+        {toolPolicies.length ? (
+          <div className="overflow-hidden rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">{t("settings.agentPolicy.tool")}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t("settings.agentPolicy.riskLevel")}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t("settings.agentPolicy.permissionScope")}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t("settings.agentPolicy.requiresApproval")}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t("settings.swarmAgents.actions")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {toolPolicies.slice(0, 24).map((policy) => (
+                  <tr key={policy.tool_name} className="border-t">
+                    <td className="max-w-xs px-3 py-2 align-top">
+                      <div className="font-medium">{policy.tool_name}</div>
+                      <div className="line-clamp-2 text-xs text-muted-foreground">{policy.description}</div>
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <span className={cn("rounded-md border px-2 py-1 text-xs", policy.risk_level === "high" || policy.risk_level === "critical" ? "border-destructive/30 text-destructive" : "border-border text-muted-foreground")}>
+                        {t(`settings.agentPolicy.risk.${policy.risk_level}`)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 align-top font-mono text-xs text-muted-foreground">{policy.permission_scope}</td>
+                    <td className="px-3 py-2 align-top text-muted-foreground">{policy.requires_approval ? t("settings.yes") : t("settings.no")}</td>
+                    <td className="px-3 py-2 text-right align-top">
+                      <div className="flex justify-end gap-2">
+                        <button type="button" disabled={toolPolicySaving === policy.tool_name} onClick={() => updateToolPolicy(policy, { enabled: !policy.enabled })} className="rounded-md border px-2 py-1 text-xs transition hover:bg-muted disabled:opacity-60">
+                          {policy.enabled ? t("settings.agentPolicy.disable") : t("settings.agentPolicy.enable")}
+                        </button>
+                        <button type="button" disabled={toolPolicySaving === policy.tool_name} onClick={() => updateToolPolicy(policy, { requires_approval: !policy.requires_approval })} className="rounded-md border px-2 py-1 text-xs text-muted-foreground transition hover:bg-muted disabled:opacity-60">
+                          {policy.requires_approval ? t("settings.agentPolicy.removeApproval") : t("settings.agentPolicy.requireApproval")}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="rounded-md border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
+            {principal ? t("settings.agentPolicy.noToolPolicies") : t("settings.agentPolicy.signInForToolPolicies")}
+          </div>
+        )}
       </section>
 
       <section className={sectionCardClass}>
@@ -1807,12 +1990,22 @@ function KnowledgeDocumentTable({
   chunksLabel,
   sourceLabel,
   statusLabel,
+  actionsLabel,
+  reindexLabel,
+  loadingLabel,
+  actionBusyId,
+  onReindex,
 }: {
-  rows: Array<{ id: string; title: string; chunkCount: number; source: string; status: string }>;
+  rows: Array<{ id: string; title: string; chunkCount: number; source: string; status: string; ingestionStatus?: string; ingestionProgress?: number; ingestionError?: string }>;
   titleLabel: string;
   chunksLabel: string;
   sourceLabel: string;
   statusLabel: string;
+  actionsLabel?: string;
+  reindexLabel?: string;
+  loadingLabel?: string;
+  actionBusyId?: string | null;
+  onReindex?: (documentId: string) => void;
 }) {
   return (
     <div className="mt-5 overflow-hidden rounded-md border">
@@ -1823,6 +2016,7 @@ function KnowledgeDocumentTable({
             <th className="px-3 py-2 text-left font-medium">{chunksLabel}</th>
             <th className="px-3 py-2 text-left font-medium">{statusLabel}</th>
             <th className="px-3 py-2 text-left font-medium">{sourceLabel}</th>
+            {onReindex ? <th className="px-3 py-2 text-right font-medium">{actionsLabel}</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -1830,8 +2024,28 @@ function KnowledgeDocumentTable({
             <tr key={doc.id} className="border-t">
               <td className="px-3 py-2 align-top font-medium">{doc.title}</td>
               <td className="px-3 py-2 align-top text-muted-foreground">{doc.chunkCount}</td>
-              <td className="px-3 py-2 align-top text-muted-foreground">{doc.status}</td>
+              <td className="px-3 py-2 align-top text-muted-foreground">
+                <div>{doc.ingestionStatus || doc.status}</div>
+                {doc.ingestionStatus ? (
+                  <div className="mt-1 h-1.5 w-24 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, Number(doc.ingestionProgress || 0)))}%` }} />
+                  </div>
+                ) : null}
+                {doc.ingestionError ? <div className="mt-1 max-w-48 truncate text-xs text-destructive" title={doc.ingestionError}>{doc.ingestionError}</div> : null}
+              </td>
               <td className="max-w-md truncate px-3 py-2 align-top text-xs text-muted-foreground" title={doc.source}>{doc.source}</td>
+              {onReindex ? (
+                <td className="px-3 py-2 text-right align-top">
+                  <button
+                    type="button"
+                    onClick={() => onReindex(doc.id)}
+                    disabled={actionBusyId === `reindex:${doc.id}`}
+                    className="rounded-md border px-2 py-1 text-xs transition hover:bg-muted disabled:opacity-60"
+                  >
+                    {actionBusyId === `reindex:${doc.id}` ? loadingLabel : reindexLabel}
+                  </button>
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>

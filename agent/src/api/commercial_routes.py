@@ -8,7 +8,7 @@ import os
 from typing import Any
 
 import httpx
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Response, status
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
 from src.commercial.store import CommercialStore, Principal, embedding_backend_status as get_embedding_backend_status
@@ -82,6 +82,13 @@ class KnowledgeUrlCreateRequest(BaseModel):
 class KnowledgeSearchRequest(BaseModel):
     query: str
     limit: int = Field(5, ge=1, le=20)
+
+
+class ToolPolicyUpdateRequest(BaseModel):
+    risk_level: str | None = None
+    permission_scope: str | None = None
+    requires_approval: bool | None = None
+    enabled: bool | None = None
 
 
 def _host():
@@ -346,6 +353,19 @@ def register_commercial_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="knowledge document not found") from exc
         return {"status": "ok"}
 
+    @app.post("/knowledge-bases/{knowledge_base_id}/documents/{document_id}/reindex")
+    async def reindex_knowledge_document(
+        knowledge_base_id: str,
+        document_id: str,
+        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+    ):
+        try:
+            return _store().reindex_knowledge_document(principal, knowledge_base_id, document_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="knowledge document not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     @app.post("/knowledge-bases/{knowledge_base_id}/search")
     async def search_knowledge(
         knowledge_base_id: str,
@@ -369,9 +389,88 @@ def register_commercial_routes(app: FastAPI) -> None:
         except KeyError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ingestion job not found") from exc
 
+    @app.get("/knowledge-bases/{knowledge_base_id}/ingestion-jobs")
+    async def list_ingestion_jobs(
+        knowledge_base_id: str,
+        limit: int = 50,
+        principal: Principal = Depends(_principal_from_cookie),
+    ):
+        try:
+            return _store().list_ingestion_jobs(principal, knowledge_base_id, limit=limit)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="knowledge base not found") from exc
+
+    @app.post("/knowledge-bases/{knowledge_base_id}/ingestion-jobs/{job_id}/retry")
+    async def retry_ingestion_job(
+        knowledge_base_id: str,
+        job_id: str,
+        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+    ):
+        try:
+            return _store().retry_ingestion_job(principal, knowledge_base_id, job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ingestion job not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.post("/knowledge-bases/{knowledge_base_id}/ingestion-jobs/{job_id}/cancel")
+    async def cancel_ingestion_job(
+        knowledge_base_id: str,
+        job_id: str,
+        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+    ):
+        try:
+            return _store().cancel_ingestion_job(principal, knowledge_base_id, job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ingestion job not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    def _tool_metadata() -> list[dict[str, Any]]:
+        from src.tools import build_registry
+
+        return build_registry(include_shell_tools=True).get_governance_metadata()
+
+    @app.get("/tools/policies")
+    async def list_tool_policies(principal: Principal = Depends(_require_role("owner", "admin"))):
+        return _store().list_tool_policies(principal, _tool_metadata())
+
+    @app.patch("/tools/policies/{tool_name}")
+    async def update_tool_policy(
+        tool_name: str,
+        payload: ToolPolicyUpdateRequest,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        metadata = {str(item.get("tool_name")): item for item in _tool_metadata()}
+        try:
+            return _store().update_tool_policy(
+                principal,
+                tool_name,
+                payload.model_dump(exclude_none=True),
+                metadata.get(tool_name),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     @app.get("/audit-logs")
-    async def audit_logs(limit: int = 100, principal: Principal = Depends(_require_role("owner", "admin"))):
-        return _store().list_audit_logs(principal, limit=limit)
+    async def audit_logs(
+        limit: int = 100,
+        type: str = "",
+        actor: str = "",
+        resource: str = "",
+        from_: str = Query("", alias="from"),
+        to: str = "",
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        return _store().list_audit_logs(
+            principal,
+            limit=limit,
+            action=type,
+            user_id=actor,
+            target_type=resource,
+            date_from=from_,
+            date_to=to,
+        )
 
     @app.get("/usage/model-calls")
     async def model_usage(limit: int = 100, principal: Principal = Depends(_require_role("owner", "admin"))):

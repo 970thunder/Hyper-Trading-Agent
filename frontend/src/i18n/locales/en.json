@@ -434,7 +434,17 @@
       "search": "Search knowledge",
       "searchFailed": "Knowledge search failed: {{message}}",
       "noSearchResults": "No search results yet.",
-      "ready": "Ready"
+      "ready": "Ready",
+      "ingestionJobs": "Recent ingestion jobs",
+      "retry": "Retry",
+      "cancel": "Cancel",
+      "cancelled": "Ingestion job cancelled.",
+      "cancelFailed": "Failed to cancel ingestion job: {{message}}",
+      "reindex": "Reindex",
+      "reindexStarted": "Reindex job completed.",
+      "reindexFailed": "Failed to reindex document: {{message}}",
+      "retryStarted": "Retry job completed.",
+      "retryFailed": "Failed to retry ingestion job: {{message}}"
     },
     "data": {
       "tushareHint": "Only enter a token when updating it. Existing saved tokens are never returned by the API."
@@ -449,7 +459,28 @@
       "citationPolicy": "Citation policy",
       "requiredWhenUsingRag": "Required when using RAG",
       "outputLanguage": "Output language",
-      "matchUser": "Match user language"
+      "matchUser": "Match user language",
+      "toolGovernance": "Tool Governance",
+      "toolGovernanceDesc": "Control organization tool availability, risk levels, approval requirements, and audit posture.",
+      "tool": "Tool",
+      "riskLevel": "Risk",
+      "permissionScope": "Permission scope",
+      "requiresApproval": "Approval",
+      "enable": "Enable",
+      "disable": "Disable",
+      "requireApproval": "Require approval",
+      "removeApproval": "Remove approval",
+      "noToolPolicies": "No tool policies loaded.",
+      "signInForToolPolicies": "Sign in as Owner or Admin to manage tool policies.",
+      "toolPolicySaved": "Tool policy saved.",
+      "toolPolicySaveFailed": "Failed to save tool policy: {{message}}",
+      "toolPolicyLoadFailed": "Failed to load tool policies: {{message}}",
+      "risk": {
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "critical": "Critical"
+      }
     },
     "jobs": {
       "title": "Runtime / Background Jobs",
@@ -720,7 +751,9 @@
         "smc_analyst": "SMC / Order-Flow Analyst",
         "signal_aggregator": "Signal Aggregator (Judge)"
       }
-    }
+    },
+    "yes": "Yes",
+    "no": "No"
   },
   "agent": {
     "connectionLostReconnect": "Connection lost, reconnecting…",

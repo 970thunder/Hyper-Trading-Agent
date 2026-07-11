@@ -429,7 +429,17 @@
       "search": "搜索知识库",
       "searchFailed": "知识库搜索失败：{{message}}",
       "noSearchResults": "暂无搜索结果。",
-      "ready": "就绪"
+      "ready": "就绪",
+      "ingestionJobs": "最近入库任务",
+      "retry": "重试",
+      "cancel": "取消",
+      "cancelled": "入库任务已取消。",
+      "cancelFailed": "取消入库任务失败：{{message}}",
+      "reindex": "重建索引",
+      "reindexStarted": "重建索引已完成。",
+      "reindexFailed": "重建索引失败：{{message}}",
+      "retryStarted": "重试任务已完成。",
+      "retryFailed": "重试入库任务失败：{{message}}"
     },
     "data": {
       "tushareHint": "仅在需要更新时填写 Token。已保存的 Token 不会通过 API 返回。"
@@ -444,7 +454,28 @@
       "citationPolicy": "引用策略",
       "requiredWhenUsingRag": "使用 RAG 时必须引用",
       "outputLanguage": "输出语言",
-      "matchUser": "跟随用户语言"
+      "matchUser": "跟随用户语言",
+      "toolGovernance": "工具治理",
+      "toolGovernanceDesc": "控制组织内工具可用性、风险等级、审批要求和审计策略。",
+      "tool": "工具",
+      "riskLevel": "风险",
+      "permissionScope": "权限范围",
+      "requiresApproval": "审批",
+      "enable": "启用",
+      "disable": "禁用",
+      "requireApproval": "要求审批",
+      "removeApproval": "取消审批",
+      "noToolPolicies": "暂无工具策略。",
+      "signInForToolPolicies": "请以 Owner 或 Admin 登录后管理工具策略。",
+      "toolPolicySaved": "工具策略已保存。",
+      "toolPolicySaveFailed": "保存工具策略失败：{{message}}",
+      "toolPolicyLoadFailed": "加载工具策略失败：{{message}}",
+      "risk": {
+        "low": "低",
+        "medium": "中",
+        "high": "高",
+        "critical": "严重"
+      }
     },
     "jobs": {
       "title": "运行时 / 后台任务",
@@ -715,7 +746,9 @@
         "smc_analyst": "SMC / 订单流分析师",
         "signal_aggregator": "信号汇总裁判"
       }
-    }
+    },
+    "yes": "是",
+    "no": "否"
   },
   "agent": {
     "connectionLostReconnect": "连接已断开，正在重连…",

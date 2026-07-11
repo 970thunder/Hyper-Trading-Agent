@@ -115,20 +115,42 @@ def register_system_routes(
             from src.commercial.store import CommercialStore
 
             store = CommercialStore()
-            with store._connect() as conn:
-                orgs = conn.execute("SELECT COUNT(*) FROM organizations").fetchone()[0]
-                kbs = conn.execute("SELECT COUNT(*) FROM knowledge_bases").fetchone()[0]
+            metrics = store.commercial_metrics()
             lines.extend([
                 "# HELP vibe_trading_commercial_organizations Commercial organizations.",
                 "# TYPE vibe_trading_commercial_organizations gauge",
-                f"vibe_trading_commercial_organizations {int(orgs)}",
+                f"vibe_trading_commercial_organizations {metrics['organizations']}",
                 "# HELP vibe_trading_commercial_knowledge_bases Commercial knowledge bases.",
                 "# TYPE vibe_trading_commercial_knowledge_bases gauge",
-                f"vibe_trading_commercial_knowledge_bases {int(kbs)}",
+                f"vibe_trading_commercial_knowledge_bases {metrics['knowledge_bases']}",
+                "# HELP vibe_trading_commercial_ingestion_jobs Commercial RAG ingestion jobs.",
+                "# TYPE vibe_trading_commercial_ingestion_jobs gauge",
+                f"vibe_trading_commercial_ingestion_jobs {metrics['ingestion_jobs']}",
+                "# HELP vibe_trading_commercial_ingestion_jobs_failed Failed commercial RAG ingestion jobs.",
+                "# TYPE vibe_trading_commercial_ingestion_jobs_failed gauge",
+                f"vibe_trading_commercial_ingestion_jobs_failed {metrics['ingestion_jobs_failed']}",
+                "# HELP vibe_trading_commercial_model_calls Commercial model call records.",
+                "# TYPE vibe_trading_commercial_model_calls counter",
+                f"vibe_trading_commercial_model_calls {metrics['model_calls']}",
+                "# HELP vibe_trading_commercial_knowledge_retrievals Commercial knowledge retrieval records.",
+                "# TYPE vibe_trading_commercial_knowledge_retrievals counter",
+                f"vibe_trading_commercial_knowledge_retrievals {metrics['retrievals']}",
+                "# HELP vibe_trading_commercial_tool_calls Commercial tool call audit records.",
+                "# TYPE vibe_trading_commercial_tool_calls counter",
+                f"vibe_trading_commercial_tool_calls {metrics['tool_calls']}",
+                "# HELP vibe_trading_commercial_tool_call_errors Commercial failed tool call audit records.",
+                "# TYPE vibe_trading_commercial_tool_call_errors counter",
+                f"vibe_trading_commercial_tool_call_errors {metrics['tool_call_errors']}",
             ])
         except Exception:
             lines.append("vibe_trading_commercial_organizations 0")
             lines.append("vibe_trading_commercial_knowledge_bases 0")
+            lines.append("vibe_trading_commercial_ingestion_jobs 0")
+            lines.append("vibe_trading_commercial_ingestion_jobs_failed 0")
+            lines.append("vibe_trading_commercial_model_calls 0")
+            lines.append("vibe_trading_commercial_knowledge_retrievals 0")
+            lines.append("vibe_trading_commercial_tool_calls 0")
+            lines.append("vibe_trading_commercial_tool_call_errors 0")
         return "\n".join(lines) + "\n"
 
     @app.get("/correlation")
