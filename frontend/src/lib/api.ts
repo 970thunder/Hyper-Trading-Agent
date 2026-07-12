@@ -390,6 +390,11 @@ export const api = {
   // Read the persistent runtime status across all authorized brokers (SPEC §7.5).
   // Polled by the RunnerStatus panel; a plain authenticated GET, never a chat message.
   getLiveStatus: (signal?: AbortSignal) => request<LiveStatus>("/live/status", { signal }),
+  listRuntimeJobs: () => request<RuntimeJob[]>("/runtime/jobs"),
+  retryRuntimeJob: (jobId: string) =>
+    request<RuntimeJobActionResponse>(`/runtime/jobs/${encodeURIComponent(jobId)}/retry`, { method: "POST" }),
+  cancelRuntimeJob: (jobId: string) =>
+    request<RuntimeJobActionResponse>(`/runtime/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" }),
   authorizeLive: (broker: string) =>
     request<LiveAuthorizeResponse>("/live/authorize", {
       method: "POST",
@@ -1460,6 +1465,24 @@ export interface LiveBrokerStatus {
 export interface LiveStatus {
   brokers: LiveBrokerStatus[];
   global_halted: boolean;
+}
+
+export type RuntimeJobStatus = "queued" | "pending" | "running" | "completed" | "done" | "failed" | "error" | "cancelled";
+
+export interface RuntimeJob {
+  job_id: string;
+  kind: string;
+  title: string;
+  status: RuntimeJobStatus | string;
+  progress: number;
+  error?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RuntimeJobActionResponse {
+  status: string;
+  job_id: string;
 }
 
 /** Response of `POST /live/runner/start|stop`. */

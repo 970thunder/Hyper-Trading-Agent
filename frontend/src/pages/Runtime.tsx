@@ -15,7 +15,7 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import { api, type LiveBrokerStatus, type LiveMandateLimits, type LiveStatus } from "@/lib/api";
+import { api, type LiveBrokerStatus, type LiveMandateLimits, type LiveStatus, type RuntimeJob } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const RUNTIME_POLL_INTERVAL_MS = 15_000;
@@ -27,6 +27,9 @@ export function Runtime() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [jobs, setJobs] = useState<RuntimeJob[]>([]);
+  const [jobsError, setJobsError] = useState<string | null>(null);
+  const [jobActionId, setJobActionId] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const activeRequestRef = useRef<{ id: number; controller: AbortController } | null>(null);
   const requestSeqRef = useRef(0);
@@ -65,10 +68,27 @@ export function Runtime() {
     }
   }, []);
 
+  const loadJobs = useCallback(async () => {
+    try {
+      const next = await api.listRuntimeJobs();
+      if (!mountedRef.current) return;
+      setJobs(Array.isArray(next) ? next : []);
+      setJobsError(null);
+    } catch (err) {
+      if (!mountedRef.current) return;
+      setJobs([]);
+      setJobsError(err instanceof Error ? err.message : tRef.current("runtime.jobsUnavailable"));
+    }
+  }, []);
+
   useEffect(() => {
     mountedRef.current = true;
     loadStatus("initial");
-    const pollTimer = window.setInterval(() => loadStatus("refresh"), RUNTIME_POLL_INTERVAL_MS);
+    void loadJobs();
+    const pollTimer = window.setInterval(() => {
+      loadStatus("refresh");
+      void loadJobs();
+    }, RUNTIME_POLL_INTERVAL_MS);
     const clockTimer = window.setInterval(() => setNowMs(Date.now()), RUNTIME_CLOCK_INTERVAL_MS);
     return () => {
       mountedRef.current = false;
@@ -78,9 +98,35 @@ export function Runtime() {
       window.clearInterval(pollTimer);
       window.clearInterval(clockTimer);
     };
-  }, [loadStatus]);
+  }, [loadStatus, loadJobs]);
 
   const summary = useMemo(() => summarizeRuntime(status), [status]);
+  const jobSummary = useMemo(() => summarizeJobs(jobs), [jobs]);
+
+  const refreshAll = () => {
+    loadStatus("refresh");
+    void loadJobs();
+  };
+
+  const retryJob = async (job: RuntimeJob) => {
+    setJobActionId(`retry:${job.job_id}`);
+    try {
+      await api.retryRuntimeJob(job.job_id);
+      await loadJobs();
+    } finally {
+      setJobActionId(null);
+    }
+  };
+
+  const cancelJob = async (job: RuntimeJob) => {
+    setJobActionId(`cancel:${job.job_id}`);
+    try {
+      await api.cancelRuntimeJob(job.job_id);
+      await loadJobs();
+    } finally {
+      setJobActionId(null);
+    }
+  };
 
   return (
     <div className="min-h-screen p-6 lg:p-8">
@@ -101,7 +147,7 @@ export function Runtime() {
           </div>
           <button
             type="button"
-            onClick={() => loadStatus("refresh")}
+            onClick={refreshAll}
             disabled={refreshing}
             className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition hover:bg-muted disabled:opacity-50"
           >
@@ -167,6 +213,17 @@ export function Runtime() {
               </section>
             )}
           </>
+        ) : null}
+
+        {!loading ? (
+          <RuntimeJobsPanel
+            jobs={jobs}
+            summary={jobSummary}
+            error={jobsError}
+            actionId={jobActionId}
+            onRetry={retryJob}
+            onCancel={cancelJob}
+          />
         ) : null}
       </div>
     </div>
@@ -327,6 +384,122 @@ function summarizeRuntime(status: LiveStatus | null) {
     authorizedCount: brokers.filter((broker) => broker.auth.oauth_token_present).length,
     runningCount: brokers.filter((broker) => broker.runner?.alive).length,
   };
+}
+
+function summarizeJobs(jobs: RuntimeJob[]) {
+  return {
+    total: jobs.length,
+    running: jobs.filter((job) => ["queued", "pending", "running"].includes(job.status)).length,
+    failed: jobs.filter((job) => ["failed", "error"].includes(job.status)).length,
+  };
+}
+
+function RuntimeJobsPanel({
+  jobs,
+  summary,
+  error,
+  actionId,
+  onRetry,
+  onCancel,
+}: {
+  jobs: RuntimeJob[];
+  summary: { total: number; running: number; failed: number };
+  error: string | null;
+  actionId: string | null;
+  onRetry: (job: RuntimeJob) => void;
+  onCancel: (job: RuntimeJob) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <section className="rounded-md border bg-card p-4">
+      <div className="mb-4 flex flex-col gap-1">
+        <h2 className="text-base font-semibold">{t("runtime.jobsTitle")}</h2>
+        <p className="text-sm text-muted-foreground">{t("runtime.jobsDescription")}</p>
+      </div>
+      <div className="grid gap-3 md:grid-cols-3">
+        <SummaryTile label={t("runtime.jobsTotal")} value={t("runtime.jobsCount", { count: summary.total })} tone="neutral" icon={Activity} />
+        <SummaryTile label={t("runtime.jobsRunning")} value={t("runtime.jobsRunningCount", { count: summary.running })} tone={summary.running > 0 ? "success" : "neutral"} icon={Clock3} />
+        <SummaryTile label={t("runtime.jobsFailed")} value={t("runtime.jobsFailedCount", { count: summary.failed })} tone={summary.failed > 0 ? "danger" : "neutral"} icon={AlertTriangle} />
+      </div>
+      {error ? (
+        <div className="mt-4 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+          {error}
+        </div>
+      ) : null}
+      {!error && jobs.length === 0 ? (
+        <div className="mt-4 rounded-md border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+          {t("runtime.noJobs")}
+        </div>
+      ) : null}
+      {!error && jobs.length > 0 ? (
+        <div className="mt-4 overflow-hidden rounded-md border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 text-xs text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">{t("runtime.job")}</th>
+                <th className="px-3 py-2 text-left font-medium">{t("runtime.status")}</th>
+                <th className="px-3 py-2 text-left font-medium">{t("runtime.progress")}</th>
+                <th className="px-3 py-2 text-right font-medium">{t("runtime.actions")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((job) => (
+                <tr key={job.job_id} className="border-t transition hover:bg-muted/20">
+                  <td className="px-3 py-2 align-top">
+                    <div className="font-medium">{job.title || job.job_id}</div>
+                    <div className="font-mono text-xs text-muted-foreground">{job.kind} / {job.job_id}</div>
+                    {job.error ? <div className="mt-1 max-w-md text-xs text-danger">{job.error}</div> : null}
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <StatusPill label={job.status} tone={jobStatusTone(job.status)} />
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-28 overflow-hidden rounded-full bg-muted">
+                        <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, Number(job.progress || 0)))}%` }} />
+                      </div>
+                      <span className="text-xs tabular-nums text-muted-foreground">{Math.round(Number(job.progress || 0))}%</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-right align-top">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {["failed", "error"].includes(job.status) ? (
+                        <button
+                          type="button"
+                          onClick={() => onRetry(job)}
+                          disabled={actionId === `retry:${job.job_id}`}
+                          className="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-muted disabled:opacity-60"
+                        >
+                          {actionId === `retry:${job.job_id}` ? t("runtime.working") : t("runtime.retryJob")}
+                        </button>
+                      ) : null}
+                      {["queued", "pending", "running"].includes(job.status) ? (
+                        <button
+                          type="button"
+                          onClick={() => onCancel(job)}
+                          disabled={actionId === `cancel:${job.job_id}`}
+                          className="rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-destructive/40 hover:text-destructive disabled:opacity-60"
+                        >
+                          {actionId === `cancel:${job.job_id}` ? t("runtime.working") : t("runtime.cancelJob")}
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function jobStatusTone(status: string): "success" | "danger" | "warning" | "neutral" {
+  if (["completed", "done"].includes(status)) return "success";
+  if (["failed", "error"].includes(status)) return "danger";
+  if (["queued", "pending", "running"].includes(status)) return "warning";
+  return "neutral";
 }
 
 function deriveRiskState(broker: LiveBrokerStatus, globalHalted: boolean, t: TFunction): {

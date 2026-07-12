@@ -229,11 +229,14 @@ def _make_progress_cb(
             job = jobs.get(job_id)
             if job is None:
                 return
+            if job.get("status") == "cancelled":
+                return
             job["progress"] = {
                 "n_done": int(n_done),
                 "n_total": int(n_total),
                 "current_alpha_id": alpha_id,
             }
+            job["updated_at"] = _now_iso()
             if job["status"] == "queued":
                 job["status"] = "running"
 
@@ -247,7 +250,10 @@ def _run_bench_blocking(job_id: str, zoo: str, universe: str, period: str, top: 
     with _JOBS_LOCK:
         job = ALPHA_BENCH_JOBS.get(job_id)
         if job is not None:
+            if job.get("status") == "cancelled":
+                return
             job["status"] = "running"
+            job["updated_at"] = _now_iso()
 
     try:
         result = run_bench(
@@ -262,14 +268,19 @@ def _run_bench_blocking(job_id: str, zoo: str, universe: str, period: str, top: 
         with _JOBS_LOCK:
             job = ALPHA_BENCH_JOBS.get(job_id)
             if job is not None:
+                if job.get("status") == "cancelled":
+                    return
                 job["status"] = "error"
                 job["error"] = _safe_error(exc)
+                job["updated_at"] = _now_iso()
                 job["_finished_at"] = time.time()
         return
 
     with _JOBS_LOCK:
         job = ALPHA_BENCH_JOBS.get(job_id)
         if job is None:
+            return
+        if job.get("status") == "cancelled":
             return
         if result.get("status") != "ok":
             job["status"] = "error"
@@ -285,6 +296,7 @@ def _run_bench_blocking(job_id: str, zoo: str, universe: str, period: str, top: 
             }
             job["status"] = "done"
             job["result"] = slim
+        job["updated_at"] = _now_iso()
         job["_finished_at"] = time.time()
 
 
@@ -301,7 +313,10 @@ def _run_compare_blocking(
     with _JOBS_LOCK:
         job = ALPHA_COMPARE_JOBS.get(job_id)
         if job is not None:
+            if job.get("status") == "cancelled":
+                return
             job["status"] = "running"
+            job["updated_at"] = _now_iso()
 
     try:
         result = compare_alphas(
@@ -316,14 +331,19 @@ def _run_compare_blocking(
         with _JOBS_LOCK:
             job = ALPHA_COMPARE_JOBS.get(job_id)
             if job is not None:
+                if job.get("status") == "cancelled":
+                    return
                 job["status"] = "error"
                 job["error"] = _safe_error(exc)
+                job["updated_at"] = _now_iso()
                 job["_finished_at"] = time.time()
         return
 
     with _JOBS_LOCK:
         job = ALPHA_COMPARE_JOBS.get(job_id)
         if job is None:
+            return
+        if job.get("status") == "cancelled":
             return
         if result.get("status") != "ok":
             job["status"] = "error"
@@ -333,7 +353,71 @@ def _run_compare_blocking(
         else:
             job["status"] = "done"
             job["result"] = result
+        job["updated_at"] = _now_iso()
         job["_finished_at"] = time.time()
+
+
+def _progress_percent(job: dict[str, Any]) -> int:
+    progress = job.get("progress") or {}
+    if isinstance(progress, dict):
+        done = progress.get("n_done")
+        total = progress.get("n_total")
+        if isinstance(done, (int, float)) and isinstance(total, (int, float)) and total > 0:
+            return max(0, min(100, round((done / total) * 100)))
+    if job.get("status") in ("done", "completed", "error", "failed", "cancelled"):
+        return 100
+    return 0
+
+
+def _runtime_job_row(kind: str, job: dict[str, Any]) -> dict[str, Any]:
+    created_at = str(job.get("created_at") or "")
+    updated_at = str(job.get("updated_at") or created_at)
+    if kind == "alpha_bench":
+        title = f"Alpha bench {job.get('universe') or ''}".strip()
+    else:
+        title = f"Alpha compare {job.get('universe') or ''}".strip()
+    status = str(job.get("status") or "unknown")
+    if status == "error":
+        status = "failed"
+    return {
+        "job_id": str(job.get("job_id") or ""),
+        "kind": kind,
+        "title": title,
+        "status": status,
+        "progress": _progress_percent(job),
+        "error": job.get("error") or "",
+        "created_at": created_at,
+        "updated_at": updated_at,
+    }
+
+
+def _runtime_job_rows() -> list[dict[str, Any]]:
+    with _JOBS_LOCK:
+        rows = [
+            *(_runtime_job_row("alpha_bench", dict(job)) for job in ALPHA_BENCH_JOBS.values()),
+            *(_runtime_job_row("alpha_compare", dict(job)) for job in ALPHA_COMPARE_JOBS.values()),
+        ]
+    return sorted(rows, key=lambda row: row.get("updated_at") or row.get("created_at") or "", reverse=True)
+
+
+def _find_runtime_job(job_id: str) -> tuple[str, dict[str, dict[str, Any]], dict[str, Any]]:
+    if not _JOB_ID_RE.fullmatch(job_id or ""):
+        raise HTTPException(status_code=400, detail="invalid job_id")
+    with _JOBS_LOCK:
+        if job_id in ALPHA_BENCH_JOBS:
+            return "alpha_bench", ALPHA_BENCH_JOBS, ALPHA_BENCH_JOBS[job_id]
+        if job_id in ALPHA_COMPARE_JOBS:
+            return "alpha_compare", ALPHA_COMPARE_JOBS, ALPHA_COMPARE_JOBS[job_id]
+    raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+
+
+def _reset_job_for_retry(job: dict[str, Any]) -> None:
+    job["status"] = "queued"
+    job["progress"] = {"n_done": 0, "n_total": 0, "current_alpha_id": None}
+    job["result"] = None
+    job["error"] = None
+    job["updated_at"] = _now_iso()
+    job.pop("_finished_at", None)
 
 
 # ---------------------------------------------------------------------------
@@ -372,6 +456,67 @@ def register_alpha_routes(
             require_auth = host.require_auth
         if require_event_stream_auth is None:
             require_event_stream_auth = host.require_event_stream_auth
+
+    @app.get("/runtime/jobs", dependencies=[Depends(require_auth)])
+    async def list_runtime_jobs() -> list[dict[str, Any]]:
+        """Return a unified read-only snapshot of process-local background jobs."""
+        return _runtime_job_rows()
+
+    @app.post("/runtime/jobs/{job_id}/cancel", dependencies=[Depends(require_auth)])
+    async def cancel_runtime_job(job_id: str) -> dict[str, Any]:
+        """Mark a queued/running process-local background job as cancelled."""
+        _kind, store, job = _find_runtime_job(job_id)
+        if job.get("status") not in ("queued", "pending", "running"):
+            raise HTTPException(status_code=400, detail="only queued or running jobs can be cancelled")
+        with _JOBS_LOCK:
+            store[job_id]["status"] = "cancelled"
+            store[job_id]["updated_at"] = _now_iso()
+            store[job_id]["_finished_at"] = time.time()
+        return {"status": "cancelled", "job_id": job_id}
+
+    @app.post("/runtime/jobs/{job_id}/retry", dependencies=[Depends(require_auth)])
+    async def retry_runtime_job(job_id: str) -> dict[str, Any]:
+        """Retry a failed alpha bench/compare job with its original parameters."""
+        kind, store, job = _find_runtime_job(job_id)
+        if job.get("status") not in ("failed", "error"):
+            raise HTTPException(status_code=400, detail="only failed jobs can be retried")
+
+        if kind == "alpha_bench":
+            sem = _get_bench_semaphore()
+            if sem.locked() or getattr(sem, "_value", MAX_CONCURRENT_BENCHES) <= 0:
+                raise HTTPException(status_code=429, detail="too many running benches; wait for one to finish")
+            zoo = str(job.get("zoo") or "")
+            universe = str(job.get("universe") or "")
+            period = str(job.get("period") or "")
+            top = int(job.get("top") or 20)
+            with _JOBS_LOCK:
+                _reset_job_for_retry(store[job_id])
+
+            async def _bench_retry() -> None:
+                async with sem:
+                    await asyncio.to_thread(_run_bench_blocking, job_id, zoo, universe, period, top)
+
+            task = asyncio.create_task(_bench_retry())
+        else:
+            sem = _get_compare_semaphore()
+            if sem.locked() or getattr(sem, "_value", MAX_CONCURRENT_COMPARES) <= 0:
+                raise HTTPException(status_code=429, detail="too many running comparisons; wait for one to finish")
+            alpha_ids = list(job.get("alpha_ids") or [])
+            universe = str(job.get("universe") or "")
+            period = str(job.get("period") or "")
+            sort = str(job.get("sort") or "ir")
+            with _JOBS_LOCK:
+                _reset_job_for_retry(store[job_id])
+
+            async def _compare_retry() -> None:
+                async with sem:
+                    await asyncio.to_thread(_run_compare_blocking, job_id, alpha_ids, universe, period, sort)
+
+            task = asyncio.create_task(_compare_retry())
+
+        _RUNNING_TASKS.add(task)
+        task.add_done_callback(_RUNNING_TASKS.discard)
+        return {"status": "queued", "job_id": job_id}
 
     # -----------------------------------------------------------------------
     # GET /alpha/list
