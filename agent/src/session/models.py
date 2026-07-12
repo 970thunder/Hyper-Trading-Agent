@@ -21,11 +21,16 @@ class AttemptStatus(str, Enum):
     """Statuses for a single execution attempt."""
 
     PENDING = "pending"
+    QUEUED = "queued"
+    PLANNING = "planning"
     RUNNING = "running"
     WAITING_USER = "waiting_user"
+    WAITING_APPROVAL = "waiting_approval"
+    PAUSED = "paused"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    BLOCKED = "blocked"
 
 
 @dataclass
@@ -150,6 +155,13 @@ class Attempt:
     completed_at: Optional[str] = None
     error: Optional[str] = None
     metrics: Optional[Dict[str, Any]] = None
+    execution_mode: str = "auto"
+    plan: List[Dict[str, Any]] = field(default_factory=list)
+    current_step_id: Optional[str] = None
+    snapshot: Dict[str, Any] = field(default_factory=dict)
+    approved_tool_signatures: List[str] = field(default_factory=list)
+    started_at: Optional[str] = None
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize the attempt to a dictionary.
@@ -179,6 +191,8 @@ class Attempt:
     def mark_running(self) -> None:
         """Mark the attempt as running."""
         self.status = AttemptStatus.RUNNING
+        self.started_at = self.started_at or datetime.now().isoformat()
+        self.updated_at = datetime.now().isoformat()
         self.completed_at = None
 
     def mark_completed(self, summary: Optional[str] = None) -> None:
@@ -188,6 +202,7 @@ class Attempt:
             summary: Execution summary.
         """
         self.status = AttemptStatus.COMPLETED
+        self.updated_at = datetime.now().isoformat()
         self.completed_at = datetime.now().isoformat()
         if summary:
             self.summary = summary
@@ -199,5 +214,35 @@ class Attempt:
             error: Error message.
         """
         self.status = AttemptStatus.FAILED
+        self.updated_at = datetime.now().isoformat()
         self.completed_at = datetime.now().isoformat()
         self.error = error
+
+
+@dataclass
+class ApprovalRecord:
+    """A persisted human approval request for one exact tool invocation."""
+
+    approval_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
+    session_id: str = ""
+    attempt_id: str = ""
+    organization_id: str = ""
+    user_id: str = ""
+    step_id: str = ""
+    tool_name: str = ""
+    tool_signature: str = ""
+    risk_level: str = "high"
+    input_summary: Dict[str, Any] = field(default_factory=dict)
+    status: str = "pending"
+    requested_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    expires_at: str = ""
+    resolved_at: str = ""
+    resolved_by: str = ""
+    resolution_note: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ApprovalRecord":
+        return cls(**data)

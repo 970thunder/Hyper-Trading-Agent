@@ -8,7 +8,8 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import re
-from datetime import datetime
+import threading
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -21,6 +22,7 @@ from src.session.events import EventBus
 from src.session.models import (
     Attempt,
     AttemptStatus,
+    ApprovalRecord,
     Message,
     Session,
 )
@@ -54,7 +56,10 @@ class SessionService:
         self.event_bus = event_bus
         self.runs_dir = runs_dir
         self._active_loops: Dict[str, "AgentLoop"] = {}
+        self._pause_requested: set[str] = set()
+        self._state_lock = threading.RLock()
         self._search_index = get_shared_index()
+        self.store.recover_incomplete_attempts()
 
     def create_session(self, title: str = "", config: Optional[Dict[str, Any]] = None) -> Session:
         """Create a new session.
@@ -94,6 +99,7 @@ class SessionService:
         include_shell_tools: bool = False,
         commercial_principal: Dict[str, Any] | None = None,
         commercial_model_provider: Dict[str, Any] | None = None,
+        execution_mode: str = "auto",
     ) -> Dict[str, Any]:
         """Send a message to a session and trigger execution.
 
@@ -120,7 +126,15 @@ class SessionService:
 
         self._maybe_set_initial_title(session, content)
 
-        attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id, prompt=content)
+        resolved_mode = self._resolve_execution_mode(execution_mode, content)
+        attempt = Attempt(
+            session_id=session_id,
+            parent_attempt_id=session.last_attempt_id,
+            prompt=content,
+            status=AttemptStatus.QUEUED,
+            execution_mode=resolved_mode,
+        )
+        attempt.plan = self._initial_plan(resolved_mode)
         self.store.create_attempt(attempt)
         session.config["include_shell_tools"] = include_shell_tools
         if commercial_principal:
@@ -132,7 +146,17 @@ class SessionService:
         session.last_attempt_id = attempt.attempt_id
         session.updated_at = datetime.now().isoformat()
         self.store.update_session(session)
-        self.event_bus.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": content})
+        self.event_bus.emit(session_id, "attempt.created", {
+            "attempt_id": attempt.attempt_id,
+            "prompt": content,
+            "execution_mode": resolved_mode,
+        })
+        self.event_bus.emit(session_id, "plan.created", {
+            "attempt_id": attempt.attempt_id,
+            "execution_mode": resolved_mode,
+            "steps": attempt.plan,
+        })
+        self._save_snapshot(attempt)
 
         asyncio.create_task(
             self._run_attempt(
@@ -142,7 +166,46 @@ class SessionService:
                 commercial_model_provider=commercial_model_provider,
             )
         )
-        return {"message_id": message.message_id, "attempt_id": attempt.attempt_id}
+        return {
+            "message_id": message.message_id,
+            "attempt_id": attempt.attempt_id,
+            "execution_mode": resolved_mode,
+        }
+
+    @staticmethod
+    def _resolve_execution_mode(requested: str, content: str) -> str:
+        if requested in {"react", "plan_execute"}:
+            return requested
+        complex_markers = (
+            "backtest", "rag", "knowledge", "multi-agent", "swarm", "report",
+            "回测", "知识库", "多智能体", "研究报告", "组合", "因子", "检索",
+        )
+        score = sum(1 for marker in complex_markers if marker in content.lower())
+        return "plan_execute" if score >= 1 or len(content) >= 180 else "react"
+
+    @staticmethod
+    def _initial_plan(mode: str) -> list[Dict[str, Any]]:
+        now = datetime.now().isoformat()
+        if mode == "react":
+            return [{
+                "step_id": "analysis",
+                "title": "Analyze request and execute",
+                "type": "agent",
+                "status": "pending",
+                "dependencies": [],
+                "tool_names": [],
+                "started_at": None,
+                "completed_at": None,
+                "elapsed_ms": None,
+                "summary": "",
+                "error": "",
+                "created_at": now,
+            }]
+        return [
+            {"step_id": "plan", "title": "Build research plan", "type": "planning", "status": "completed", "dependencies": [], "tool_names": [], "started_at": now, "completed_at": now, "elapsed_ms": 0, "summary": "Execution plan prepared", "error": "", "created_at": now},
+            {"step_id": "execute", "title": "Execute research tools", "type": "execution", "status": "pending", "dependencies": ["plan"], "tool_names": [], "started_at": None, "completed_at": None, "elapsed_ms": None, "summary": "", "error": "", "created_at": now},
+            {"step_id": "synthesize", "title": "Synthesize findings", "type": "synthesis", "status": "pending", "dependencies": ["execute"], "tool_names": [], "started_at": None, "completed_at": None, "elapsed_ms": None, "summary": "", "error": "", "created_at": now},
+        ]
 
     def _maybe_set_initial_title(self, session: Session, content: str) -> None:
         """Set a short generated title from the first user message.
@@ -179,6 +242,142 @@ class SessionService:
         loop.cancel()
         return True
 
+    def pause_attempt(self, session_id: str, attempt_id: str) -> Attempt:
+        attempt = self._require_attempt(session_id, attempt_id)
+        if attempt.status not in {AttemptStatus.RUNNING, AttemptStatus.PLANNING, AttemptStatus.QUEUED}:
+            raise ValueError("attempt cannot be paused in its current state")
+        self._pause_requested.add(attempt_id)
+        self.cancel_current(session_id)
+        attempt.status = AttemptStatus.PAUSED
+        attempt.updated_at = datetime.now().isoformat()
+        self._save_snapshot(attempt)
+        self.event_bus.emit(session_id, "attempt.paused", {"attempt_id": attempt_id, "status": attempt.status.value})
+        return attempt
+
+    def resume_attempt(self, session_id: str, attempt_id: str) -> Attempt:
+        attempt = self._require_attempt(session_id, attempt_id)
+        if attempt.status not in {AttemptStatus.PAUSED, AttemptStatus.WAITING_APPROVAL, AttemptStatus.BLOCKED}:
+            raise ValueError("attempt cannot be resumed in its current state")
+        if attempt.status == AttemptStatus.WAITING_APPROVAL:
+            pending = [item for item in self.store.list_approvals(status="pending") if item.attempt_id == attempt_id]
+            if pending:
+                raise ValueError("attempt still has a pending approval")
+        session = self.store.get_session(session_id)
+        if not session:
+            raise ValueError(f"Session {session_id} not found")
+        attempt.status = AttemptStatus.QUEUED
+        attempt.error = None
+        attempt.updated_at = datetime.now().isoformat()
+        self.store.update_attempt(attempt)
+        self._pause_requested.discard(attempt_id)
+        provider = self._resolve_resume_model_provider(session)
+        asyncio.create_task(self._run_attempt(
+            session,
+            attempt,
+            include_shell_tools=bool(session.config.get("include_shell_tools")),
+            commercial_model_provider=provider,
+        ))
+        self.event_bus.emit(session_id, "attempt.resumed", {"attempt_id": attempt_id, "status": "queued"})
+        return attempt
+
+    def get_execution(self, session_id: str, attempt_id: str) -> Dict[str, Any]:
+        attempt = self._require_attempt(session_id, attempt_id)
+        approvals = [item.to_dict() for item in self.store.list_approvals() if item.attempt_id == attempt_id]
+        return {
+            "attempt_id": attempt.attempt_id,
+            "session_id": attempt.session_id,
+            "status": attempt.status.value,
+            "execution_mode": attempt.execution_mode,
+            "plan": attempt.plan,
+            "current_step_id": attempt.current_step_id,
+            "snapshot": self.store.load_snapshot(session_id, attempt_id),
+            "approvals": approvals,
+        }
+
+    def resolve_approval(self, approval_id: str, *, approved: bool, principal: Dict[str, Any], note: str = "") -> ApprovalRecord:
+        approval = self.store.get_approval(approval_id)
+        if not approval or approval.organization_id != str(principal.get("organization_id") or ""):
+            raise KeyError("approval not found")
+        if approval.status != "pending":
+            raise ValueError("approval is no longer pending")
+        now = datetime.now(timezone.utc)
+        if approval.expires_at and datetime.fromisoformat(approval.expires_at) <= now:
+            approval.status = "expired"
+        else:
+            approval.status = "approved" if approved else "rejected"
+        approval.resolved_at = now.isoformat()
+        approval.resolved_by = str(principal.get("user_id") or "")
+        approval.resolution_note = note[:500]
+        self.store.update_approval(approval)
+        attempt = self._require_attempt(approval.session_id, approval.attempt_id)
+        if approval.status == "approved":
+            if approval.tool_signature not in attempt.approved_tool_signatures:
+                attempt.approved_tool_signatures.append(approval.tool_signature)
+            attempt.status = AttemptStatus.PAUSED
+        else:
+            attempt.status = AttemptStatus.BLOCKED
+            attempt.error = f"approval_{approval.status}"
+        self._save_snapshot(attempt)
+        self._audit_approval(principal, approval)
+        self.event_bus.emit(approval.session_id, "approval.resolved", approval.to_dict())
+        return approval
+
+    def _require_attempt(self, session_id: str, attempt_id: str) -> Attempt:
+        attempt = self.store.get_attempt(session_id, attempt_id)
+        if not attempt:
+            raise ValueError("attempt not found")
+        return attempt
+
+    def _save_snapshot(self, attempt: Attempt) -> None:
+        attempt.updated_at = datetime.now().isoformat()
+        snapshot = self.store.save_snapshot(attempt)
+        self.event_bus.emit(attempt.session_id, "snapshot.saved", {
+            "attempt_id": attempt.attempt_id,
+            "status": attempt.status.value,
+            "updated_at": snapshot["updated_at"],
+        })
+
+    @staticmethod
+    def _audit_approval(principal_payload: Dict[str, Any], approval: ApprovalRecord) -> None:
+        try:
+            from src.commercial.store import CommercialStore, Principal
+            principal = Principal(
+                user_id=str(principal_payload["user_id"]),
+                organization_id=str(principal_payload["organization_id"]),
+                email=str(principal_payload.get("email") or ""),
+                role=str(principal_payload.get("role") or "member"),
+            )
+            CommercialStore().audit(
+                principal,
+                f"approval.{approval.status}",
+                "tool_approval",
+                approval.approval_id,
+                {"tool": approval.tool_name, "attempt_id": approval.attempt_id, "risk_level": approval.risk_level},
+            )
+        except Exception:
+            return
+
+    @staticmethod
+    def _resolve_resume_model_provider(session: Session) -> Dict[str, Any] | None:
+        principal_payload = session.config.get("commercial_principal")
+        provider_payload = session.config.get("commercial_model_provider")
+        if not isinstance(principal_payload, dict):
+            return None
+        try:
+            from src.commercial.store import CommercialStore, Principal
+            principal = Principal(
+                user_id=str(principal_payload["user_id"]),
+                organization_id=str(principal_payload["organization_id"]),
+                email=str(principal_payload.get("email") or ""),
+                role=str(principal_payload.get("role") or "member"),
+            )
+            return CommercialStore().resolve_model_provider_runtime(
+                principal,
+                str((provider_payload or {}).get("provider_id") or "") or None,
+            )
+        except Exception:
+            return None
+
     async def _run_attempt(
         self,
         session: Session,
@@ -189,8 +388,12 @@ class SessionService:
     ) -> None:
         """Execute an Attempt in the background."""
         attempt.mark_running()
+        if attempt.execution_mode == "plan_execute":
+            attempt.status = AttemptStatus.PLANNING
         self.store.update_attempt(attempt)
-        self.event_bus.emit(session.session_id, "attempt.started", {"attempt_id": attempt.attempt_id})
+        self.event_bus.emit(session.session_id, "attempt.started", {"attempt_id": attempt.attempt_id, "execution_mode": attempt.execution_mode})
+        attempt.status = AttemptStatus.RUNNING
+        self._mark_plan_step(attempt, "execute" if attempt.execution_mode == "plan_execute" else "analysis", "running")
 
         try:
             messages = self.store.get_messages(session.session_id)
@@ -201,10 +404,23 @@ class SessionService:
                 session_config=dict(session.config),
                 commercial_model_provider=commercial_model_provider,
             )
+            if result.get("status") == "waiting_approval":
+                attempt.status = AttemptStatus.WAITING_APPROVAL
+                attempt.run_dir = result.get("run_dir")
+                self._save_snapshot(attempt)
+                return
             if result.get("status") == "success":
                 attempt.mark_completed(summary=result.get("content", ""))
+                self._mark_plan_step(attempt, "execute" if attempt.execution_mode == "plan_execute" else "analysis", "completed")
+                if attempt.execution_mode == "plan_execute":
+                    self._mark_plan_step(attempt, "synthesize", "completed", summary="Research result synthesized")
+            elif result.get("status") == "cancelled":
+                attempt.status = AttemptStatus.PAUSED if attempt.attempt_id in self._pause_requested else AttemptStatus.CANCELLED
+                attempt.completed_at = datetime.now().isoformat()
+                attempt.error = result.get("reason", "cancelled")
             else:
                 attempt.mark_failed(error=result.get("reason", "unknown"))
+                self._mark_plan_step(attempt, attempt.current_step_id or "execute", "failed", error=attempt.error or "")
             attempt.run_dir = result.get("run_dir")
 
             self.store.update_attempt(attempt)
@@ -225,7 +441,7 @@ class SessionService:
             self._search_index.index_message(session.session_id, "assistant", reply.content)
             self.event_bus.emit(
                 session.session_id,
-                "attempt.completed" if attempt.status == AttemptStatus.COMPLETED else "attempt.failed",
+                "attempt.completed" if attempt.status == AttemptStatus.COMPLETED else ("attempt.paused" if attempt.status == AttemptStatus.PAUSED else "attempt.failed"),
                 {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
                  "summary": attempt.summary, "error": attempt.error, "run_dir": attempt.run_dir},
             )
@@ -234,6 +450,32 @@ class SessionService:
             attempt.mark_failed(error=str(exc))
             self.store.update_attempt(attempt)
             self.event_bus.emit(session.session_id, "attempt.failed", {"attempt_id": attempt.attempt_id, "error": str(exc)})
+
+    def _mark_plan_step(self, attempt: Attempt, step_id: str, status: str, *, summary: str = "", error: str = "") -> None:
+        now = datetime.now().isoformat()
+        with self._state_lock:
+            step = next((item for item in attempt.plan if item.get("step_id") == step_id), None)
+            if step is None:
+                return
+            if status == "running" and not step.get("started_at"):
+                step["started_at"] = now
+            if status in {"completed", "failed", "blocked"}:
+                step["completed_at"] = now
+                if step.get("started_at"):
+                    try:
+                        step["elapsed_ms"] = int((datetime.fromisoformat(now) - datetime.fromisoformat(step["started_at"])).total_seconds() * 1000)
+                    except ValueError:
+                        pass
+            step["status"] = status
+            if summary:
+                step["summary"] = summary
+            if error:
+                step["error"] = error
+            attempt.current_step_id = step_id
+            self.store.update_attempt(attempt)
+            self.event_bus.emit(attempt.session_id, f"step.{status}", {"attempt_id": attempt.attempt_id, "step": step})
+            self.event_bus.emit(attempt.session_id, "plan.updated", {"attempt_id": attempt.attempt_id, "steps": attempt.plan})
+            self._save_snapshot(attempt)
 
     async def _run_with_agent(
         self,
@@ -287,6 +529,39 @@ class SessionService:
             """Forward AgentLoop events to the SSE event bus."""
             data["attempt_id"] = attempt_id
             self.event_bus.emit(session_id, event_type, data)
+            if event_type == "tool_call":
+                step_id = f"tool-{data.get('call_id') or len(attempt.plan) + 1}"
+                if not any(item.get("step_id") == step_id for item in attempt.plan):
+                    now = datetime.now().isoformat()
+                    attempt.plan.append({
+                        "step_id": step_id,
+                        "title": str(data.get("tool") or "Tool call"),
+                        "type": "tool",
+                        "status": "running",
+                        "dependencies": [attempt.current_step_id] if attempt.current_step_id else [],
+                        "tool_names": [str(data.get("tool") or "")],
+                        "started_at": now,
+                        "completed_at": None,
+                        "elapsed_ms": None,
+                        "summary": "",
+                        "error": "",
+                        "created_at": now,
+                    })
+                    attempt.current_step_id = step_id
+                    self.store.update_attempt(attempt)
+                    self.event_bus.emit(session_id, "step.started", {"attempt_id": attempt_id, "step": attempt.plan[-1]})
+                    self._save_snapshot(attempt)
+            elif event_type == "tool_result":
+                call_id = str(data.get("call_id") or data.get("tool_call_id") or "")
+                step_id = f"tool-{call_id}" if call_id else attempt.current_step_id or ""
+                if step_id:
+                    self._mark_plan_step(
+                        attempt,
+                        step_id,
+                        "completed" if data.get("status") == "ok" else "failed",
+                        summary=str(data.get("preview") or "")[:500],
+                        error="" if data.get("status") == "ok" else str(data.get("preview") or "tool failed")[:500],
+                    )
 
         def _mcp_collision_warn(msg: str) -> None:
             """Forward MCP server-name collision warnings to the operator event channel."""
@@ -305,6 +580,30 @@ class SessionService:
             ),
         )
 
+        def approval_callback(payload: Dict[str, Any]) -> None:
+            principal = session_config.get("commercial_principal") if isinstance(session_config, dict) else None
+            principal = principal if isinstance(principal, dict) else {}
+            requested = datetime.now(timezone.utc)
+            approval = ApprovalRecord(
+                session_id=session_id,
+                attempt_id=attempt_id,
+                organization_id=str(principal.get("organization_id") or "local"),
+                user_id=str(principal.get("user_id") or "local"),
+                step_id=attempt.current_step_id or "",
+                tool_name=str(payload.get("tool") or ""),
+                tool_signature=str(payload.get("tool_signature") or ""),
+                risk_level=str(payload.get("risk_level") or "high"),
+                input_summary=dict(payload.get("arguments") or {}),
+                requested_at=requested.isoformat(),
+                expires_at=(requested + timedelta(hours=24)).isoformat(),
+            )
+            self.store.create_approval(approval)
+            payload["approval_id"] = approval.approval_id
+            attempt.status = AttemptStatus.WAITING_APPROVAL
+            self._save_snapshot(attempt)
+            self.event_bus.emit(session_id, "approval.required", approval.to_dict())
+            self._audit_approval(principal, approval)
+
         agent = AgentLoop(
             registry=registry,
             llm=llm,
@@ -316,6 +615,8 @@ class SessionService:
                 "session_id": session_id,
             } if isinstance(session_config.get("commercial_principal"), dict) else None,
             commercial_attempt_id=attempt_id,
+            approved_tool_signatures=attempt.approved_tool_signatures,
+            approval_callback=approval_callback,
         )
         self._active_loops[session_id] = agent
 

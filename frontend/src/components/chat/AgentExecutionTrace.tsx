@@ -10,16 +10,27 @@ import {
   Search,
   Sparkles,
   XCircle,
+  ShieldAlert,
+  Pause,
+  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { localizeToolName } from "@/lib/tools";
 import type { ToolCallEntry } from "@/types/agent";
+import type { ApprovalRecord, ExecutionPlanStep } from "@/lib/api";
 
 interface Props {
   toolCalls: ToolCallEntry[];
   reasoningActive?: boolean;
   reasoningChars?: number;
   startedAt?: number | null;
+  plan?: ExecutionPlanStep[];
+  approval?: ApprovalRecord | null;
+  attemptStatus?: string;
+  onApprove?: () => void;
+  onReject?: () => void;
+  onPause?: () => void;
+  onResume?: () => void;
 }
 
 function formatDuration(ms: number): string {
@@ -72,6 +83,13 @@ export function AgentExecutionTrace({
   reasoningActive = false,
   reasoningChars = 0,
   startedAt = null,
+  plan = [],
+  approval = null,
+  attemptStatus = "",
+  onApprove,
+  onReject,
+  onPause,
+  onResume,
 }: Props) {
   const { t } = useTranslation();
   const [now, setNow] = useState(Date.now());
@@ -83,7 +101,7 @@ export function AgentExecutionTrace({
   }, [reasoningActive, toolCalls]);
 
   const elapsedTotal = startedAt ? formatDuration(now - startedAt) : "";
-  const hasActivity = reasoningActive || reasoningChars > 0 || toolCalls.length > 0;
+  const hasActivity = reasoningActive || reasoningChars > 0 || toolCalls.length > 0 || plan.length > 0 || Boolean(approval);
 
   const summary = useMemo(() => {
     const running = toolCalls.filter((item) => item.status === "running").length;
@@ -106,7 +124,60 @@ export function AgentExecutionTrace({
             {elapsedTotal}
           </span>
         )}
+        <span className="ml-auto flex items-center gap-1">
+          {attemptStatus === "running" && onPause && (
+            <button type="button" onClick={onPause} className="rounded-md border p-1 transition-colors hover:border-primary/40 hover:text-primary" title={String(t("executionTrace.pause"))}>
+              <Pause className="h-3 w-3" />
+            </button>
+          )}
+          {["paused", "blocked"].includes(attemptStatus) && onResume && (
+            <button type="button" onClick={onResume} className="rounded-md border p-1 transition-colors hover:border-primary/40 hover:text-primary" title={String(t("executionTrace.resume"))}>
+              <RotateCcw className="h-3 w-3" />
+            </button>
+          )}
+        </span>
       </div>
+
+      {plan.length > 0 && (
+        <div className="grid gap-1.5 rounded-lg border border-border/55 bg-background/80 p-2.5 shadow-sm">
+          <div className="text-[11px] font-semibold text-foreground">{t("executionTrace.plan")}</div>
+          {plan.map((step, index) => (
+            <div key={step.step_id} className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-1.5 py-1 text-xs transition-colors hover:bg-muted/50">
+              <span className={cn(
+                "flex h-5 w-5 items-center justify-center rounded-md border text-[10px]",
+                step.status === "running" && "border-primary/40 bg-primary/10 text-primary",
+                step.status === "completed" && "border-success/30 bg-success/10 text-success",
+                ["failed", "blocked"].includes(step.status) && "border-danger/30 bg-danger/10 text-danger",
+              )}>{index + 1}</span>
+              <span className="min-w-0 truncate text-foreground">{step.title}</span>
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {step.elapsed_ms != null ? formatDuration(step.elapsed_ms) : t(`executionTrace.status.${step.status}`)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {approval?.status === "pending" && (
+        <div className="rounded-lg border border-warning/35 bg-warning/5 p-3 text-xs shadow-sm">
+          <div className="flex items-start gap-2">
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div>
+                <div className="font-semibold text-foreground">{t("executionTrace.approvalRequired")}</div>
+                <div className="mt-0.5 text-muted-foreground">{approval.tool_name} · {approval.risk_level}</div>
+              </div>
+              <div className="line-clamp-3 rounded-md bg-background/75 px-2 py-1.5 font-mono text-[10px] text-muted-foreground">
+                {summarizeArgs(approval.input_summary)}
+              </div>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={onReject} className="rounded-md border px-2.5 py-1 font-medium text-muted-foreground transition-colors hover:border-danger/40 hover:text-danger">{t("executionTrace.reject")}</button>
+                <button type="button" onClick={onApprove} className="rounded-md bg-primary px-2.5 py-1 font-medium text-primary-foreground transition-opacity hover:opacity-90">{t("executionTrace.approve")}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {(reasoningActive || reasoningChars > 0) && (
         <div className="flex gap-2 rounded-lg border border-border/55 bg-background/80 px-2.5 py-2 text-xs shadow-sm transition-colors hover:border-primary/30">

@@ -41,6 +41,11 @@ class SendMessageRequest(BaseModel):
     """Send chat message: natural-language strategy description."""
     content: str = Field(..., description="Natural language strategy description", min_length=1, max_length=5000)
     model_provider_id: Optional[str] = Field(None, description="Commercial organization model provider id")
+    execution_mode: str = Field("auto", pattern="^(auto|react|plan_execute)$")
+
+
+class ApprovalResolutionRequest(BaseModel):
+    note: str = Field("", max_length=500)
 
 
 class MessageResponse(BaseModel):
@@ -655,6 +660,7 @@ def register_sessions_routes(app: FastAPI) -> None:
                 include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
                 commercial_principal=commercial_principal,
                 commercial_model_provider=commercial_model_provider,
+                execution_mode=payload.execution_mode,
             )
             return result
         except ValueError as exc:
@@ -667,10 +673,103 @@ def register_sessions_routes(app: FastAPI) -> None:
         svc = _host_get_session_service()
         if not svc:
             raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        session = svc.get_session(session_id)
+        attempt_id = session.last_attempt_id if session else None
         cancelled = svc.cancel_current(session_id)
         if not cancelled:
-            return {"status": "no_active_loop"}
-        return {"status": "cancelled"}
+            return {"status": "no_active_loop", "attempt_id": attempt_id}
+        return {"status": "cancelled", "attempt_id": attempt_id}
+
+    @app.get("/sessions/{session_id}/attempts/{attempt_id}/execution", dependencies=[Depends(require_auth)])
+    async def get_attempt_execution(session_id: str, attempt_id: str):
+        _host_validate_path_param(session_id, "session_id")
+        _host_validate_path_param(attempt_id, "attempt_id")
+        svc = _host_get_session_service()
+        if not svc:
+            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        try:
+            return svc.get_execution(session_id, attempt_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="attempt not found") from exc
+
+    @app.post("/sessions/{session_id}/attempts/{attempt_id}/pause", dependencies=[Depends(require_auth)])
+    async def pause_attempt(session_id: str, attempt_id: str):
+        _host_validate_path_param(session_id, "session_id")
+        _host_validate_path_param(attempt_id, "attempt_id")
+        svc = _host_get_session_service()
+        if not svc:
+            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        try:
+            attempt = svc.pause_attempt(session_id, attempt_id)
+            return {"attempt_id": attempt.attempt_id, "status": attempt.status.value}
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/sessions/{session_id}/attempts/{attempt_id}/resume", dependencies=[Depends(require_auth)])
+    async def resume_attempt(session_id: str, attempt_id: str):
+        _host_validate_path_param(session_id, "session_id")
+        _host_validate_path_param(attempt_id, "attempt_id")
+        svc = _host_get_session_service()
+        if not svc:
+            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        try:
+            attempt = svc.resume_attempt(session_id, attempt_id)
+            return {"attempt_id": attempt.attempt_id, "status": attempt.status.value}
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    def _approval_principal(request: Request, *, require_admin: bool = False) -> Dict[str, Any]:
+        host = _host_module()
+        principal = host._commercial_principal_from_request(request) if host is not None and hasattr(host, "_commercial_principal_from_request") else None
+        if principal is None:
+            return {"user_id": "local", "organization_id": "local", "email": "", "role": "owner"}
+        if require_admin and principal.role not in {"owner", "admin"}:
+            raise HTTPException(status_code=403, detail="owner or admin role required")
+        return {
+            "user_id": principal.user_id,
+            "organization_id": principal.organization_id,
+            "email": principal.email,
+            "role": principal.role,
+        }
+
+    @app.get("/approvals", dependencies=[Depends(require_auth)])
+    async def list_approvals(request: Request, approval_status: str = Query("pending", alias="status")):
+        svc = _host_get_session_service()
+        if not svc:
+            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        principal = _approval_principal(request)
+        records = svc.store.list_approvals(
+            status=approval_status or None,
+            organization_id=str(principal["organization_id"]),
+        )
+        if principal["role"] in {"member", "viewer"}:
+            records = [item for item in records if item.user_id == principal["user_id"]]
+        return [item.to_dict() for item in records]
+
+    @app.post("/approvals/{approval_id}/approve", dependencies=[Depends(require_auth)])
+    async def approve_tool_call(approval_id: str, payload: ApprovalResolutionRequest, request: Request):
+        principal = _approval_principal(request, require_admin=True)
+        svc = _host_get_session_service()
+        try:
+            approval = svc.resolve_approval(approval_id, approved=True, principal=principal, note=payload.note)
+            attempt = svc.resume_attempt(approval.session_id, approval.attempt_id)
+            return {"approval": approval.to_dict(), "attempt_status": attempt.status.value}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="approval not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/approvals/{approval_id}/reject", dependencies=[Depends(require_auth)])
+    async def reject_tool_call(approval_id: str, payload: ApprovalResolutionRequest, request: Request):
+        principal = _approval_principal(request, require_admin=True)
+        svc = _host_get_session_service()
+        try:
+            approval = svc.resolve_approval(approval_id, approved=False, principal=principal, note=payload.note)
+            return {"approval": approval.to_dict(), "attempt_status": "blocked"}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="approval not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/sessions/{session_id}/messages", response_model=List[MessageResponse], dependencies=[Depends(require_auth)])
     async def get_messages(session_id: str, limit: int = Query(100, ge=1, le=1000)):
@@ -716,7 +815,14 @@ def register_sessions_routes(app: FastAPI) -> None:
         if replay_active and not event_id and session.last_attempt_id:
             attempt = svc.store.get_attempt(session_id, session.last_attempt_id)
             attempt_status = getattr(attempt.status, "value", attempt.status) if attempt else None
-            replay_all = attempt_status == "running"
+            replay_all = attempt_status in {
+                "queued",
+                "planning",
+                "running",
+                "waiting_approval",
+                "paused",
+                "blocked",
+            }
 
         async def event_generator():
             async for event in svc.event_bus.subscribe(

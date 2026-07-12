@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import copy
+import hashlib
 import json
 import logging
 import os
@@ -58,6 +59,19 @@ STREAM_RETRY_DELAY_S = float(os.getenv("VT_STREAM_RETRY_DELAY_S", "1.0"))
 TOOL_TIMEOUT_SECONDS = float(os.getenv("VIBE_TRADING_TOOL_TIMEOUT_SECONDS", "1800"))
 GOAL_MAX_CONTINUATIONS = int(os.getenv("VIBE_TRADING_GOAL_MAX_CONTINUATIONS", "3"))
 LLM_USAGE_ARTIFACT = "llm_usage.json"
+
+
+class ToolApprovalRequired(RuntimeError):
+    """Stop an attempt before an unapproved high-risk tool is invoked."""
+
+    def __init__(self, payload: Dict[str, Any]) -> None:
+        super().__init__("tool approval required")
+        self.payload = payload
+
+
+def tool_call_signature(tool_name: str, args: Dict[str, Any]) -> str:
+    canonical = json.dumps(redact_payload(args), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(f"{tool_name}:{canonical}".encode("utf-8")).hexdigest()
 
 _EMOJI_RE = re.compile(
     "["
@@ -532,6 +546,8 @@ class AgentLoop:
         persistent_memory: Optional[Any] = None,
         commercial_principal: Optional[Dict[str, Any]] = None,
         commercial_attempt_id: str = "",
+        approved_tool_signatures: Optional[List[str]] = None,
+        approval_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> None:
         """Initialize AgentLoop.
 
@@ -555,6 +571,8 @@ class AgentLoop:
         self._run_iteration: int = 0
         self._commercial_principal_payload = dict(commercial_principal or {})
         self._commercial_attempt_id = commercial_attempt_id
+        self._approved_tool_signatures = set(approved_tool_signatures or [])
+        self._approval_callback = approval_callback
 
     def cancel(self) -> None:
         """Cancel the current loop.
@@ -974,6 +992,25 @@ class AgentLoop:
                     logger.info("Manual compact triggered by model")
                     self._auto_compact(messages, run_dir, trace, focus_topic=focus_topic, iteration=current_iter)
 
+        except ToolApprovalRequired as exc:
+            trace.write({
+                "type": "approval_required",
+                "iter": self._run_iteration,
+                **exc.payload,
+            })
+            trace.close()
+            return {
+                "status": "waiting_approval",
+                "error_code": "tool_approval_required",
+                "reason": "tool approval required",
+                "approval": exc.payload,
+                "run_dir": str(run_dir),
+                "run_id": run_dir.name,
+                "content": "",
+                "react_trace": react_trace,
+                "iterations": iteration,
+                "max_iterations": self.max_iterations,
+            }
         except Exception as exc:
             logger.exception(f"AgentLoop error: {exc}")
             user_reason = exc.user_message if isinstance(exc, ProviderStreamError) else str(exc)
@@ -1297,18 +1334,19 @@ class AgentLoop:
             self._audit_tool_call(tool_name, args, result, 0, call_id=call_id, policy=policy)
             return result, 0
         if policy and bool(policy.get("requires_approval", False)):
-            result = json.dumps(
-                {
-                    "status": "error",
-                    "error_code": "tool_approval_required",
+            signature = tool_call_signature(tool_name, args)
+            if signature not in self._approved_tool_signatures:
+                payload = {
                     "tool": tool_name,
-                    "risk_level": policy.get("risk_level", "unknown"),
-                    "message": "Tool requires human approval before execution.",
-                },
-                ensure_ascii=False,
-            )
-            self._audit_tool_call(tool_name, args, result, 0, call_id=call_id, policy=policy)
-            return result, 0
+                    "call_id": call_id or "",
+                    "tool_signature": signature,
+                    "risk_level": policy.get("risk_level", "high"),
+                    "arguments": {k: str(v)[:200] for k, v in redact_payload(args).items()},
+                }
+                if self._approval_callback:
+                    self._approval_callback(payload)
+                raise ToolApprovalRequired(payload)
+            self._approved_tool_signatures.discard(signature)
         timed_out = threading.Event()
 
         def _on_progress(event: ProgressEvent) -> None:

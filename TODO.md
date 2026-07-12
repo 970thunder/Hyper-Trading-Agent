@@ -40,13 +40,13 @@
 - [ ] 核心页面 Playwright light/dark 截图回归
 
 ## P1 Agent 核心能力
-- [ ] Plan-Execute 执行模式
-- [ ] HITL 审批节点
-- [ ] 中断、恢复、取消
+- [x] Plan-Execute 执行模式
+- [x] HITL 审批节点
+- [x] 中断、恢复、取消
 - [x] 工具权限与风险等级
 - [x] 工具调用审计
 - [x] 高风险交易能力默认关闭并要求确认
-- [ ] Agent 工作区状态快照与恢复
+- [x] Agent 工作区状态快照与恢复
 
 ## P2 RAG 与记忆
 - [ ] pgvector runtime adapter

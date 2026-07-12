@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.session.models import Attempt, Message, Session
+from src.session.models import ApprovalRecord, Attempt, AttemptStatus, Message, Session
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,15 @@ class SessionStore:
 
     def _attempt_file(self, session_id: str, attempt_id: str) -> Path:
         return self._attempt_dir(session_id, attempt_id) / "attempt.json"
+
+    def _approval_dir(self, session_id: str, attempt_id: str) -> Path:
+        return self._attempt_dir(session_id, attempt_id) / "approvals"
+
+    def _approval_file(self, session_id: str, attempt_id: str, approval_id: str) -> Path:
+        return self._approval_dir(session_id, attempt_id) / f"{approval_id}.json"
+
+    def _snapshot_file(self, session_id: str, attempt_id: str) -> Path:
+        return self._attempt_dir(session_id, attempt_id) / "snapshot.json"
 
     # ---- Session CRUD ----
 
@@ -223,6 +232,91 @@ class SessionStore:
             self._attempt_file(attempt.session_id, attempt.attempt_id),
             attempt.to_dict(),
         )
+
+    def list_attempts(self, session_id: str) -> List[Attempt]:
+        attempts_dir = self._session_dir(session_id) / "attempts"
+        if not attempts_dir.exists():
+            return []
+        attempts: List[Attempt] = []
+        for path in attempts_dir.glob("*/attempt.json"):
+            data = self._read_json(path)
+            if data:
+                attempts.append(Attempt.from_dict(data))
+        attempts.sort(key=lambda item: item.created_at, reverse=True)
+        return attempts
+
+    def save_snapshot(self, attempt: Attempt) -> Dict[str, Any]:
+        snapshot = {
+            "session_id": attempt.session_id,
+            "attempt_id": attempt.attempt_id,
+            "status": attempt.status.value,
+            "execution_mode": attempt.execution_mode,
+            "plan": attempt.plan,
+            "current_step_id": attempt.current_step_id,
+            "run_dir": attempt.run_dir,
+            "prompt": attempt.prompt,
+            "approved_tool_signatures": attempt.approved_tool_signatures,
+            "updated_at": attempt.updated_at,
+        }
+        self._write_json(self._snapshot_file(attempt.session_id, attempt.attempt_id), snapshot)
+        attempt.snapshot = snapshot
+        self.update_attempt(attempt)
+        return snapshot
+
+    def load_snapshot(self, session_id: str, attempt_id: str) -> Dict[str, Any]:
+        return self._read_json(self._snapshot_file(session_id, attempt_id)) or {}
+
+    def create_approval(self, approval: ApprovalRecord) -> ApprovalRecord:
+        self._write_json(
+            self._approval_file(approval.session_id, approval.attempt_id, approval.approval_id),
+            approval.to_dict(),
+        )
+        return approval
+
+    def get_approval(self, approval_id: str) -> Optional[ApprovalRecord]:
+        for path in self.base_dir.glob(f"*/attempts/*/approvals/{approval_id}.json"):
+            data = self._read_json(path)
+            if data:
+                return ApprovalRecord.from_dict(data)
+        return None
+
+    def update_approval(self, approval: ApprovalRecord) -> None:
+        self._write_json(
+            self._approval_file(approval.session_id, approval.attempt_id, approval.approval_id),
+            approval.to_dict(),
+        )
+
+    def list_approvals(self, *, status: str | None = None, organization_id: str = "") -> List[ApprovalRecord]:
+        records: List[ApprovalRecord] = []
+        for path in self.base_dir.glob("*/attempts/*/approvals/*.json"):
+            data = self._read_json(path)
+            if not data:
+                continue
+            record = ApprovalRecord.from_dict(data)
+            if status and record.status != status:
+                continue
+            if organization_id and record.organization_id != organization_id:
+                continue
+            records.append(record)
+        records.sort(key=lambda item: item.requested_at, reverse=True)
+        return records
+
+    def recover_incomplete_attempts(self) -> int:
+        recovered = 0
+        active = {
+            AttemptStatus.QUEUED,
+            AttemptStatus.PLANNING,
+            AttemptStatus.RUNNING,
+        }
+        for session in self.list_sessions(limit=10000):
+            for attempt in self.list_attempts(session.session_id):
+                if attempt.status not in active:
+                    continue
+                attempt.status = AttemptStatus.PAUSED
+                attempt.error = "service_restarted"
+                self.save_snapshot(attempt)
+                recovered += 1
+        return recovered
 
     # ---- IO Helpers ----
 

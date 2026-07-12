@@ -1,11 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState, useMemo, useCallback, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Send, Loader2, ArrowDown, Square, Download, Plus, Paperclip, X, Users, Target, ChevronDown, Pencil, Check, Play, OctagonX, Activity, Ban, CheckCircle2, Landmark, Cpu } from "lucide-react";
+import { Send, Loader2, ArrowDown, Square, Download, Plus, Paperclip, X, Users, Target, ChevronDown, Pencil, Check, Play, OctagonX, Activity, Ban, CheckCircle2, Landmark, Cpu, Workflow } from "lucide-react";
 import { toast } from "sonner";
 import { useAgentStore } from "@/stores/agent";
 import { useSSE } from "@/hooks/useSSE";
-import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type CommercialModelProvider, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted, type LiveStatus } from "@/lib/api";
+import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type ApprovalRecord, type CommercialModelProvider, type ExecutionMode, type ExecutionPlanStep, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted, type LiveStatus } from "@/lib/api";
 import { isReportWorthyRun } from "@/lib/runReports";
 import type { AgentMessage, ToolCallEntry } from "@/types/agent";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
@@ -309,6 +309,12 @@ export function Agent() {
   const [reasoningActive, setReasoningActive] = useState(false);
   const [reasoningChars, setReasoningChars] = useState(0);
   const [attemptStartedAt, setAttemptStartedAt] = useState<number | null>(null);
+  const [activeAttemptId, setActiveAttemptId] = useState<string | null>(null);
+  const [attemptStatus, setAttemptStatus] = useState("");
+  const [executionPlan, setExecutionPlan] = useState<ExecutionPlanStep[]>([]);
+  const [pendingApproval, setPendingApproval] = useState<ApprovalRecord | null>(null);
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>("auto");
+  const activeAttemptIdRef = useRef<string | null>(null);
   /* The status endpoint is not wired on every backend; a 404/501 hides the panel
    * and removes status from the kill-switch visibility condition. */
   const [liveStatusUnavailable, setLiveStatusUnavailable] = useState(false);
@@ -328,6 +334,27 @@ export function Agent() {
   const { connect, disconnect, onStatusChange } = useSSE();
 
   const urlSessionId = searchParams.get("session");
+
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+    void api.listSessions().then(async (sessions) => {
+      const current = sessions.find((item) => item.session_id === sessionId);
+      if (!current?.last_attempt_id) return;
+      const execution = await api.getAttemptExecution(sessionId, current.last_attempt_id);
+      if (cancelled) return;
+      setActiveAttemptId(execution.attempt_id);
+      activeAttemptIdRef.current = execution.attempt_id;
+      setAttemptStatus(execution.status);
+      setExecutionPlan(execution.plan || []);
+      setPendingApproval(execution.approvals.find((item) => item.status === "pending") || null);
+      if (["queued", "planning", "running"].includes(execution.status)) {
+        act().setStatus("streaming");
+        setAttemptStartedAt(Date.now());
+      }
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [sessionId]);
 
   /* Smart scroll — only auto-scroll when near bottom */
   const isNearBottom = useCallback(() => {
@@ -614,8 +641,14 @@ export function Agent() {
 
       compact: () => { touch(); },
 
-      "attempt.created": () => {
+      "attempt.created": (d) => {
         touch();
+        const nextAttemptId = String(d.attempt_id || "") || null;
+        setActiveAttemptId(nextAttemptId);
+        activeAttemptIdRef.current = nextAttemptId;
+        setAttemptStatus("queued");
+        setPendingApproval(null);
+        setExecutionPlan([]);
         setAttemptStartedAt(Date.now());
         setReasoningChars(0);
         useAgentStore.setState({ toolCalls: [] });
@@ -624,18 +657,67 @@ export function Agent() {
         if (act().status !== "streaming") act().setStatus("streaming");
       },
 
-      "attempt.started": () => {
+      "attempt.started": (d) => {
         touch();
+        const nextAttemptId = String(d.attempt_id || "") || null;
+        setActiveAttemptId(nextAttemptId);
+        activeAttemptIdRef.current = nextAttemptId;
+        setAttemptStatus("running");
         setAttemptStartedAt((current) => current || Date.now());
         // Backend has begun executing the attempt. Re-affirm streaming state
         // so the UI shows a working indicator for reconnects and fresh loads.
         if (act().status !== "streaming") act().setStatus("streaming");
       },
 
+      "plan.created": (d) => {
+        touch();
+        setExecutionPlan(Array.isArray(d.steps) ? d.steps as unknown as ExecutionPlanStep[] : []);
+      },
+
+      "plan.updated": (d) => {
+        touch();
+        setExecutionPlan(Array.isArray(d.steps) ? d.steps as unknown as ExecutionPlanStep[] : []);
+      },
+
+      "approval.required": (d) => {
+        touch();
+        setPendingApproval(d as unknown as ApprovalRecord);
+        setAttemptStatus("waiting_approval");
+        act().setStatus("idle");
+        scrollToBottom();
+      },
+
+      "approval.resolved": (d) => {
+        touch();
+        const resolved = d as unknown as ApprovalRecord;
+        setPendingApproval(resolved.status === "pending" ? resolved : null);
+      },
+
+      "attempt.paused": (d) => {
+        touch();
+        setAttemptStatus("paused");
+        const nextAttemptId = String(d.attempt_id || activeAttemptIdRef.current || "") || null;
+        setActiveAttemptId(nextAttemptId);
+        activeAttemptIdRef.current = nextAttemptId;
+        act().setStatus("idle");
+        toast.info(t("executionTrace.paused"));
+      },
+
+      "attempt.resumed": (d) => {
+        touch();
+        setAttemptStatus("running");
+        const nextAttemptId = String(d.attempt_id || activeAttemptIdRef.current || "") || null;
+        setActiveAttemptId(nextAttemptId);
+        activeAttemptIdRef.current = nextAttemptId;
+        act().setStatus("streaming");
+      },
+
       "attempt.completed": async (d) => {
         touch();
         setReasoningActive(false);
         setAttemptStartedAt(null);
+        setAttemptStatus("completed");
+        setPendingApproval(null);
         const s = act();
         // Build ThinkingTimeline summary from accumulated toolCalls
         const completedTools = s.toolCalls;
@@ -702,6 +784,7 @@ export function Agent() {
         touch();
         setReasoningActive(false);
         setAttemptStartedAt(null);
+        setAttemptStatus(String(d.status || "failed"));
         act().clearStreaming();
         act().addMessage({ id: "", type: "error", content: String(d.error || "Execution failed"), timestamp: Date.now() });
         act().setStatus("idle");
@@ -1015,7 +1098,9 @@ export function Agent() {
         act().setStatus("streaming");
         forceScrollToBottom();
         setupSSE(sid);
-        const sent = await api.sendMessage(sid, kickoff, { model_provider_id: selectedModelProviderIdForRequest });
+        const sent = await api.sendMessage(sid, kickoff, { model_provider_id: selectedModelProviderIdForRequest, execution_mode: executionMode });
+        setActiveAttemptId(sent.attempt_id);
+        activeAttemptIdRef.current = sent.attempt_id;
         void syncCompletedAttempt(sid, sent.attempt_id);
       } catch (error) {
         act().setStatus("idle");
@@ -1057,7 +1142,9 @@ export function Agent() {
         setSearchParams({ session: sid }, { replace: true });
       }
       setupSSE(sid);
-      const sent = await api.sendMessage(sid, finalPrompt, { model_provider_id: selectedModelProviderIdForRequest });
+      const sent = await api.sendMessage(sid, finalPrompt, { model_provider_id: selectedModelProviderIdForRequest, execution_mode: executionMode });
+      setActiveAttemptId(sent.attempt_id);
+      activeAttemptIdRef.current = sent.attempt_id;
       void syncCompletedAttempt(sid, sent.attempt_id);
     } catch (error) {
       act().setStatus("error");
@@ -1099,6 +1186,51 @@ export function Agent() {
       toast.info(t('agent.cancelRequestSent'));
     } catch {
       toast.error(t('agent.cancelFailed'));
+    }
+  };
+
+  const handlePauseAttempt = async () => {
+    if (!sessionId || !activeAttemptId) return;
+    try {
+      await api.pauseAttempt(sessionId, activeAttemptId);
+      setAttemptStatus("paused");
+      activeAttemptIdRef.current = activeAttemptId;
+      act().setStatus("idle");
+      toast.info(t("executionTrace.paused"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("agent.cancelFailed"));
+    }
+  };
+
+  const handleResumeAttempt = async () => {
+    if (!sessionId || !activeAttemptId) return;
+    try {
+      await api.resumeAttempt(sessionId, activeAttemptId);
+      setAttemptStatus("running");
+      activeAttemptIdRef.current = activeAttemptId;
+      act().setStatus("streaming");
+      toast.success(t("executionTrace.resumed"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("agent.failedToContinue"));
+    }
+  };
+
+  const handleApproval = async (approved: boolean) => {
+    if (!pendingApproval) return;
+    try {
+      if (approved) {
+        await api.approveToolCall(pendingApproval.approval_id);
+        setAttemptStatus("running");
+        act().setStatus("streaming");
+        toast.success(t("executionTrace.approvalApproved"));
+      } else {
+        await api.rejectToolCall(pendingApproval.approval_id);
+        setAttemptStatus("blocked");
+        toast.info(t("executionTrace.approvalRejected"));
+      }
+      setPendingApproval(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("agent.failedToContinue"));
     }
   };
 
@@ -1176,7 +1308,9 @@ export function Agent() {
     inputRef.current?.focus();
     try {
       setupSSE(sessionId);
-      const sent = await api.sendMessage(sessionId, prompt, { model_provider_id: selectedModelProviderIdForRequest });
+      const sent = await api.sendMessage(sessionId, prompt, { model_provider_id: selectedModelProviderIdForRequest, execution_mode: executionMode });
+      setActiveAttemptId(sent.attempt_id);
+      activeAttemptIdRef.current = sent.attempt_id;
       void syncCompletedAttempt(sessionId, sent.attempt_id);
     } catch (error) {
       act().setStatus("error");
@@ -1384,7 +1518,7 @@ export function Agent() {
           )}
 
           {/* Live streaming area: text + tool status */}
-          {(streamingText || reasoningActive || (status === "streaming" && toolCalls.length > 0)) && (
+          {(streamingText || reasoningActive || executionPlan.length > 0 || pendingApproval || (status === "streaming" && toolCalls.length > 0)) && (
             <div className="flex gap-3">
               <AgentAvatar />
               <div className="flex-1 min-w-0 space-y-1.5">
@@ -1399,6 +1533,13 @@ export function Agent() {
                   reasoningActive={reasoningActive}
                   reasoningChars={reasoningChars}
                   startedAt={attemptStartedAt}
+                  plan={executionPlan}
+                  approval={pendingApproval}
+                  attemptStatus={attemptStatus}
+                  onApprove={() => handleApproval(true)}
+                  onReject={() => handleApproval(false)}
+                  onPause={handlePauseAttempt}
+                  onResume={handleResumeAttempt}
                 />
               </div>
             </div>
@@ -1431,6 +1572,21 @@ export function Agent() {
       <form onSubmit={handleSubmit} className="border-t bg-background/90 px-4 py-2.5 backdrop-blur-sm">
         <div className="mx-auto max-w-5xl space-y-2">
           <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-2 rounded-md border bg-card/90 px-2.5 py-1 text-xs text-muted-foreground shadow-sm transition-colors hover:border-primary/40">
+              <Workflow className="h-3.5 w-3.5 text-accent" />
+              <span className="sr-only">{t("executionTrace.mode")}</span>
+              <select
+                value={executionMode}
+                onChange={(event) => setExecutionMode(event.target.value as ExecutionMode)}
+                disabled={status === "streaming" || attemptStatus === "waiting_approval"}
+                className="cursor-pointer bg-transparent font-medium text-foreground outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                title={t("executionTrace.mode")}
+              >
+                <option value="auto">{t("executionTrace.modeAuto")}</option>
+                <option value="react">{t("executionTrace.modeReact")}</option>
+                <option value="plan_execute">{t("executionTrace.modePlan")}</option>
+              </select>
+            </label>
             <div className="relative">
               <button
                 type="button"

@@ -107,12 +107,23 @@ export const api = {
     request<SessionItem>("/sessions", { method: "POST", body: JSON.stringify({ title: title || "", config }) }),
   deleteSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}`, { method: "DELETE" }),
   renameSession: (sid: string, title: string) => request<{ status: string }>(`/sessions/${sid}`, { method: "PATCH", body: JSON.stringify({ title }) }),
-  sendMessage: (sid: string, content: string, options?: { model_provider_id?: string }) =>
-    request<{ message_id: string; attempt_id: string }>(`/sessions/${sid}/messages`, {
+  sendMessage: (sid: string, content: string, options?: { model_provider_id?: string; execution_mode?: ExecutionMode }) =>
+    request<{ message_id: string; attempt_id: string; execution_mode: ExecutionMode }>(`/sessions/${sid}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content, model_provider_id: options?.model_provider_id || undefined }),
+      body: JSON.stringify({ content, model_provider_id: options?.model_provider_id || undefined, execution_mode: options?.execution_mode || "auto" }),
     }),
-  cancelSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}/cancel`, { method: "POST" }),
+  cancelSession: (sid: string) => request<{ status: string; attempt_id?: string }>(`/sessions/${sid}/cancel`, { method: "POST" }),
+  getAttemptExecution: (sid: string, attemptId: string) =>
+    request<AttemptExecution>(`/sessions/${sid}/attempts/${attemptId}/execution`),
+  pauseAttempt: (sid: string, attemptId: string) =>
+    request<{ attempt_id: string; status: string }>(`/sessions/${sid}/attempts/${attemptId}/pause`, { method: "POST" }),
+  resumeAttempt: (sid: string, attemptId: string) =>
+    request<{ attempt_id: string; status: string }>(`/sessions/${sid}/attempts/${attemptId}/resume`, { method: "POST" }),
+  listApprovals: (status = "pending") => request<ApprovalRecord[]>(`/approvals?status=${encodeURIComponent(status)}`),
+  approveToolCall: (approvalId: string, note = "") =>
+    request<{ approval: ApprovalRecord; attempt_status: string }>(`/approvals/${approvalId}/approve`, { method: "POST", body: JSON.stringify({ note }) }),
+  rejectToolCall: (approvalId: string, note = "") =>
+    request<{ approval: ApprovalRecord; attempt_status: string }>(`/approvals/${approvalId}/reject`, { method: "POST", body: JSON.stringify({ note }) }),
   getSessionMessages: (sid: string) => request<MessageItem[]>(`/sessions/${sid}/messages`),
   createGoal: (sid: string, body: CreateGoalRequest) =>
     request<GoalSnapshot>(`/sessions/${sid}/goal`, {
@@ -1379,6 +1390,47 @@ export interface MessageItem {
   created_at: string;
   linked_attempt_id?: string;
   metadata?: Record<string, unknown>;
+}
+
+export type ExecutionMode = "auto" | "react" | "plan_execute";
+
+export interface ExecutionPlanStep {
+  step_id: string;
+  title: string;
+  type: string;
+  status: "pending" | "running" | "completed" | "failed" | "blocked";
+  dependencies: string[];
+  tool_names: string[];
+  started_at?: string | null;
+  completed_at?: string | null;
+  elapsed_ms?: number | null;
+  summary?: string;
+  error?: string;
+}
+
+export interface ApprovalRecord {
+  approval_id: string;
+  session_id: string;
+  attempt_id: string;
+  step_id: string;
+  tool_name: string;
+  risk_level: string;
+  input_summary: Record<string, string>;
+  status: "pending" | "approved" | "rejected" | "expired";
+  requested_at: string;
+  expires_at: string;
+  resolved_at?: string;
+}
+
+export interface AttemptExecution {
+  attempt_id: string;
+  session_id: string;
+  status: string;
+  execution_mode: ExecutionMode;
+  plan: ExecutionPlanStep[];
+  current_step_id?: string | null;
+  snapshot: Record<string, unknown>;
+  approvals: ApprovalRecord[];
 }
 
 export interface SwarmPresetAgent {
