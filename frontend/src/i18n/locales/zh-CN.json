@@ -1222,6 +1222,7 @@
     "resumed": "执行已恢复",
     "approvalApproved": "工具已批准，任务继续执行",
     "approvalRejected": "已拒绝工具调用",
+    "orchestration": "工具编排",
     "layers": {
       "planning": "规划",
       "tools": "工具",

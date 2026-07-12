@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  ArrowRight,
   Brain,
   CheckCircle2,
   Clock3,
@@ -182,6 +183,31 @@ export function AgentExecutionTrace({
           </span>
         ))}
       </div>
+
+      {toolCalls.length > 1 && (
+        <div className="rounded-lg border border-border/55 bg-background/80 p-2.5 shadow-sm">
+          <div className="mb-2 text-[11px] font-semibold text-foreground">{t("executionTrace.orchestration")}</div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {toolCalls.map((entry, index) => (
+              <div key={entry.id} className="flex items-center gap-1.5">
+                <div
+                  className={cn(
+                    "inline-flex max-w-[11rem] items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] transition-colors",
+                    entry.status === "running" && "border-primary/35 bg-primary/10 text-primary",
+                    entry.status === "ok" && "border-success/30 bg-success/10 text-success",
+                    entry.status === "error" && "border-danger/30 bg-danger/10 text-danger",
+                  )}
+                  title={localizeToolName(entry.tool)}
+                >
+                  <ToolIcon tool={entry.tool} status={entry.status} />
+                  <span className="truncate">{localizeToolName(entry.tool)}</span>
+                </div>
+                {index < toolCalls.length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground/60" />}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {plan.length > 0 && (
         <div className="grid gap-1.5 rounded-lg border border-border/55 bg-background/80 p-2.5 shadow-sm">

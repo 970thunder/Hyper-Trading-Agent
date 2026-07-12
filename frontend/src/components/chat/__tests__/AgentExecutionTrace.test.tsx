@@ -44,4 +44,19 @@ describe("AgentExecutionTrace", () => {
     expect(screen.getByText("Drafting")).toBeInTheDocument();
     expect(screen.getAllByText("1").length).toBeGreaterThanOrEqual(3);
   });
+
+  it("renders a compact tool orchestration map in call order", () => {
+    render(
+      <AgentExecutionTrace
+        toolCalls={[
+          toolCall({ id: "tool-1", tool: "knowledge_search", status: "ok" }),
+          toolCall({ id: "tool-2", tool: "run_backtest", status: "running" }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Tool orchestration")).toBeInTheDocument();
+    expect(screen.getAllByText("Search knowledge base").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Run backtest").length).toBeGreaterThanOrEqual(1);
+  });
 });

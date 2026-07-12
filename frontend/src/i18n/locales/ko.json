@@ -1222,6 +1222,7 @@
     "resumed": "Execution resumed",
     "approvalApproved": "Tool approved; execution resumed",
     "approvalRejected": "Tool request rejected",
+    "orchestration": "Tool orchestration",
     "layers": {
       "planning": "Planning",
       "tools": "Tools",
