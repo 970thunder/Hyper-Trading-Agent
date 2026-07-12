@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { Admin } from "../Admin";
 
@@ -92,8 +93,35 @@ describe("Admin page", () => {
     expect(screen.getByText("Failed jobs")).toBeInTheDocument();
     expect(screen.getByText("150")).toBeInTheDocument();
     expect(screen.getAllByText("deepseek-ai/DeepSeek-V3.2").length).toBeGreaterThan(0);
-    expect(screen.getByText("model_provider.create")).toBeInTheDocument();
-    expect(screen.getByText("Alpha bench csi300")).toBeInTheDocument();
+    expect(screen.getAllByText("model_provider.create").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Alpha bench csi300").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "Manage models" })).toHaveAttribute("href", "/settings?section=models");
+  });
+
+  it("filters governance records and exposes direct operation shortcuts", async () => {
+    const user = userEvent.setup();
+    render(<Admin />, { wrapper: MemoryRouter });
+
+    expect(await screen.findByText("Admin Console")).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText("Search members, models, jobs, audit..."), "openrouter");
+
+    const ledger = screen.getByRole("region", { name: "Governance records" });
+    expect(within(ledger).getByText("openrouter")).toBeInTheDocument();
+    expect(within(ledger).getByRole("link", { name: "Review model" })).toHaveAttribute("href", "/settings?section=models");
+    expect(within(ledger).queryByText("Alpha bench csi300")).not.toBeInTheDocument();
+
+    await user.clear(screen.getByPlaceholderText("Search members, models, jobs, audit..."));
+    await user.selectOptions(screen.getByLabelText("Status filter"), "failed");
+
+    expect(within(ledger).getByText("Alpha compare")).toBeInTheDocument();
+    expect(within(ledger).getByText("factor load failed")).toBeInTheDocument();
+    expect(within(ledger).getByRole("link", { name: "Open runtime" })).toHaveAttribute("href", "/runtime");
+    expect(within(ledger).queryByText("deepseek/deepseek-chat")).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText("Select Alpha compare"));
+
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Bulk review selected" })).toHaveAttribute("href", "/runtime");
   });
 });

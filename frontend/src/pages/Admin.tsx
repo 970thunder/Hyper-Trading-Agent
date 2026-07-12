@@ -8,13 +8,17 @@ import {
   CheckCircle2,
   Database,
   FileClock,
+  Filter,
   KeyRound,
+  ListChecks,
   Loader2,
+  Search,
   ServerCog,
   ShieldCheck,
   UsersRound,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   api,
   type AuditLog,
@@ -39,6 +43,19 @@ type AdminSnapshot = {
   usage: ModelUsage[];
 };
 
+type GovernanceRecordType = "member" | "model" | "knowledge" | "job" | "audit" | "usage";
+
+type GovernanceRecord = {
+  id: string;
+  type: GovernanceRecordType;
+  title: string;
+  subtitle: string;
+  detail: string;
+  status: string;
+  href: string;
+  actionLabel: string;
+};
+
 const EMPTY_SNAPSHOT: AdminSnapshot = {
   principal: null,
   organization: null,
@@ -55,6 +72,10 @@ export function Admin() {
   const [snapshot, setSnapshot] = useState<AdminSnapshot>(EMPTY_SNAPSHOT);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [recordQuery, setRecordQuery] = useState("");
+  const [recordType, setRecordType] = useState<GovernanceRecordType | "all">("all");
+  const [recordStatus, setRecordStatus] = useState("all");
+  const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -84,9 +105,19 @@ export function Admin() {
   }, [load]);
 
   const analytics = useMemo(() => summarizeAdmin(snapshot), [snapshot]);
+  const governanceRecords = useMemo(() => buildGovernanceRecords(snapshot, t), [snapshot, t]);
+  const filteredGovernanceRecords = useMemo(
+    () => filterGovernanceRecords(governanceRecords, recordQuery, recordType, recordStatus),
+    [governanceRecords, recordQuery, recordType, recordStatus],
+  );
+  const selectedGovernanceRecords = useMemo(
+    () => governanceRecords.filter((record) => selectedRecords.includes(record.id)),
+    [governanceRecords, selectedRecords],
+  );
   const defaultProvider = snapshot.providers.find((provider) => Boolean(provider.is_default));
   const recentJobs = snapshot.jobs.slice(0, 5);
   const recentAudit = snapshot.auditLogs.slice(0, 6);
+  const bulkHref = selectedGovernanceRecords[0]?.href || "/settings";
 
   return (
     <div className="min-h-screen bg-background p-5 lg:p-8">
@@ -179,6 +210,139 @@ export function Admin() {
               </div>
             </section>
 
+            <section className="surface-panel p-4" aria-label={t("admin.recordsTitle")}>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <PanelHeader icon={ListChecks} title={t("admin.recordsTitle")} description={t("admin.recordsDesc")} />
+                {selectedRecords.length > 0 ? (
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/20 bg-primary/10 px-3 py-2 text-sm text-primary">
+                    <span className="font-medium">{t("admin.selectedCount", { count: selectedRecords.length })}</span>
+                    <Link className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition hover:opacity-90" to={bulkHref}>
+                      {t("admin.bulkReview")}
+                    </Link>
+                    <button
+                      type="button"
+                      className="rounded-md border border-primary/25 px-2 py-1 text-xs font-medium transition hover:bg-primary/10"
+                      onClick={() => setSelectedRecords([])}
+                    >
+                      {t("admin.clearSelection")}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px]">
+                <label className="relative block">
+                  <span className="sr-only">{t("admin.searchLabel")}</span>
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    value={recordQuery}
+                    onChange={(event) => setRecordQuery(event.target.value)}
+                    placeholder={t("admin.searchPlaceholder")}
+                    className="h-10 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  />
+                </label>
+                <label className="block">
+                  <span className="sr-only">{t("admin.typeFilter")}</span>
+                  <select
+                    aria-label={t("admin.typeFilter")}
+                    value={recordType}
+                    onChange={(event) => setRecordType(event.target.value as GovernanceRecordType | "all")}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="all">{t("admin.recordTypes.all")}</option>
+                    <option value="member">{t("admin.recordTypes.member")}</option>
+                    <option value="model">{t("admin.recordTypes.model")}</option>
+                    <option value="knowledge">{t("admin.recordTypes.knowledge")}</option>
+                    <option value="job">{t("admin.recordTypes.job")}</option>
+                    <option value="audit">{t("admin.recordTypes.audit")}</option>
+                    <option value="usage">{t("admin.recordTypes.usage")}</option>
+                  </select>
+                </label>
+                <label className="relative block">
+                  <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <select
+                    aria-label={t("admin.statusFilter")}
+                    value={recordStatus}
+                    onChange={(event) => setRecordStatus(event.target.value)}
+                    className="h-10 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="all">{t("admin.statuses.all")}</option>
+                    <option value="privileged">{t("admin.statuses.privileged")}</option>
+                    <option value="default">{t("admin.statuses.default")}</option>
+                    <option value="enabled">{t("admin.statuses.enabled")}</option>
+                    <option value="disabled">{t("admin.statuses.disabled")}</option>
+                    <option value="running">{t("admin.statuses.running")}</option>
+                    <option value="failed">{t("admin.statuses.failed")}</option>
+                    <option value="active">{t("admin.statuses.active")}</option>
+                    <option value="audit">{t("admin.statuses.audit")}</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="mt-4 overflow-hidden rounded-md border">
+                <div className="grid grid-cols-[44px_minmax(0,1fr)_132px_132px] gap-3 border-b bg-muted/40 px-3 py-2 text-xs font-medium uppercase text-muted-foreground max-md:hidden">
+                  <span />
+                  <span>{t("admin.record")}</span>
+                  <span>{t("admin.status")}</span>
+                  <span>{t("admin.actions")}</span>
+                </div>
+                {filteredGovernanceRecords.length === 0 ? (
+                  <p className="p-4 text-sm text-muted-foreground">{t("admin.noRecordMatches")}</p>
+                ) : (
+                  filteredGovernanceRecords.map((record) => {
+                    const selected = selectedRecords.includes(record.id);
+                    return (
+                      <div
+                        key={record.id}
+                        className={cn(
+                          "grid grid-cols-[32px_minmax(0,1fr)] gap-3 border-b px-3 py-3 transition last:border-b-0 hover:bg-muted/30 md:grid-cols-[44px_minmax(0,1fr)_132px_132px]",
+                          selected && "bg-primary/5",
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={t("admin.selectRecord", { title: record.title })}
+                          checked={selected}
+                          onChange={() => {
+                            setSelectedRecords((current) =>
+                              current.includes(record.id)
+                                ? current.filter((id) => id !== record.id)
+                                : [...current, record.id],
+                            );
+                          }}
+                          className="mt-1 h-4 w-4 rounded border-muted-foreground/40 text-primary focus:ring-primary/30"
+                        />
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="truncate text-sm font-medium">{record.title}</span>
+                            <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                              {t(`admin.recordTypes.${record.type}`)}
+                            </span>
+                          </div>
+                          <p className="mt-1 truncate text-xs text-muted-foreground">{record.subtitle}</p>
+                          {record.detail ? <p className="mt-1 truncate text-xs text-muted-foreground/80">{record.detail}</p> : null}
+                        </div>
+                        <div className="flex items-start md:items-center">
+                          <StatusBadge status={record.status} />
+                        </div>
+                        <div className="flex items-start md:items-center">
+                          <Link
+                            to={record.href}
+                            className="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:border-primary/30 hover:bg-primary/10 hover:text-primary"
+                          >
+                            {record.actionLabel}
+                          </Link>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                {t("admin.recordCount", { shown: filteredGovernanceRecords.length, total: governanceRecords.length })}
+              </p>
+            </section>
+
             <section className="grid gap-4 xl:grid-cols-2">
               <DataPanel title={t("admin.modelInventory")} empty={t("admin.noModels")}>
                 {snapshot.providers.slice(0, 6).map((provider) => (
@@ -221,6 +385,100 @@ function summarizeAdmin(snapshot: AdminSnapshot) {
     failedJobs: snapshot.jobs.filter((job) => ["failed", "error"].includes(String(job.status))).length,
     totalTokens: snapshot.usage.reduce((sum, row) => sum + Number(row.total_tokens || 0), 0),
   };
+}
+
+function buildGovernanceRecords(snapshot: AdminSnapshot, t: TFunction): GovernanceRecord[] {
+  const memberRecords = snapshot.members.map((member) => ({
+    id: `member:${member.user_id}`,
+    type: "member" as const,
+    title: member.email,
+    subtitle: member.display_name || member.user_id,
+    detail: formatDate(member.created_at),
+    status: member.role,
+    href: "/settings?section=security",
+    actionLabel: t("admin.reviewMember"),
+  }));
+
+  const modelRecords = snapshot.providers.map((provider) => ({
+    id: `model:${provider.id}`,
+    type: "model" as const,
+    title: provider.model,
+    subtitle: provider.provider,
+    detail: provider.base_url,
+    status: provider.is_default ? "default" : provider.enabled ? "enabled" : "disabled",
+    href: "/settings?section=models",
+    actionLabel: t("admin.reviewModel"),
+  }));
+
+  const knowledgeRecords = snapshot.knowledgeBases.map((knowledgeBase) => ({
+    id: `knowledge:${knowledgeBase.id}`,
+    type: "knowledge" as const,
+    title: knowledgeBase.name,
+    subtitle: knowledgeBase.description || knowledgeBase.id,
+    detail: formatDate(knowledgeBase.updated_at || knowledgeBase.created_at),
+    status: "active",
+    href: "/settings?section=knowledge",
+    actionLabel: t("admin.reviewKnowledge"),
+  }));
+
+  const jobRecords = snapshot.jobs.map((job) => ({
+    id: `job:${job.job_id}`,
+    type: "job" as const,
+    title: job.title || job.job_id,
+    subtitle: job.kind,
+    detail: job.error || `${Math.round(Number(job.progress || 0))}%`,
+    status: String(job.status),
+    href: "/runtime",
+    actionLabel: t("admin.openRuntime"),
+  }));
+
+  const auditRecords = snapshot.auditLogs.map((row) => ({
+    id: `audit:${row.id}`,
+    type: "audit" as const,
+    title: row.action,
+    subtitle: `${row.target_type || "-"} / ${row.target_id || "-"}`,
+    detail: row.user_id || formatDate(row.created_at),
+    status: "audit",
+    href: "/settings?section=audit",
+    actionLabel: t("admin.openAudit"),
+  }));
+
+  const usageRecords = snapshot.usage.map((row) => ({
+    id: `usage:${row.id}`,
+    type: "usage" as const,
+    title: row.model,
+    subtitle: row.provider,
+    detail: `${row.total_tokens || 0} tokens / ${row.latency_ms || 0}ms`,
+    status: "active",
+    href: "/settings?section=audit",
+    actionLabel: t("admin.openUsage"),
+  }));
+
+  return [...memberRecords, ...modelRecords, ...knowledgeRecords, ...jobRecords, ...auditRecords, ...usageRecords];
+}
+
+function filterGovernanceRecords(
+  records: GovernanceRecord[],
+  query: string,
+  type: GovernanceRecordType | "all",
+  status: string,
+): GovernanceRecord[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  return records.filter((record) => {
+    const matchesType = type === "all" || record.type === type;
+    const haystack = [record.title, record.subtitle, record.detail, record.status, record.type].join(" ").toLowerCase();
+    const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
+    const matchesStatus = status === "all" || statusMatches(record.status, status);
+    return matchesType && matchesQuery && matchesStatus;
+  });
+}
+
+function statusMatches(recordStatus: string, filter: string): boolean {
+  const status = recordStatus.toLowerCase();
+  if (filter === "failed") return status === "failed" || status === "error";
+  if (filter === "running") return status === "running" || status === "pending" || status === "queued";
+  if (filter === "privileged") return status === "owner" || status === "admin";
+  return status === filter;
 }
 
 function AdminMetric({ icon: Icon, label, value, helper }: { icon: typeof Activity; label: string; value: string; helper: string }) {
@@ -266,6 +524,30 @@ function HealthCard({ label, value, tone }: { label: string; value: string; tone
         {value}
       </div>
     </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const tone =
+    status === "enabled" || status === "completed" || status === "done" || status === "active" || status === "default"
+      ? "success"
+      : status === "failed" || status === "error" || status === "disabled"
+        ? "danger"
+        : status === "running" || status === "pending" || status === "queued"
+          ? "warning"
+          : "neutral";
+  return (
+    <span
+      className={cn(
+        "rounded px-2 py-0.5 text-xs font-medium",
+        tone === "success" && "bg-success/10 text-success",
+        tone === "warning" && "bg-warning/10 text-warning",
+        tone === "danger" && "bg-danger/10 text-danger",
+        tone === "neutral" && "bg-muted text-muted-foreground",
+      )}
+    >
+      {status}
+    </span>
   );
 }
 
