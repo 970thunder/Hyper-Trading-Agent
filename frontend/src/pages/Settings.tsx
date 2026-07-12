@@ -57,6 +57,7 @@ import { getApiAuthKey, setApiAuthKey } from "@/lib/apiAuth";
 import { cn } from "@/lib/utils";
 import { AuditUsagePanel } from "./settings/AuditUsagePanel";
 import { OrganizationSecurityPanel } from "./settings/OrganizationSecurityPanel";
+import { RuntimeSettingsPanel } from "./settings/RuntimeSettingsPanel";
 
 interface LLMFormState {
   provider: string;
@@ -1849,20 +1850,7 @@ export function Settings() {
     </section>
   );
 
-  const renderRuntime = () => (
-    <section className={sectionCardClass}>
-      <div className="mb-5 flex items-center gap-2">
-        <Activity className="h-4 w-4 text-primary" />
-        <h2 className="text-base font-semibold">{t("settings.jobs.title")}</h2>
-      </div>
-      <div className="grid gap-3 md:grid-cols-3">
-        <MetricCard label={t("settings.jobs.agentRuns")} value={t("settings.jobs.currentMode")} />
-        <MetricCard label={t("settings.jobs.ragIngestion")} value={t("settings.jobs.planned")} />
-        <MetricCard label={t("settings.jobs.worker")} value={t("settings.jobs.dockerReady")} />
-      </div>
-      <p className="mt-4 text-sm text-muted-foreground">{t("settings.jobs.description")}</p>
-    </section>
-  );
+  const renderRuntime = () => <RuntimeSettingsPanel />;
 
   const renderAudit = () => (
     <AuditUsagePanel
