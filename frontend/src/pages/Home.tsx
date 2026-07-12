@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, Bot, BarChart3, Zap, UserCircle2, Activity, FileText, Layers, Settings } from "lucide-react";
+import { ArrowRight, Bot, BarChart3, Zap, UserCircle2, Activity, FileText, Layers, Settings, ShieldCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 export function Home() {
@@ -16,6 +16,7 @@ export function Home() {
     { to: "/alpha-zoo", icon: Layers, label: t("layout.alphaZoo"), desc: t("home.featureBacktestDesc") },
     { to: "/runtime", icon: Activity, label: t("layout.runtime"), desc: t("home.featureStreamingDesc") },
     { to: "/reports", icon: FileText, label: t("layout.reports"), desc: t("reports.subtitle") },
+    { to: "/admin", icon: ShieldCheck, label: t("layout.admin"), desc: t("admin.subtitle") },
     { to: "/settings?section=models", icon: Settings, label: t("layout.settings"), desc: t("settings.modelProviders.description") },
   ];
 
@@ -43,7 +44,7 @@ export function Home() {
           </div>
         </section>
 
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
           {QUICK_LINKS.map(({ to, icon: Icon, label, desc }) => (
             <Link key={to} to={to} className="surface-panel-hover p-4">
               <div className="flex h-9 w-9 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary">
