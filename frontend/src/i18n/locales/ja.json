@@ -1154,7 +1154,13 @@
   "runComplete": {
     "fullReport": "完全なレポート →",
     "pineScript": "Pine Script",
-    "shadowReport": "シャドウレポート"
+    "shadowReport": "シャドウレポート",
+    "compressedSummary": "圧縮バックテスト要約",
+    "validationPassed": "検証済み",
+    "validationFailed": "検証の確認が必要",
+    "validationUnknown": "検証結果なし",
+    "equitySample": "エクイティ: {{shown}} / {{total}} 点を表示",
+    "tradeSample": "取引: {{shown}} / {{total}} 行を表示"
   },
   "home": {
     "title": "AI 駆動のクォント戦略リサーチ",

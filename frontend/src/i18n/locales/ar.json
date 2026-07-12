@@ -1154,7 +1154,13 @@
   "runComplete": {
     "fullReport": "التقرير الكامل →",
     "pineScript": "Pine Script",
-    "shadowReport": "تقرير الظلّ"
+    "shadowReport": "تقرير الظلّ",
+    "compressedSummary": "ملخص اختبار خلفي مضغوط",
+    "validationPassed": "تم اجتياز التحقق",
+    "validationFailed": "التحقق يحتاج إلى مراجعة",
+    "validationUnknown": "لا توجد نتيجة تحقق",
+    "equitySample": "منحنى رأس المال: عرض {{shown}} / {{total}} نقطة",
+    "tradeSample": "الصفقات: عرض {{shown}} / {{total}} صفوف"
   },
   "home": {
     "title": "بحث استراتيجيات الكمّ مدعوم بالذكاء الاصطناعي",

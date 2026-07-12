@@ -1154,7 +1154,13 @@
   "runComplete": {
     "fullReport": "전체 리포트 →",
     "pineScript": "Pine Script",
-    "shadowReport": "섀도우 리포트"
+    "shadowReport": "섀도우 리포트",
+    "compressedSummary": "압축된 백테스트 요약",
+    "validationPassed": "검증 통과",
+    "validationFailed": "검증 검토 필요",
+    "validationUnknown": "검증 결과 없음",
+    "equitySample": "자산곡선: {{shown}} / {{total}}개 포인트 표시",
+    "tradeSample": "거래: {{shown}} / {{total}}행 표시"
   },
   "home": {
     "title": "AI 기반 퀀트 전략 리서치",

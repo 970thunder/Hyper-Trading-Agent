@@ -1,4 +1,4 @@
-import { isReportWorthyRun } from "../runReports";
+import { isReportWorthyRun, summarizeBacktestRun } from "../runReports";
 import { makeRunData } from "@/tests/helpers/factories";
 
 describe("isReportWorthyRun", () => {
@@ -85,5 +85,59 @@ describe("isReportWorthyRun", () => {
 
   it("handles empty artifacts array", () => {
     expect(isReportWorthyRun(makeRunData({ artifacts: [] }))).toBe(false);
+  });
+});
+
+describe("summarizeBacktestRun", () => {
+  it("compresses long backtest payloads into key metrics, samples, and risk flags", () => {
+    const run = makeRunData({
+      metrics: {
+        total_return: 0.185,
+        annual_return: 0.091,
+        sharpe: 0.42,
+        max_drawdown: -0.38,
+        win_rate: 0.51,
+        trade_count: 120,
+        final_value: 118500,
+      },
+      equity_curve: Array.from({ length: 80 }, (_, index) => ({
+        time: `2024-01-${String((index % 30) + 1).padStart(2, "0")}`,
+        equity: 100000 + index * 100,
+      })),
+      trade_log: Array.from({ length: 25 }, (_, index) => ({
+        date: `2024-02-${String((index % 28) + 1).padStart(2, "0")}`,
+        action: index % 2 ? "SELL" : "BUY",
+        symbol: "BTC-USDT",
+      })),
+      validation: { passed: false, reason: "Monte Carlo p-value is weak" },
+    });
+
+    const summary = summarizeBacktestRun(run, { tradeSampleSize: 3, equitySampleSize: 10 });
+
+    expect(summary.keyMetrics.map((metric) => metric.key)).toEqual([
+      "total_return",
+      "annual_return",
+      "sharpe",
+      "max_drawdown",
+      "win_rate",
+      "trade_count",
+    ]);
+    expect(summary.tradeSample.total).toBe(25);
+    expect(summary.tradeSample.rows).toHaveLength(3);
+    expect(summary.equitySample.total).toBe(80);
+    expect(summary.equitySample.points.length).toBeLessThanOrEqual(10);
+    expect(summary.riskFlags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "low_sharpe" }),
+        expect.objectContaining({ code: "deep_drawdown" }),
+        expect.objectContaining({ code: "validation_failed" }),
+      ]),
+    );
+    expect(summary.compressionNotes).toEqual(
+      expect.arrayContaining([
+        "Equity curve compressed from 80 to 10 points.",
+        "Trade log compressed from 25 to 3 rows.",
+      ]),
+    );
   });
 });

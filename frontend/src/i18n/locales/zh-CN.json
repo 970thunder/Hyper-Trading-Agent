@@ -1154,7 +1154,13 @@
   "runComplete": {
     "fullReport": "完整报告 →",
     "pineScript": "Pine Script",
-    "shadowReport": "影子报告"
+    "shadowReport": "影子报告",
+    "compressedSummary": "回测压缩摘要",
+    "validationPassed": "验证通过",
+    "validationFailed": "验证需复核",
+    "validationUnknown": "暂无验证结果",
+    "equitySample": "净值：展示 {{shown}} / {{total}} 个点",
+    "tradeSample": "交易：展示 {{shown}} / {{total}} 行"
   },
   "home": {
     "title": "AI 驱动的量化策略研究",

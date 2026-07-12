@@ -1159,7 +1159,13 @@
   "runComplete": {
     "fullReport": "Full Report →",
     "pineScript": "Pine Script",
-    "shadowReport": "Shadow Report"
+    "shadowReport": "Shadow Report",
+    "compressedSummary": "Compressed backtest summary",
+    "validationPassed": "Validation passed",
+    "validationFailed": "Validation needs review",
+    "validationUnknown": "Validation not available",
+    "equitySample": "Equity: {{shown}} / {{total}} points shown",
+    "tradeSample": "Trades: {{shown}} / {{total}} rows shown"
   },
   "home": {
     "title": "AI-Powered Quant Strategy Research",
