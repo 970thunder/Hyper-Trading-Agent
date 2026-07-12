@@ -239,6 +239,9 @@ def _make_progress_cb(
             job["updated_at"] = _now_iso()
             if job["status"] == "queued":
                 job["status"] = "running"
+            snapshot = dict(job)
+        kind = "alpha_compare" if jobs is ALPHA_COMPARE_JOBS else "alpha_bench"
+        _sync_alpha_job_to_durable(kind, snapshot)
 
     return _cb
 
@@ -249,11 +252,15 @@ def _run_bench_blocking(job_id: str, zoo: str, universe: str, period: str, top: 
 
     with _JOBS_LOCK:
         job = ALPHA_BENCH_JOBS.get(job_id)
+        snapshot = None
         if job is not None:
             if job.get("status") == "cancelled":
                 return
             job["status"] = "running"
             job["updated_at"] = _now_iso()
+            snapshot = dict(job)
+    if snapshot is not None:
+        _sync_alpha_job_to_durable("alpha_bench", snapshot)
 
     try:
         result = run_bench(
@@ -274,6 +281,11 @@ def _run_bench_blocking(job_id: str, zoo: str, universe: str, period: str, top: 
                 job["error"] = _safe_error(exc)
                 job["updated_at"] = _now_iso()
                 job["_finished_at"] = time.time()
+                snapshot = dict(job)
+            else:
+                snapshot = None
+        if snapshot is not None:
+            _sync_alpha_job_to_durable("alpha_bench", snapshot)
         return
 
     with _JOBS_LOCK:
@@ -298,6 +310,8 @@ def _run_bench_blocking(job_id: str, zoo: str, universe: str, period: str, top: 
             job["result"] = slim
         job["updated_at"] = _now_iso()
         job["_finished_at"] = time.time()
+        snapshot = dict(job)
+    _sync_alpha_job_to_durable("alpha_bench", snapshot)
 
 
 def _run_compare_blocking(
@@ -312,11 +326,15 @@ def _run_compare_blocking(
 
     with _JOBS_LOCK:
         job = ALPHA_COMPARE_JOBS.get(job_id)
+        snapshot = None
         if job is not None:
             if job.get("status") == "cancelled":
                 return
             job["status"] = "running"
             job["updated_at"] = _now_iso()
+            snapshot = dict(job)
+    if snapshot is not None:
+        _sync_alpha_job_to_durable("alpha_compare", snapshot)
 
     try:
         result = compare_alphas(
@@ -337,6 +355,11 @@ def _run_compare_blocking(
                 job["error"] = _safe_error(exc)
                 job["updated_at"] = _now_iso()
                 job["_finished_at"] = time.time()
+                snapshot = dict(job)
+            else:
+                snapshot = None
+        if snapshot is not None:
+            _sync_alpha_job_to_durable("alpha_compare", snapshot)
         return
 
     with _JOBS_LOCK:
@@ -355,6 +378,8 @@ def _run_compare_blocking(
             job["result"] = result
         job["updated_at"] = _now_iso()
         job["_finished_at"] = time.time()
+        snapshot = dict(job)
+    _sync_alpha_job_to_durable("alpha_compare", snapshot)
 
 
 def _progress_percent(job: dict[str, Any]) -> int:
@@ -391,15 +416,104 @@ def _runtime_job_row(kind: str, job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _sync_alpha_job_to_durable(kind: str, job: dict[str, Any]) -> None:
+    """Mirror alpha bench/compare jobs into the durable Runtime job store."""
+    job_id = str(job.get("job_id") or "")
+    if not job_id:
+        return
+    try:
+        from src.runtime_jobs.store import DurableRuntimeJobStore
+
+        progress = job.get("progress") if isinstance(job.get("progress"), dict) else {}
+        status = str(job.get("status") or "unknown")
+        normalized_status = "failed" if status == "error" else status
+        metadata = {
+            "zoo": job.get("zoo"),
+            "universe": job.get("universe"),
+            "period": job.get("period"),
+            "top": job.get("top"),
+            "sort": job.get("sort"),
+            "alpha_ids": job.get("alpha_ids"),
+            "current_alpha_id": progress.get("current_alpha_id") if isinstance(progress, dict) else None,
+        }
+        metadata = {key: value for key, value in metadata.items() if value not in (None, "", [])}
+        store = DurableRuntimeJobStore()
+        title = _runtime_job_row(kind, job).get("title") or job_id
+        source = "backtest"
+        if kind not in {"alpha_bench", "alpha_compare"}:
+            source = "other"
+        try:
+            store.get_job(job_id)
+        except KeyError:
+            store.create_job(
+                job_id=job_id,
+                kind=kind,
+                source=source,
+                title=str(title),
+                status=normalized_status if normalized_status in {"queued", "pending", "running", "completed", "done", "failed", "cancelled"} else "queued",
+                progress=_progress_percent(job),
+                error=str(job.get("error") or ""),
+                metadata=metadata,
+                retryable=True,
+                cancelable=normalized_status in {"queued", "pending", "running"},
+            )
+            return
+        store.update_job(
+            job_id,
+            status=normalized_status if normalized_status in {"queued", "pending", "running", "completed", "done", "failed", "cancelled"} else None,
+            progress=_progress_percent(job),
+            error=str(job.get("error") or ""),
+            metadata=metadata,
+            retryable=True,
+            cancelable=normalized_status in {"queued", "pending", "running"},
+        )
+    except Exception as exc:  # noqa: BLE001 - durable mirror must not break alpha execution
+        logger.debug("Failed to sync alpha job to durable runtime store: %s", exc)
+
+
 def _runtime_job_rows(extra_rows: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     with _JOBS_LOCK:
         rows = [
             *(_runtime_job_row("alpha_bench", dict(job)) for job in ALPHA_BENCH_JOBS.values()),
             *(_runtime_job_row("alpha_compare", dict(job)) for job in ALPHA_COMPARE_JOBS.values()),
         ]
+    rows.extend(_durable_runtime_job_rows())
     if extra_rows:
         rows.extend(extra_rows)
-    return sorted(rows, key=lambda row: row.get("updated_at") or row.get("created_at") or "", reverse=True)
+    deduped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        job_id = str(row.get("job_id") or "")
+        if not job_id:
+            continue
+        deduped[job_id] = row
+    return sorted(deduped.values(), key=lambda row: row.get("updated_at") or row.get("created_at") or "", reverse=True)
+
+
+def _durable_runtime_job_rows() -> list[dict[str, Any]]:
+    try:
+        from src.runtime_jobs.store import DurableRuntimeJobStore
+
+        return [_runtime_row_from_durable_job(row) for row in DurableRuntimeJobStore().list_jobs(limit=500)]
+    except Exception as exc:  # noqa: BLE001 - Runtime monitor should degrade to process-local jobs
+        logger.debug("Failed to load durable runtime jobs: %s", exc)
+        return []
+
+
+def _runtime_row_from_durable_job(job: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "job_id": str(job.get("job_id") or ""),
+        "kind": str(job.get("kind") or ""),
+        "source": str(job.get("source") or "other"),
+        "title": str(job.get("title") or job.get("job_id") or ""),
+        "status": str(job.get("status") or "unknown"),
+        "progress": int(job.get("progress") or 0),
+        "error": str(job.get("error") or ""),
+        "created_at": str(job.get("created_at") or ""),
+        "updated_at": str(job.get("updated_at") or job.get("created_at") or ""),
+        "metadata": dict(job.get("metadata") or {}),
+        "retryable": bool(job.get("retryable")),
+        "cancelable": bool(job.get("cancelable")),
+    }
 
 
 def _commercial_runtime_job_rows(request: Request) -> list[dict[str, Any]]:
@@ -496,6 +610,21 @@ def _find_rag_ingestion_job(request: Request, job_id: str) -> tuple[Any, Any, st
     return None
 
 
+def _find_durable_runtime_job(job_id: str) -> tuple[Any, dict[str, Any]] | None:
+    if not _JOB_ID_RE.fullmatch(job_id or ""):
+        raise HTTPException(status_code=400, detail="invalid job_id")
+    try:
+        from src.runtime_jobs.store import DurableRuntimeJobStore
+
+        store = DurableRuntimeJobStore()
+        return store, store.get_job(job_id)
+    except KeyError:
+        return None
+    except Exception as exc:  # noqa: BLE001 - keep normal 404 semantics when durable adapter is unavailable
+        logger.debug("Failed to resolve durable runtime job: %s", exc)
+        return None
+
+
 def _find_runtime_job(job_id: str) -> tuple[str, dict[str, dict[str, Any]], dict[str, Any]]:
     if not _JOB_ID_RE.fullmatch(job_id or ""):
         raise HTTPException(status_code=400, detail="invalid job_id")
@@ -566,6 +695,13 @@ def register_alpha_routes(
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
+            durable_job = _find_durable_runtime_job(job_id)
+            if durable_job is not None:
+                durable_store, job = durable_job
+                if str(job.get("status")) not in ("queued", "pending", "running"):
+                    raise HTTPException(status_code=400, detail="only queued or running jobs can be cancelled")
+                cancelled = durable_store.cancel_job(job_id)
+                return {"status": "cancelled", "job_id": job_id, "kind": cancelled["kind"]}
             rag_job = _find_rag_ingestion_job(request, job_id)
             if rag_job is None:
                 raise
@@ -580,6 +716,8 @@ def register_alpha_routes(
             store[job_id]["status"] = "cancelled"
             store[job_id]["updated_at"] = _now_iso()
             store[job_id]["_finished_at"] = time.time()
+            snapshot = dict(store[job_id])
+        _sync_alpha_job_to_durable(_kind, snapshot)
         return {"status": "cancelled", "job_id": job_id}
 
     @app.post("/runtime/jobs/{job_id}/retry", dependencies=[Depends(require_auth)])
@@ -590,6 +728,13 @@ def register_alpha_routes(
         except HTTPException as exc:
             if exc.status_code != 404:
                 raise
+            durable_job = _find_durable_runtime_job(job_id)
+            if durable_job is not None:
+                durable_store, job = durable_job
+                if str(job.get("status")) not in ("failed", "error"):
+                    raise HTTPException(status_code=400, detail="only failed jobs can be retried")
+                retried = durable_store.mark_retry_requested(job_id)
+                return {"status": "queued", "job_id": job_id, "kind": retried["kind"]}
             rag_job = _find_rag_ingestion_job(request, job_id)
             if rag_job is None:
                 raise
@@ -611,6 +756,8 @@ def register_alpha_routes(
             top = int(job.get("top") or 20)
             with _JOBS_LOCK:
                 _reset_job_for_retry(store[job_id])
+                snapshot = dict(store[job_id])
+            _sync_alpha_job_to_durable(kind, snapshot)
 
             async def _bench_retry() -> None:
                 async with sem:
@@ -627,6 +774,8 @@ def register_alpha_routes(
             sort = str(job.get("sort") or "ir")
             with _JOBS_LOCK:
                 _reset_job_for_retry(store[job_id])
+                snapshot = dict(store[job_id])
+            _sync_alpha_job_to_durable(kind, snapshot)
 
             async def _compare_retry() -> None:
                 async with sem:
@@ -797,6 +946,8 @@ def register_alpha_routes(
                 "result": None,
                 "error": None,
             }
+            snapshot = dict(ALPHA_BENCH_JOBS[job_id])
+        _sync_alpha_job_to_durable("alpha_bench", snapshot)
 
         async def _runner() -> None:
             async with sem:
@@ -813,10 +964,16 @@ def register_alpha_routes(
                     logger.exception("bench runner outer task crashed (job=%s)", job_id)
                     with _JOBS_LOCK:
                         job = ALPHA_BENCH_JOBS.get(job_id)
-                        if job is not None and job["status"] not in ("done", "error"):
+                        if job is not None and job["status"] not in ("done", "error", "failed", "cancelled"):
                             job["status"] = "error"
                             job["error"] = "internal error; see server logs"
+                            job["updated_at"] = _now_iso()
                             job["_finished_at"] = time.time()
+                            snapshot = dict(job)
+                        else:
+                            snapshot = None
+                    if snapshot is not None:
+                        _sync_alpha_job_to_durable("alpha_bench", snapshot)
 
         task = asyncio.create_task(_runner())
         _RUNNING_TASKS.add(task)
@@ -881,6 +1038,8 @@ def register_alpha_routes(
                 "result": None,
                 "error": None,
             }
+            snapshot = dict(ALPHA_COMPARE_JOBS[job_id])
+        _sync_alpha_job_to_durable("alpha_compare", snapshot)
 
         async def _runner() -> None:
             async with sem:
@@ -897,10 +1056,16 @@ def register_alpha_routes(
                     logger.exception("compare runner outer task crashed (job=%s)", job_id)
                     with _JOBS_LOCK:
                         job = ALPHA_COMPARE_JOBS.get(job_id)
-                        if job is not None and job["status"] not in ("done", "error"):
+                        if job is not None and job["status"] not in ("done", "error", "failed", "cancelled"):
                             job["status"] = "error"
                             job["error"] = "internal error; see server logs"
+                            job["updated_at"] = _now_iso()
                             job["_finished_at"] = time.time()
+                            snapshot = dict(job)
+                        else:
+                            snapshot = None
+                    if snapshot is not None:
+                        _sync_alpha_job_to_durable("alpha_compare", snapshot)
 
         task = asyncio.create_task(_runner())
         _RUNNING_TASKS.add(task)
