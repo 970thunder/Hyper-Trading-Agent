@@ -238,3 +238,50 @@ def test_knowledge_base_is_organization_scoped(tmp_path):
 
     with pytest.raises(KeyError):
         store.list_knowledge_documents(owner_b, kb_a["id"])
+
+
+def test_knowledge_document_operations_reject_cross_organization_access(tmp_path):
+    store = CommercialStore(tmp_path / "commercial.db")
+    owner_a, _ = store.register_owner(
+        email="a@example.com",
+        password="password123",
+        organization_name="A",
+    )
+    owner_b, _ = store.register_owner(
+        email="b@example.com",
+        password="password123",
+        organization_name="B",
+    )
+    kb_a = store.create_knowledge_base(owner_a, "A KB")
+    doc = store.add_knowledge_document(
+        owner_a,
+        kb_a["id"],
+        title="Private policy",
+        source_uri="uploads/private.md",
+        source_type="file",
+        text="Only organization A can retrieve this proprietary risk policy.",
+    )
+    job_id = doc["ingestion_job_id"]
+
+    with pytest.raises(KeyError):
+        store.search_knowledge(owner_b, kb_a["id"], "proprietary risk policy")
+    with pytest.raises(KeyError):
+        store.get_knowledge_document(owner_b, kb_a["id"], doc["id"])
+    with pytest.raises(KeyError):
+        store.get_ingestion_job(owner_b, kb_a["id"], job_id)
+    with pytest.raises(KeyError):
+        store.reindex_knowledge_document(owner_b, kb_a["id"], doc["id"])
+    with pytest.raises(KeyError):
+        store.delete_knowledge_document(owner_b, kb_a["id"], doc["id"])
+
+    assert store.get_knowledge_document(owner_a, kb_a["id"], doc["id"])["id"] == doc["id"]
+    with store._connect() as conn:
+        leaked_logs = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM knowledge_retrieval_logs
+            WHERE organization_id = ? AND knowledge_base_id = ?
+            """,
+            (owner_b.organization_id, kb_a["id"]),
+        ).fetchone()
+    assert leaked_logs["count"] == 0

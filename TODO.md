@@ -62,7 +62,7 @@
 - [x] OpenAI-compatible embedding provider 优先向量化
 - [x] 知识库向量化状态与 fallback 原因可观测
 - [x] 文档重建索引、失败重试、删除后清理 chunk
-- [ ] 知识库 ACL 与跨组织隔离测试
+- [x] 知识库 ACL 与跨组织隔离测试：搜索、文档、job、重建、删除均拒绝跨组织访问
 
 ## P3 输出与展示
 - [ ] 结构化投研报告模板
