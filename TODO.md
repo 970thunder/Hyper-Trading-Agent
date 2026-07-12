@@ -84,6 +84,6 @@
 - [x] 模型用量关联组织模型 provider
 - [x] Prometheus 指标
 - [ ] 管理后台
-- [ ] 交叉测试与评测集
+- [x] 交叉测试与评测集：新增商业 Agent 交叉评测 JSON，覆盖 RAG、回测、RBAC、HITL、多模型、审计与输出质量，并用测试校验结构和覆盖面
 - [x] API key 轮换与密钥加密迁移说明：新增密钥轮换、模型 provider key 迁移、加密迁移与泄露响应 runbook
 - [x] 私有化部署备份与恢复演练：新增 PostgreSQL、文件/对象存储、Docker Compose 恢复演练与验收 runbook
