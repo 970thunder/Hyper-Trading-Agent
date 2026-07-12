@@ -37,7 +37,9 @@ import {
   type CommercialModelProvider,
   type CommercialModelProviderCreateRequest,
   type CommercialModelProviderUpdateRequest,
+  type CommercialOrganizationMember,
   type CommercialPrincipal,
+  type CommercialRole,
   type DataSourceSettings,
   type KnowledgeDocument,
   type KnowledgeSearchResult,
@@ -88,6 +90,13 @@ interface SwarmAgentFormState {
   model_name: string;
   model_provider_id: string;
   max_retries: number;
+}
+
+interface OrganizationMemberFormState {
+  email: string;
+  display_name: string;
+  password: string;
+  role: CommercialRole;
 }
 
 type SettingsSection =
@@ -175,6 +184,15 @@ function splitList(value: string): string[] {
     .filter(Boolean);
 }
 
+function emptyMemberForm(): OrganizationMemberFormState {
+  return {
+    email: "",
+    display_name: "",
+    password: "",
+    role: "member",
+  };
+}
+
 function swarmPresetDisplayName(t: TFunction, preset: SwarmPreset): string {
   return t(`settings.swarmPresetNames.${preset.name}`, { defaultValue: preset.title || preset.name });
 }
@@ -212,6 +230,7 @@ export function Settings() {
   const [principal, setPrincipal] = useState<CommercialPrincipal | null>(null);
   const [knowledgeBases, setKnowledgeBases] = useState<CommercialKnowledgeBase[]>([]);
   const [commercialModelProviders, setCommercialModelProviders] = useState<CommercialModelProvider[]>([]);
+  const [organizationMembers, setOrganizationMembers] = useState<CommercialOrganizationMember[]>([]);
   const [knowledgeBackendStatus, setKnowledgeBackendStatus] = useState<CommercialKnowledgeBackendStatus | null>(null);
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [commercialDocuments, setCommercialDocuments] = useState<CommercialKnowledgeDocument[]>([]);
@@ -228,6 +247,7 @@ export function Settings() {
   const [modelProviderForm, setModelProviderForm] = useState<ModelProviderFormState>(() => toModelProviderForm(null));
   const [editingModelProviderId, setEditingModelProviderId] = useState<string | null>(null);
   const [swarmAgentForm, setSwarmAgentForm] = useState<SwarmAgentFormState>(() => toSwarmAgentForm());
+  const [memberForm, setMemberForm] = useState<OrganizationMemberFormState>(() => emptyMemberForm());
   const [editingSwarmAgentId, setEditingSwarmAgentId] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [localApiKey, setLocalApiKeyState] = useState(() => getApiAuthKey());
@@ -240,6 +260,8 @@ export function Settings() {
   const [modelProviderTestingId, setModelProviderTestingId] = useState<string | null>(null);
   const [swarmAgentSaving, setSwarmAgentSaving] = useState(false);
   const [deletingSwarmAgentId, setDeletingSwarmAgentId] = useState<string | null>(null);
+  const [memberSaving, setMemberSaving] = useState(false);
+  const [memberActionId, setMemberActionId] = useState<string | null>(null);
   const [dataSaving, setDataSaving] = useState(false);
   const [knowledgeSaving, setKnowledgeSaving] = useState(false);
   const [knowledgeJobAction, setKnowledgeJobAction] = useState<string | null>(null);
@@ -287,6 +309,13 @@ export function Settings() {
 
   const loadCommercialModels = async () => {
     setCommercialModelProviders(await api.listCommercialModelProviders());
+  };
+
+  const canViewOrganizationMembers = (role?: CommercialRole) => role === "owner" || role === "admin";
+  const canManageOrganizationMembers = principal?.role === "owner";
+
+  const loadOrganizationMembers = async () => {
+    setOrganizationMembers(await api.listOrganizationMembers());
   };
 
   const loadSwarmPresets = async (preferredPreset = selectedSwarmPreset) => {
@@ -431,15 +460,21 @@ export function Settings() {
 
         if (principalResult.status === "fulfilled") {
           setPrincipal(principalResult.value);
-          await Promise.allSettled([
+          const currentPrincipal = principalResult.value;
+          const commercialLoads = [
             loadCommercialModels(),
             loadCommercialKnowledge(),
             loadAuditAndUsage(),
             loadSwarmPresets(),
             loadToolPolicies(),
-          ]);
+          ];
+          if (canViewOrganizationMembers(currentPrincipal.role)) {
+            commercialLoads.push(loadOrganizationMembers());
+          }
+          await Promise.allSettled(commercialLoads);
         } else {
           setPrincipal(null);
+          setOrganizationMembers([]);
         }
 
         setLoadErrors(nextErrors);
@@ -560,6 +595,62 @@ export function Settings() {
     setApiAuthKey(localApiKey);
     toast.success(t("settings.localApiKeySaved"));
     window.location.reload();
+  };
+
+  const submitOrganizationMember = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!canManageOrganizationMembers) return;
+    if (!memberForm.email.trim() || !memberForm.password.trim()) {
+      toast.error(t("settings.security.memberRequired"));
+      return;
+    }
+    setMemberSaving(true);
+    try {
+      await api.createOrganizationMember({
+        email: memberForm.email.trim(),
+        display_name: memberForm.display_name.trim() || undefined,
+        password: memberForm.password,
+        role: memberForm.role,
+      });
+      setMemberForm(emptyMemberForm());
+      await loadOrganizationMembers();
+      toast.success(t("settings.security.memberCreated"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.security.memberCreateFailed", { message }));
+    } finally {
+      setMemberSaving(false);
+    }
+  };
+
+  const updateOrganizationMemberRole = async (member: CommercialOrganizationMember, role: CommercialRole) => {
+    if (!canManageOrganizationMembers || member.role === role) return;
+    setMemberActionId(`role:${member.user_id}`);
+    try {
+      const updated = await api.updateOrganizationMember(member.user_id, { role });
+      setOrganizationMembers((prev) => prev.map((item) => item.user_id === updated.user_id ? updated : item));
+      toast.success(t("settings.security.memberUpdated"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.security.memberUpdateFailed", { message }));
+    } finally {
+      setMemberActionId(null);
+    }
+  };
+
+  const deleteOrganizationMember = async (member: CommercialOrganizationMember) => {
+    if (!canManageOrganizationMembers || member.user_id === principal?.user_id) return;
+    setMemberActionId(`delete:${member.user_id}`);
+    try {
+      await api.deleteOrganizationMember(member.user_id);
+      setOrganizationMembers((prev) => prev.filter((item) => item.user_id !== member.user_id));
+      toast.success(t("settings.security.memberDeleted"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("settings.unknownError");
+      toast.error(t("settings.security.memberDeleteFailed", { message }));
+    } finally {
+      setMemberActionId(null);
+    }
   };
 
   const submit = async (event: FormEvent) => {
@@ -1695,20 +1786,141 @@ export function Settings() {
   );
 
   const renderSecurity = () => (
-    <form onSubmit={submitLocalApiKey} className={sectionCardClass}>
-      <div className="mb-4 space-y-1">
-        <div className="flex items-center gap-2">
-          <KeyRound className="h-4 w-4 text-primary" />
-          <h2 className="text-base font-semibold">{t("settings.localApiAccess")}</h2>
+    <div className="space-y-5">
+      <form onSubmit={submitLocalApiKey} className={sectionCardClass}>
+        <div className="mb-4 space-y-1">
+          <div className="flex items-center gap-2">
+            <KeyRound className="h-4 w-4 text-primary" />
+            <h2 className="text-base font-semibold">{t("settings.localApiAccess")}</h2>
+          </div>
+          <p className="text-sm text-muted-foreground">{t("settings.localApiAccessDesc")}</p>
         </div>
-        <p className="text-sm text-muted-foreground">{t("settings.localApiAccessDesc")}</p>
-      </div>
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
-        <TextField label={t("settings.serverApiKey")} value={localApiKey} onChange={setLocalApiKeyState} placeholder={t("settings.storedInBrowser")} type="password" />
-        <PrimaryButton type="submit" label={t("settings.save")} className="self-end" />
-      </div>
-      <p className="mt-2 text-xs text-muted-foreground">{t("settings.storedInBrowser")}</p>
-    </form>
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+          <TextField label={t("settings.serverApiKey")} value={localApiKey} onChange={setLocalApiKeyState} placeholder={t("settings.storedInBrowser")} type="password" />
+          <PrimaryButton type="submit" label={t("settings.save")} className="self-end" />
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">{t("settings.storedInBrowser")}</p>
+      </form>
+
+      <section className={sectionCardClass}>
+        <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-primary" />
+              <h2 className="text-base font-semibold">{t("settings.security.membersTitle")}</h2>
+            </div>
+            <p className="max-w-3xl text-sm text-muted-foreground">{t("settings.security.membersDescription")}</p>
+          </div>
+          {canViewOrganizationMembers(principal?.role) ? (
+            <button type="button" onClick={() => loadOrganizationMembers().catch((error) => toast.error(t("settings.security.memberLoadFailed", { message: error instanceof Error ? error.message : t("settings.unknownError") })))} className="inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground">
+              <RefreshCw className="h-4 w-4" />
+              {t("settings.refresh")}
+            </button>
+          ) : null}
+        </div>
+
+        {!principal ? (
+          unavailable(t("settings.security.signInRequired"))
+        ) : !canViewOrganizationMembers(principal.role) ? (
+          unavailable(t("settings.security.memberPermissionRequired"))
+        ) : (
+          <div className="space-y-5">
+            <div className="overflow-hidden rounded-md border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/40 text-xs text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">{t("settings.security.member")}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("settings.security.role")}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("settings.security.joinedAt")}</th>
+                    {canManageOrganizationMembers ? <th className="px-3 py-2 text-right font-medium">{t("settings.security.actions")}</th> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {organizationMembers.length ? organizationMembers.map((member) => (
+                    <tr key={member.user_id} className="border-t transition hover:bg-muted/20">
+                      <td className="px-3 py-2 align-top">
+                        <div className="font-medium">{member.display_name || member.email}</div>
+                        <div className="text-xs text-muted-foreground">{member.email}</div>
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        {canManageOrganizationMembers ? (
+                          <select
+                            value={member.role}
+                            onChange={(event) => updateOrganizationMemberRole(member, event.target.value as CommercialRole)}
+                            disabled={memberActionId === `role:${member.user_id}`}
+                            className="rounded-md border border-border/75 bg-background px-2 py-1.5 text-xs outline-none transition focus:border-primary/70 focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+                            aria-label={t("settings.security.memberRoleFor", { email: member.email })}
+                          >
+                            {(["owner", "admin", "member", "viewer"] as CommercialRole[]).map((role) => (
+                              <option key={role} value={role}>{t(`settings.security.roles.${role}`)}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="status-soft">{t(`settings.security.roles.${member.role}`)}</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 align-top text-xs text-muted-foreground">
+                        {member.created_at.slice(0, 10)}
+                      </td>
+                      {canManageOrganizationMembers ? (
+                        <td className="px-3 py-2 text-right align-top">
+                          {member.user_id === principal.user_id ? (
+                            <span className="text-xs text-muted-foreground">{t("settings.security.currentUser")}</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => deleteOrganizationMember(member)}
+                              disabled={memberActionId === `delete:${member.user_id}`}
+                              className="inline-flex items-center justify-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-destructive/40 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {memberActionId === `delete:${member.user_id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                              {t("settings.security.removeMember")}
+                            </button>
+                          )}
+                        </td>
+                      ) : null}
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={canManageOrganizationMembers ? 4 : 3} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                        {t("settings.security.noMembers")}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {canManageOrganizationMembers ? (
+              <form onSubmit={submitOrganizationMember} className="rounded-md border bg-muted/10 p-4">
+                <div className="mb-4 flex items-center gap-2">
+                  <Plus className="h-4 w-4 text-primary" />
+                  <h3 className="text-sm font-semibold">{t("settings.security.addMemberTitle")}</h3>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <TextField label={t("settings.security.email")} value={memberForm.email} onChange={(value) => setMemberForm((prev) => ({ ...prev, email: value }))} />
+                  <TextField label={t("settings.security.displayName")} value={memberForm.display_name} onChange={(value) => setMemberForm((prev) => ({ ...prev, display_name: value }))} />
+                  <TextField label={t("settings.security.password")} value={memberForm.password} onChange={(value) => setMemberForm((prev) => ({ ...prev, password: value }))} type="password" />
+                  <label className="grid gap-2">
+                    <span className={labelClass}>{t("settings.security.role")}</span>
+                    <select value={memberForm.role} onChange={(event) => setMemberForm((prev) => ({ ...prev, role: event.target.value as CommercialRole }))} className={fieldClass}>
+                      {(["admin", "member", "viewer", "owner"] as CommercialRole[]).map((role) => (
+                        <option key={role} value={role}>{t(`settings.security.roles.${role}`)}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <PrimaryButton type="submit" disabled={memberSaving} loading={memberSaving} label={t("settings.security.addMember")} className="mt-4" />
+              </form>
+            ) : (
+              <div className="rounded-md border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+                {t("settings.security.adminReadOnly")}
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+    </div>
   );
 
   const renderChannels = () => (
