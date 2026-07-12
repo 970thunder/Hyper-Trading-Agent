@@ -44,6 +44,8 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
+from src.runtime_jobs.backend import REDIS_POSTGRES_RUNTIME_BACKEND, _redis_client_from_url, _redis_url, build_runtime_job_backend
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -57,6 +59,11 @@ _JOBS_LOCK = threading.Lock()
 # Live background bench tasks. Holding strong refs prevents the asyncio GC from
 # cancelling fire-and-forget tasks; ``add`` on create, ``discard`` on done.
 _RUNNING_TASKS: set[asyncio.Task[Any]] = set()
+
+
+def _runtime_redis_client():
+    redis_url = _redis_url()
+    return _redis_client_from_url(redis_url) if redis_url else None
 
 _JOB_TTL_SECONDS = 60 * 60  # prune jobs older than 1 hour on each new POST
 _POLL_INTERVAL_SECONDS = 0.5
@@ -949,6 +956,29 @@ def register_alpha_routes(
             snapshot = dict(ALPHA_BENCH_JOBS[job_id])
         _sync_alpha_job_to_durable("alpha_bench", snapshot)
 
+        backend = build_runtime_job_backend(redis_client=_runtime_redis_client())
+        if backend.status().get("configured") == REDIS_POSTGRES_RUNTIME_BACKEND and backend.name == REDIS_POSTGRES_RUNTIME_BACKEND:
+            backend.enqueue(
+                kind="alpha_bench",
+                source="backtest",
+                title=f"Alpha bench {payload.universe}",
+                payload={
+                    "job_id": job_id,
+                    "zoo": payload.zoo,
+                    "universe": payload.universe,
+                    "period": payload.period,
+                    "top": payload.top,
+                },
+                metadata={
+                    "zoo": payload.zoo,
+                    "universe": payload.universe,
+                    "period": payload.period,
+                    "top": payload.top,
+                },
+                job_id=job_id,
+            )
+            return {"status": "ok", "job_id": job_id}
+
         async def _runner() -> None:
             async with sem:
                 try:
@@ -1040,6 +1070,29 @@ def register_alpha_routes(
             }
             snapshot = dict(ALPHA_COMPARE_JOBS[job_id])
         _sync_alpha_job_to_durable("alpha_compare", snapshot)
+
+        backend = build_runtime_job_backend(redis_client=_runtime_redis_client())
+        if backend.status().get("configured") == REDIS_POSTGRES_RUNTIME_BACKEND and backend.name == REDIS_POSTGRES_RUNTIME_BACKEND:
+            backend.enqueue(
+                kind="alpha_compare",
+                source="backtest",
+                title=f"Alpha compare {payload.universe}",
+                payload={
+                    "job_id": job_id,
+                    "alpha_ids": payload.alpha_ids,
+                    "universe": payload.universe,
+                    "period": payload.period,
+                    "sort": payload.sort,
+                },
+                metadata={
+                    "alpha_ids": payload.alpha_ids,
+                    "universe": payload.universe,
+                    "period": payload.period,
+                    "sort": payload.sort,
+                },
+                job_id=job_id,
+            )
+            return {"status": "ok", "job_id": job_id}
 
         async def _runner() -> None:
             async with sem:

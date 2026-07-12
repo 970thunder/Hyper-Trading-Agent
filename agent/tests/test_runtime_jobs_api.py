@@ -72,6 +72,62 @@ def test_runtime_jobs_lists_alpha_background_jobs() -> None:
     assert rows[1]["progress"] == 40
 
 
+def test_alpha_bench_queues_runtime_worker_when_backend_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    pushed: list[tuple[str, str]] = []
+
+    class FakeRedisClient:
+        def rpush(self, queue_name: str, payload: str) -> int:
+            pushed.append((queue_name, payload))
+            return 1
+
+    monkeypatch.setenv("HYPER_TRADING_RUNTIME_JOB_BACKEND", "redis-postgres")
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://vibe:secret@postgres:5432/vibe_trading")
+    monkeypatch.setenv("HYPER_TRADING_RUNTIME_JOB_QUEUE", "hyper:runtime:jobs")
+    monkeypatch.setattr(alpha_routes, "_runtime_redis_client", lambda: FakeRedisClient())
+
+    response = _client().post(
+        "/alpha/bench",
+        json={"zoo": "alpha101", "universe": "csi300", "period": "2020-2025", "top": 20},
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["job_id"] in alpha_routes.ALPHA_BENCH_JOBS
+    assert pushed[0][0] == "hyper:runtime:jobs"
+    assert '"kind": "alpha_bench"' in pushed[0][1]
+    assert DurableRuntimeJobStore().get_job(payload["job_id"])["status"] == "queued"
+
+
+def test_alpha_compare_queues_runtime_worker_when_backend_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    pushed: list[tuple[str, str]] = []
+
+    class FakeRedisClient:
+        def rpush(self, queue_name: str, payload: str) -> int:
+            pushed.append((queue_name, payload))
+            return 1
+
+    monkeypatch.setenv("HYPER_TRADING_RUNTIME_JOB_BACKEND", "redis-postgres")
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://vibe:secret@postgres:5432/vibe_trading")
+    monkeypatch.setenv("HYPER_TRADING_RUNTIME_JOB_QUEUE", "hyper:runtime:jobs")
+    monkeypatch.setattr(alpha_routes, "_runtime_redis_client", lambda: FakeRedisClient())
+
+    response = _client().post(
+        "/alpha/compare",
+        json={"alpha_ids": ["alpha101_1", "alpha101_2"], "universe": "csi300", "period": "2020-2025", "sort": "ir"},
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["job_id"] in alpha_routes.ALPHA_COMPARE_JOBS
+    assert pushed[0][0] == "hyper:runtime:jobs"
+    assert '"kind": "alpha_compare"' in pushed[0][1]
+    assert DurableRuntimeJobStore().get_job(payload["job_id"])["status"] == "queued"
+
+
 def test_alpha_bench_progress_and_completion_sync_to_durable_store(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("VIBE_TRADING_RUNTIME_JOBS_DB", str(tmp_path / "runtime_jobs.db"))
     alpha_routes.ALPHA_BENCH_JOBS["bench-1"] = {

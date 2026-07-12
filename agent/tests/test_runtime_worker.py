@@ -149,3 +149,76 @@ def test_worker_run_once_ingests_knowledge_url(tmp_path: Path, monkeypatch) -> N
     assert documents[0]["status"] == "ready"
     search = store.search_knowledge(principal, kb["id"], "drawdown controls", limit=5)
     assert search[0]["source_uri"] == "https://example.com/research"
+
+
+def test_worker_run_once_executes_alpha_bench_job(tmp_path: Path, monkeypatch) -> None:
+    redis_client = FakeRedisClient()
+    monkeypatch.setenv("VIBE_TRADING_RUNTIME_JOBS_DB", str(tmp_path / "runtime_jobs.db"))
+    monkeypatch.setenv("HYPER_TRADING_RUNTIME_JOB_BACKEND", "redis-postgres")
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://vibe:secret@postgres:5432/vibe_trading")
+
+    from src.api import alpha_routes
+    import src.factors.bench_runner as bench_runner
+
+    alpha_routes.ALPHA_BENCH_JOBS.clear()
+
+    def fake_run_bench(**kwargs):
+        kwargs["on_progress"](1, 2, "alpha101_1")
+        kwargs["on_progress"](2, 2, "alpha101_2")
+        return {"status": "ok", "rows": [{"alpha_id": "alpha101_1"}], "skipped": [], "n_skipped": 0, "summary": "ok"}
+
+    monkeypatch.setattr(bench_runner, "run_bench", fake_run_bench)
+    backend = build_runtime_job_backend(redis_client=redis_client)
+    backend.enqueue(
+        kind="alpha_bench",
+        source="backtest",
+        title="Alpha bench csi300",
+        payload={"job_id": "bench-worker-1", "zoo": "alpha101", "universe": "csi300", "period": "2020-2025", "top": 20},
+        metadata={"universe": "csi300"},
+        job_id="bench-worker-1",
+    )
+
+    result = run_once(redis_client=redis_client)
+
+    assert result == {"status": "completed", "job_id": "bench-worker-1", "kind": "alpha_bench"}
+    durable = DurableRuntimeJobStore().get_job("bench-worker-1")
+    assert durable["status"] == "completed"
+    assert durable["metadata"]["worker_result"]["alpha_status"] == "done"
+    assert alpha_routes.ALPHA_BENCH_JOBS["bench-worker-1"]["status"] == "done"
+
+
+def test_worker_run_once_executes_alpha_compare_job(tmp_path: Path, monkeypatch) -> None:
+    redis_client = FakeRedisClient()
+    monkeypatch.setenv("VIBE_TRADING_RUNTIME_JOBS_DB", str(tmp_path / "runtime_jobs.db"))
+    monkeypatch.setenv("HYPER_TRADING_RUNTIME_JOB_BACKEND", "redis-postgres")
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://vibe:secret@postgres:5432/vibe_trading")
+
+    from src.api import alpha_routes
+    import src.factors.compare_runner as compare_runner
+
+    alpha_routes.ALPHA_COMPARE_JOBS.clear()
+
+    def fake_compare_alphas(alpha_ids, universe, period, *, sort, on_progress):
+        on_progress(1, 1, alpha_ids[0])
+        return {"status": "ok", "rows": [{"alpha_id": alpha_ids[0], "ir": 1.2}], "universe": universe, "period": period, "sort": sort}
+
+    monkeypatch.setattr(compare_runner, "compare_alphas", fake_compare_alphas)
+    backend = build_runtime_job_backend(redis_client=redis_client)
+    backend.enqueue(
+        kind="alpha_compare",
+        source="backtest",
+        title="Alpha compare csi300",
+        payload={"job_id": "compare-worker-1", "alpha_ids": ["alpha101_1"], "universe": "csi300", "period": "2020-2025", "sort": "ir"},
+        metadata={"universe": "csi300"},
+        job_id="compare-worker-1",
+    )
+
+    result = run_once(redis_client=redis_client)
+
+    assert result == {"status": "completed", "job_id": "compare-worker-1", "kind": "alpha_compare"}
+    durable = DurableRuntimeJobStore().get_job("compare-worker-1")
+    assert durable["status"] == "completed"
+    assert durable["metadata"]["worker_result"]["alpha_status"] == "done"
+    assert alpha_routes.ALPHA_COMPARE_JOBS["compare-worker-1"]["status"] == "done"

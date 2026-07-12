@@ -39,6 +39,10 @@ def _execute_runtime_job(job: dict[str, Any]) -> dict[str, Any]:
         return {"status": "completed", "message": str(payload.get("message") or "ok")}
     if kind == "knowledge_url_ingest":
         return _execute_knowledge_url_ingest(payload)
+    if kind == "alpha_bench":
+        return _execute_alpha_bench(payload)
+    if kind == "alpha_compare":
+        return _execute_alpha_compare(payload)
     raise ValueError(f"unsupported runtime job kind: {kind or 'unknown'}")
 
 
@@ -82,6 +86,72 @@ def _execute_knowledge_url_ingest(payload: dict[str, Any]) -> dict[str, Any]:
         "ingestion_job_id": document["ingestion_job_id"],
         "title": document["title"],
     }
+
+
+def _execute_alpha_bench(payload: dict[str, Any]) -> dict[str, Any]:
+    from src.api import alpha_routes
+
+    job_id = str(payload.get("job_id") or "")
+    zoo = str(payload.get("zoo") or "")
+    universe = str(payload.get("universe") or "")
+    period = str(payload.get("period") or "")
+    top = int(payload.get("top") or 20)
+    if not job_id or not zoo or not universe or not period:
+        raise ValueError("alpha_bench payload missing job_id, zoo, universe, or period")
+    with alpha_routes._JOBS_LOCK:
+        alpha_routes.ALPHA_BENCH_JOBS.setdefault(
+            job_id,
+            {
+                "job_id": job_id,
+                "status": "queued",
+                "zoo": zoo,
+                "universe": universe,
+                "period": period,
+                "top": top,
+                "created_at": alpha_routes._now_iso(),
+                "progress": {"n_done": 0, "n_total": 0, "current_alpha_id": None},
+                "result": None,
+                "error": None,
+            },
+        )
+    alpha_routes._run_bench_blocking(job_id, zoo, universe, period, top)
+    job = alpha_routes.ALPHA_BENCH_JOBS.get(job_id, {})
+    if str(job.get("status")) in {"error", "failed"}:
+        raise ValueError(str(job.get("error") or "alpha bench failed"))
+    return {"status": "completed", "alpha_status": str(job.get("status") or ""), "result": job.get("result")}
+
+
+def _execute_alpha_compare(payload: dict[str, Any]) -> dict[str, Any]:
+    from src.api import alpha_routes
+
+    job_id = str(payload.get("job_id") or "")
+    alpha_ids = [str(item) for item in (payload.get("alpha_ids") or []) if str(item)]
+    universe = str(payload.get("universe") or "")
+    period = str(payload.get("period") or "")
+    sort = str(payload.get("sort") or "ir")
+    if not job_id or not alpha_ids or not universe or not period:
+        raise ValueError("alpha_compare payload missing job_id, alpha_ids, universe, or period")
+    with alpha_routes._JOBS_LOCK:
+        alpha_routes.ALPHA_COMPARE_JOBS.setdefault(
+            job_id,
+            {
+                "job_id": job_id,
+                "status": "queued",
+                "alpha_ids": alpha_ids,
+                "universe": universe,
+                "period": period,
+                "sort": sort,
+                "created_at": alpha_routes._now_iso(),
+                "progress": {"n_done": 0, "n_total": len(alpha_ids), "current_alpha_id": None},
+                "result": None,
+                "error": None,
+            },
+        )
+    alpha_routes._run_compare_blocking(job_id, alpha_ids, universe, period, sort)
+    job = alpha_routes.ALPHA_COMPARE_JOBS.get(job_id, {})
+    if str(job.get("status")) in {"error", "failed"}:
+        raise ValueError(str(job.get("error") or "alpha compare failed"))
+    return {"status": "completed", "alpha_status": str(job.get("status") or ""), "result": job.get("result")}
 
 
 def run_once(*, redis_client: Any | None = None, queue_name: str | None = None) -> dict[str, Any]:

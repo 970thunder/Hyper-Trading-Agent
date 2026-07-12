@@ -41,7 +41,8 @@
 - [x] Alpha 长回测任务接入 durable job adapter：bench / compare 创建、运行、进度、完成、失败、取消与重试状态同步到 `/runtime/jobs`，并避免内存任务和持久化任务重复展示
 - [x] Runtime Redis/Postgres worker 契约第一步：新增后端选择、Redis 队列 payload、生产环境变量与 worker 单步消费/状态回写能力
 - [x] 网页抓取 / URL 知识库入库接入 Runtime worker：生产 Redis/Postgres backend 下 `/knowledge-bases/{id}/urls` 返回 pending ingestion job，由 worker 消费 `knowledge_url_ingest` 完成抓取、解析、向量化与状态回写
-- [ ] Runtime Redis/Postgres durable worker adapter：将 Agent run 与长回测从进程内/分散存储迁移到统一 Redis/Postgres durable job 后端，并接入真实 worker 执行与恢复
+- [x] Alpha 长回测接入 Runtime worker：生产 Redis/Postgres backend 下 `/alpha/bench` 与 `/alpha/compare` 投递 worker 队列，由 worker 执行 bench / compare 并回写 durable runtime 状态
+- [ ] Runtime Redis/Postgres durable worker adapter：将 Agent run 从进程内/分散存储迁移到统一 Redis/Postgres durable job 后端，并接入真实 worker 执行与恢复
 - [x] 移动端 Agent composer 与设置页截图验收：新增 Playwright CLI 截图脚本，覆盖移动视口 Agent 与 Settings 模型/知识库页面
 - [x] 核心页面 Playwright light/dark 截图回归：新增截图回归脚本与验收文档，覆盖核心页面、浅色/深色主题、桌面/移动视口
 
