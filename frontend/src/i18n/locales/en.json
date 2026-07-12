@@ -1143,7 +1143,11 @@
     "copy": "Copy",
     "timeoutHint": "Execution timed out. Try simplifying the strategy or reducing the number of assets.",
     "apiFailedHint": "API call failed. Please retry later.",
-    "executionFailedHint": "Execution failed. Click to retry."
+    "executionFailedHint": "Execution failed. Click to retry.",
+    "feedbackHelpful": "Mark as helpful",
+    "feedbackNotHelpful": "Mark as not helpful",
+    "feedbackSaved": "Feedback recorded",
+    "feedbackFailed": "Failed to record feedback"
   },
   "pineViewer": {
     "pineScript": "Pine Script v6",
@@ -1210,7 +1214,13 @@
     "resumed": "Execution resumed",
     "approvalApproved": "Tool approved; execution resumed",
     "approvalRejected": "Tool request rejected",
-    "status": {"pending": "Pending", "running": "Running", "completed": "Completed", "failed": "Failed", "blocked": "Blocked"},
+    "status": {
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "blocked": "Blocked"
+    },
     "kind": {
       "rag": "RAG",
       "skill": "Skill",

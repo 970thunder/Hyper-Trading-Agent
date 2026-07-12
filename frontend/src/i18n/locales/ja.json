@@ -1138,7 +1138,11 @@
     "copy": "コピー",
     "timeoutHint": "実行がタイムアウトしました。戦略を簡素化するか、銘柄数を減らしてください。",
     "apiFailedHint": "API 呼び出しに失敗しました。しばらくしてから再試行してください。",
-    "executionFailedHint": "実行に失敗しました。クリックして再試行してください。"
+    "executionFailedHint": "実行に失敗しました。クリックして再試行してください。",
+    "feedbackHelpful": "役に立ったとして記録",
+    "feedbackNotHelpful": "役に立たなかったとして記録",
+    "feedbackSaved": "フィードバックを記録しました",
+    "feedbackFailed": "フィードバックの記録に失敗しました"
   },
   "pineViewer": {
     "pineScript": "Pine Script v6",
@@ -1210,7 +1214,13 @@
     "resumed": "Execution resumed",
     "approvalApproved": "Tool approved; execution resumed",
     "approvalRejected": "Tool request rejected",
-    "status": {"pending": "Pending", "running": "Running", "completed": "Completed", "failed": "Failed", "blocked": "Blocked"},
+    "status": {
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "blocked": "Blocked"
+    },
     "kind": {
       "rag": "RAG",
       "skill": "Skill",

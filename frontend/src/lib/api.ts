@@ -311,6 +311,19 @@ export const api = {
     return request<AuditLog[]>(`/audit-logs${qs ? `?${qs}` : ""}`);
   },
   listModelUsage: (limit?: number) => request<ModelUsage[]>(`/usage/model-calls${limit ? `?limit=${encodeURIComponent(String(limit))}` : ""}`),
+  createFeedback: (body: FeedbackCreateRequest) =>
+    request<FeedbackEvent>("/feedback", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listFeedback: (params: FeedbackListParams = {}) => {
+    const q = new URLSearchParams();
+    if (params.limit) q.set("limit", String(params.limit));
+    if (params.target_type) q.set("target_type", params.target_type);
+    if (params.target_id) q.set("target_id", params.target_id);
+    const qs = q.toString();
+    return request<FeedbackEvent[]>(`/feedback${qs ? `?${qs}` : ""}`);
+  },
   getChannelStatus: () => request<ChannelRuntimeStatus>("/channels/status"),
   startChannels: () => request<ChannelRuntimeActionResponse>("/channels/start", { method: "POST" }),
   stopChannels: () => request<ChannelRuntimeActionResponse>("/channels/stop", { method: "POST" }),
@@ -719,6 +732,40 @@ export interface ModelUsage {
   session_id?: string;
   attempt_id?: string;
   run_id?: string;
+  created_at: string;
+}
+
+export interface FeedbackCreateRequest {
+  target_type: string;
+  target_id: string;
+  session_id?: string;
+  attempt_id?: string;
+  run_id?: string;
+  rating: -1 | 0 | 1;
+  comment?: string;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface FeedbackListParams {
+  limit?: number;
+  target_type?: string;
+  target_id?: string;
+}
+
+export interface FeedbackEvent {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  target_type: string;
+  target_id: string;
+  session_id?: string;
+  attempt_id?: string;
+  run_id?: string;
+  rating: -1 | 0 | 1;
+  comment: string;
+  tags: string[];
+  metadata: Record<string, unknown>;
   created_at: string;
 }
 

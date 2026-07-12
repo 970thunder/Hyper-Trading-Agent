@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MessageBubble } from "../MessageBubble";
+import { api } from "@/lib/api";
 import type { AgentMessage } from "@/types/agent";
 
 // Mock react-markdown (heavy dependency, renders raw content in tests)
@@ -9,6 +10,12 @@ vi.mock("react-markdown", () => ({
 }));
 vi.mock("remark-gfm", () => ({ default: () => {} }));
 vi.mock("rehype-highlight", () => ({ default: () => {} }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("@/lib/api", () => ({
+  api: {
+    createFeedback: vi.fn().mockResolvedValue({ id: "fb_1" }),
+  },
+}));
 
 // Mock RunCompleteCard (complex component with ECharts)
 vi.mock("../RunCompleteCard", () => ({
@@ -44,6 +51,23 @@ describe("MessageBubble", () => {
     it("renders markdown content", () => {
       render(<MessageBubble msg={makeMsg({ type: "answer", content: "Here is the **analysis**" })} />);
       expect(screen.getByTestId("markdown")).toHaveTextContent("Here is the **analysis**");
+    });
+
+    it("submits helpful feedback for answer messages", async () => {
+      const user = userEvent.setup();
+      const msg = makeMsg({ id: "msg-answer-1", type: "answer", runId: "run-1" });
+      render(<MessageBubble msg={msg} />);
+
+      await user.click(screen.getByLabelText("Mark as helpful"));
+
+      expect(api.createFeedback).toHaveBeenCalledWith({
+        target_type: "message",
+        target_id: "msg-answer-1",
+        run_id: "run-1",
+        rating: 1,
+        tags: ["helpful"],
+        metadata: { message_type: "answer" },
+      });
     });
   });
 

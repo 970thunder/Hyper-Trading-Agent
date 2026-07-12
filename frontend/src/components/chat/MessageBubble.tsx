@@ -1,10 +1,12 @@
 import i18n from '@/i18n';
 import { memo, useState, useCallback } from "react";
-import { User, XCircle, RefreshCw, Copy, Check } from "lucide-react";
+import { User, XCircle, RefreshCw, Copy, Check, ThumbsUp, ThumbsDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import { toast } from "sonner";
 import { formatTimestamp } from "@/lib/formatters";
+import { api } from "@/lib/api";
 import type { AgentMessage } from "@/types/agent";
 import { AgentAvatar } from "./AgentAvatar";
 import { RunCompleteCard } from "./RunCompleteCard";
@@ -42,6 +44,66 @@ function getRetryHint(content: string): string {
   return i18n.t("messageBubble.executionFailedHint");
 }
 
+function FeedbackButtons({ msg }: { msg: AgentMessage }) {
+  const [selected, setSelected] = useState<-1 | 1 | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = useCallback(async (rating: -1 | 1) => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await api.createFeedback({
+        target_type: "message",
+        target_id: msg.id,
+        run_id: msg.runId,
+        rating,
+        tags: [rating > 0 ? "helpful" : "not_helpful"],
+        metadata: { message_type: msg.type },
+      });
+      setSelected(rating);
+      toast.success(i18n.t("messageBubble.feedbackSaved"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : i18n.t("messageBubble.feedbackFailed"));
+    } finally {
+      setSubmitting(false);
+    }
+  }, [msg.id, msg.runId, msg.type, submitting]);
+
+  const buttonClass = (rating: -1 | 1) =>
+    [
+      "inline-flex h-7 w-7 items-center justify-center rounded-md border text-muted-foreground transition-all",
+      "hover:border-primary/40 hover:bg-primary/10 hover:text-primary active:scale-95",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      selected === rating ? "border-primary/50 bg-primary/10 text-primary" : "border-transparent",
+      submitting ? "pointer-events-none opacity-60" : "",
+    ].join(" ");
+
+  return (
+    <div className="mt-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      <button
+        type="button"
+        className={buttonClass(1)}
+        title={i18n.t("messageBubble.feedbackHelpful")}
+        aria-label={i18n.t("messageBubble.feedbackHelpful")}
+        aria-pressed={selected === 1}
+        onClick={() => void submit(1)}
+      >
+        <ThumbsUp className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className={buttonClass(-1)}
+        title={i18n.t("messageBubble.feedbackNotHelpful")}
+        aria-label={i18n.t("messageBubble.feedbackNotHelpful")}
+        aria-pressed={selected === -1}
+        onClick={() => void submit(-1)}
+      >
+        <ThumbsDown className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 interface Props {
   msg: AgentMessage;
   onRetry?: (msg: AgentMessage) => void;
@@ -73,6 +135,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props
           <div className="prose prose-sm dark:prose-invert max-w-none leading-relaxed prose-table:border prose-table:border-border/50 prose-th:bg-muted/30 prose-th:px-3 prose-th:py-1.5 prose-td:px-3 prose-td:py-1.5 prose-th:text-left prose-th:text-xs prose-th:font-medium prose-td:text-xs prose-hr:hidden">
             <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>{msg.content}</ReactMarkdown>
           </div>
+          <FeedbackButtons msg={msg} />
           {ts && <span className="text-[9px] text-muted-foreground/30 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">{ts}</span>}
         </div>
       </div>

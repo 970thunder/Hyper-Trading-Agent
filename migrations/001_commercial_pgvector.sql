@@ -141,3 +141,22 @@ CREATE TABLE IF NOT EXISTS knowledge_retrieval_logs (
     result_count integer NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS feedback_events (
+    id text PRIMARY KEY,
+    organization_id text NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target_type text NOT NULL,
+    target_id text NOT NULL,
+    session_id text NOT NULL DEFAULT '',
+    attempt_id text NOT NULL DEFAULT '',
+    run_id text NOT NULL DEFAULT '',
+    rating integer NOT NULL CHECK (rating IN (-1, 0, 1)),
+    comment text NOT NULL DEFAULT '',
+    tags_json jsonb NOT NULL DEFAULT '[]'::jsonb,
+    metadata_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_events_scope ON feedback_events (organization_id, target_type, target_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feedback_events_run ON feedback_events (organization_id, session_id, attempt_id, run_id);

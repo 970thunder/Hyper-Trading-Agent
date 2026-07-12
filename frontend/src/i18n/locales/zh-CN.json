@@ -1138,7 +1138,11 @@
     "copy": "复制",
     "timeoutHint": "执行超时。请尝试简化策略或减少资产数量。",
     "apiFailedHint": "API 调用失败。请稍后重试。",
-    "executionFailedHint": "执行失败。点击重试。"
+    "executionFailedHint": "执行失败。点击重试。",
+    "feedbackHelpful": "标记为有帮助",
+    "feedbackNotHelpful": "标记为无帮助",
+    "feedbackSaved": "反馈已记录",
+    "feedbackFailed": "反馈记录失败"
   },
   "pineViewer": {
     "pineScript": "Pine Script v6",
@@ -1210,7 +1214,13 @@
     "resumed": "执行已恢复",
     "approvalApproved": "工具已批准，任务继续执行",
     "approvalRejected": "已拒绝工具调用",
-    "status": {"pending": "待执行", "running": "执行中", "completed": "已完成", "failed": "失败", "blocked": "已阻塞"},
+    "status": {
+      "pending": "待执行",
+      "running": "执行中",
+      "completed": "已完成",
+      "failed": "失败",
+      "blocked": "已阻塞"
+    },
     "kind": {
       "rag": "RAG 检索",
       "skill": "技能",

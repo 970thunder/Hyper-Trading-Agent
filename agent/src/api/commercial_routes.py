@@ -91,6 +91,18 @@ class ToolPolicyUpdateRequest(BaseModel):
     enabled: bool | None = None
 
 
+class FeedbackCreateRequest(BaseModel):
+    target_type: str
+    target_id: str
+    session_id: str = ""
+    attempt_id: str = ""
+    run_id: str = ""
+    rating: int
+    comment: str = ""
+    tags: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 def _host():
     return _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
 
@@ -475,3 +487,27 @@ def register_commercial_routes(app: FastAPI) -> None:
     @app.get("/usage/model-calls")
     async def model_usage(limit: int = 100, principal: Principal = Depends(_require_role("owner", "admin"))):
         return _store().list_usage(principal, limit=limit)
+
+    @app.post("/feedback")
+    async def create_feedback(
+        payload: FeedbackCreateRequest,
+        principal: Principal = Depends(_principal_from_cookie),
+    ):
+        try:
+            return _store().record_feedback(principal, payload.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get("/feedback")
+    async def list_feedback(
+        limit: int = 100,
+        target_type: str = "",
+        target_id: str = "",
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        return _store().list_feedback(
+            principal,
+            limit=limit,
+            target_type=target_type,
+            target_id=target_id,
+        )

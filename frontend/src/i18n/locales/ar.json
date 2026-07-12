@@ -1138,7 +1138,11 @@
     "copy": "نسخ",
     "timeoutHint": "انتهت مهلة التنفيذ. حاول تبسيط الاستراتيجية أو تقليل عدد الأصول.",
     "apiFailedHint": "فشل استدعاء API. يرجى المحاولة لاحقًا.",
-    "executionFailedHint": "فشل التنفيذ. انقر للمحاولة مرة أخرى."
+    "executionFailedHint": "فشل التنفيذ. انقر للمحاولة مرة أخرى.",
+    "feedbackHelpful": "تحديد كإجابة مفيدة",
+    "feedbackNotHelpful": "تحديد كإجابة غير مفيدة",
+    "feedbackSaved": "تم تسجيل الملاحظات",
+    "feedbackFailed": "فشل تسجيل الملاحظات"
   },
   "pineViewer": {
     "pineScript": "Pine Script v6",
@@ -1210,7 +1214,13 @@
     "resumed": "Execution resumed",
     "approvalApproved": "Tool approved; execution resumed",
     "approvalRejected": "Tool request rejected",
-    "status": {"pending": "Pending", "running": "Running", "completed": "Completed", "failed": "Failed", "blocked": "Blocked"},
+    "status": {
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "blocked": "Blocked"
+    },
     "kind": {
       "rag": "RAG",
       "skill": "Skill",

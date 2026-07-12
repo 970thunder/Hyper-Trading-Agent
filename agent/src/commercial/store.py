@@ -471,6 +471,21 @@ class CommercialStore:
                     result_count INTEGER NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS feedback_events (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    target_type TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL DEFAULT '',
+                    attempt_id TEXT NOT NULL DEFAULT '',
+                    run_id TEXT NOT NULL DEFAULT '',
+                    rating INTEGER NOT NULL,
+                    comment TEXT NOT NULL DEFAULT '',
+                    tags_json TEXT NOT NULL DEFAULT '[]',
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS tool_policies (
                     organization_id TEXT NOT NULL,
                     tool_name TEXT NOT NULL,
@@ -907,6 +922,123 @@ class CommercialStore:
             run_id=run_id,
             metadata={"source": "agent_loop", "calls": int(totals.get("calls") or 0)},
         )
+
+    def record_feedback(self, principal: Principal, payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist a user feedback event for an answer, run, tool step, or report."""
+        try:
+            rating = int(payload.get("rating"))
+        except (TypeError, ValueError):
+            raise ValueError("rating must be one of -1, 0, 1") from None
+        if rating not in {-1, 0, 1}:
+            raise ValueError("rating must be one of -1, 0, 1")
+
+        target_type = _summarize_value(payload.get("target_type") or "", limit=64)
+        target_id = _summarize_value(payload.get("target_id") or "", limit=128)
+        if not target_type or not target_id:
+            raise ValueError("target_type and target_id are required")
+
+        raw_tags = payload.get("tags") or []
+        if not isinstance(raw_tags, list):
+            raw_tags = []
+        tags = [
+            _summarize_value(tag, limit=48)
+            for tag in raw_tags[:10]
+            if _summarize_value(tag, limit=48)
+        ]
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        feedback_id = _new_id("fb")
+        now = utcnow()
+        event = {
+            "id": feedback_id,
+            "organization_id": principal.organization_id,
+            "user_id": principal.user_id,
+            "target_type": target_type,
+            "target_id": target_id,
+            "session_id": _summarize_value(payload.get("session_id") or "", limit=128),
+            "attempt_id": _summarize_value(payload.get("attempt_id") or "", limit=128),
+            "run_id": _summarize_value(payload.get("run_id") or "", limit=128),
+            "rating": rating,
+            "comment": _summarize_value(payload.get("comment") or "", limit=2000),
+            "tags": tags,
+            "metadata": metadata,
+            "created_at": now,
+        }
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO feedback_events(
+                    id, organization_id, user_id, target_type, target_id,
+                    session_id, attempt_id, run_id, rating, comment,
+                    tags_json, metadata_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    feedback_id,
+                    principal.organization_id,
+                    principal.user_id,
+                    target_type,
+                    target_id,
+                    event["session_id"],
+                    event["attempt_id"],
+                    event["run_id"],
+                    rating,
+                    event["comment"],
+                    json.dumps(tags, ensure_ascii=False),
+                    json.dumps(metadata, ensure_ascii=False),
+                    now,
+                ),
+            )
+        self.audit(
+            principal,
+            "feedback.create",
+            target_type,
+            target_id,
+            {"feedback_id": feedback_id, "rating": rating, "tags": tags, "run_id": event["run_id"]},
+        )
+        return event
+
+    def list_feedback(
+        self,
+        principal: Principal,
+        *,
+        limit: int = 100,
+        target_type: str = "",
+        target_id: str = "",
+    ) -> list[dict[str, Any]]:
+        where = ["organization_id = ?"]
+        params: list[Any] = [principal.organization_id]
+        if target_type:
+            where.append("target_type = ?")
+            params.append(target_type)
+        if target_id:
+            where.append("target_id = ?")
+            params.append(target_id)
+        params.append(max(1, min(limit, 500)))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT id, organization_id, user_id, target_type, target_id,
+                       session_id, attempt_id, run_id, rating, comment,
+                       tags_json, metadata_json, created_at
+                FROM feedback_events
+                WHERE {' AND '.join(where)}
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        feedback: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                tags = json.loads(row["tags_json"] or "[]")
+            except json.JSONDecodeError:
+                tags = []
+            try:
+                metadata = json.loads(row["metadata_json"] or "{}")
+            except json.JSONDecodeError:
+                metadata = {}
+            feedback.append(dict(row) | {"tags": tags, "metadata": metadata})
+        return feedback
 
     # --- model providers ---
 
@@ -1526,6 +1658,8 @@ class CommercialStore:
                     (SELECT COUNT(*) FROM knowledge_ingestion_jobs) AS ingestion_jobs,
                     (SELECT COUNT(*) FROM knowledge_ingestion_jobs WHERE status = 'failed') AS ingestion_jobs_failed,
                     (SELECT COUNT(*) FROM model_call_usage) AS model_calls,
+                    (SELECT COUNT(*) FROM feedback_events) AS feedback_events,
+                    (SELECT COUNT(*) FROM feedback_events WHERE rating < 0) AS negative_feedback_events,
                     (SELECT COUNT(*) FROM knowledge_retrieval_logs) AS retrievals,
                     (SELECT COUNT(*) FROM audit_logs WHERE action = 'tool.call') AS tool_calls,
                     (SELECT COUNT(*) FROM audit_logs WHERE action = 'tool.call' AND metadata_json LIKE '%\"status\": \"error\"%') AS tool_call_errors

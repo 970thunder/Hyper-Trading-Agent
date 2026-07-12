@@ -222,6 +222,65 @@ def test_record_llm_usage_summary(tmp_path):
     assert usage[0]["metadata"]["calls"] == 2
 
 
+def test_feedback_events_are_scoped_and_audited(tmp_path):
+    store = CommercialStore(tmp_path / "commercial.db")
+    owner_a, _ = store.register_owner(
+        email="a@example.com",
+        password="password123",
+        organization_name="A",
+    )
+    owner_b, _ = store.register_owner(
+        email="b@example.com",
+        password="password123",
+        organization_name="B",
+    )
+
+    event = store.record_feedback(
+        owner_a,
+        {
+            "target_type": "message",
+            "target_id": "msg_123",
+            "session_id": "sess_1",
+            "attempt_id": "att_1",
+            "run_id": "run_1",
+            "rating": 1,
+            "comment": "The answer cited the right source and was actionable.",
+            "tags": ["citation_quality", "useful"],
+            "metadata": {"language": "en"},
+        },
+    )
+
+    assert event["id"].startswith("fb_")
+    assert event["organization_id"] == owner_a.organization_id
+    assert event["user_id"] == owner_a.user_id
+    assert event["rating"] == 1
+    assert event["tags"] == ["citation_quality", "useful"]
+    assert event["metadata"] == {"language": "en"}
+
+    assert store.list_feedback(owner_a)[0]["id"] == event["id"]
+    assert store.list_feedback(owner_b) == []
+    assert any(row["action"] == "feedback.create" for row in store.list_audit_logs(owner_a))
+
+
+def test_feedback_rating_must_be_valid(tmp_path):
+    store = CommercialStore(tmp_path / "commercial.db")
+    principal, _ = store.register_owner(
+        email="owner@example.com",
+        password="password123",
+        organization_name="Acme Research",
+    )
+
+    with pytest.raises(ValueError, match="rating"):
+        store.record_feedback(
+            principal,
+            {
+                "target_type": "message",
+                "target_id": "msg_123",
+                "rating": 3,
+            },
+        )
+
+
 def test_knowledge_base_is_organization_scoped(tmp_path):
     store = CommercialStore(tmp_path / "commercial.db")
     owner_a, _ = store.register_owner(
