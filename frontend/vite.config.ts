@@ -7,6 +7,7 @@ const PROXY_PATHS = [
   "/organizations",
   "/models",
   "/sessions",
+  "/session-history",
   "/swarm/presets",
   "/swarm/runs",
   "/settings/llm",
