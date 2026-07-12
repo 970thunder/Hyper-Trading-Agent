@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.agent.frontmatter import parse_frontmatter as _parse_frontmatter
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +235,12 @@ class PersistentMemory:
         self._rebuild_index()
         return True
 
-    def find_relevant(self, query: str, max_results: int = MAX_RESULTS) -> List[MemoryEntry]:
+    def find_relevant(
+        self,
+        query: str,
+        max_results: int = MAX_RESULTS,
+        memory_types: Iterable[str] | None = None,
+    ) -> List[MemoryEntry]:
         """Keyword search across all memory entries.
 
         Scoring: metadata_hits * 2.0 + body_hits * 1.0.
@@ -243,6 +248,7 @@ class PersistentMemory:
         Args:
             query: Search query.
             max_results: Maximum entries to return.
+            memory_types: Optional memory type allow-list.
 
         Returns:
             Top-scoring memory entries.
@@ -250,9 +256,12 @@ class PersistentMemory:
         query_tokens = _tokenize(query)
         if not query_tokens:
             return []
+        allowed_types = set(memory_types) if memory_types is not None else None
 
         scored: list[tuple[float, MemoryEntry]] = []
         for entry in self._scan_entries():
+            if allowed_types is not None and entry.memory_type not in allowed_types:
+                continue
             meta_tokens = _tokenize(f"{entry.title} {entry.description}")
             body_tokens = _tokenize(entry.body)
             score = len(query_tokens & meta_tokens) * METADATA_WEIGHT + len(query_tokens & body_tokens)

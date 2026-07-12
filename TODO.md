@@ -23,7 +23,7 @@
 - [x] 主题 token 与 Tailwind accent 映射补齐
 - [x] 欢迎页移除蓝青渐变与旧色示例卡
 - [x] Agent 头像改为 Hyper Trading token 化样式
-- [x] Agent composer 改为更紧凑的专业工具条
+- [x] Agent composer 改为更紧凑的专业工具栏
 - [x] 模型与连接器菜单保持悬浮，不撑开底部栏
 - [x] 工具调用与执行 trace 使用语义 token 状态色
 - [x] 会话标题生成规则修正，并对过长标题使用省略号
@@ -53,7 +53,7 @@
 - [x] hybrid retrieval
 - [x] ingestion job
 - [x] citation UI
-- [ ] persistent memory 策略
+- [x] persistent memory 策略：敏感内容拦截、召回类型过滤、自动召回开关
 - [x] 会话历史检索
 - [x] 文件上传导入入口
 - [x] URL 抓取入库入口

@@ -14,6 +14,7 @@ from src.agent.tools import ToolRegistry
 
 if TYPE_CHECKING:
     from src.memory.persistent import PersistentMemory
+    from src.memory.policy import MemoryPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +159,8 @@ class ContextBuilder:
 
     def __init__(self, registry: ToolRegistry, memory: WorkspaceMemory,
                  skills_loader: Optional[SkillsLoader] = None,
-                 persistent_memory: Optional[PersistentMemory] = None) -> None:
+                 persistent_memory: Optional[PersistentMemory] = None,
+                 memory_policy: Optional[MemoryPolicy] = None) -> None:
         """Initialize ContextBuilder.
 
         Args:
@@ -166,11 +168,13 @@ class ContextBuilder:
             memory: Workspace memory.
             skills_loader: Skills loader (auto-created if not provided).
             persistent_memory: PersistentMemory instance for cross-session recall.
+            memory_policy: Persistent memory policy controls.
         """
         self.registry = registry
         self.memory = memory
         self.skills_loader = skills_loader or SkillsLoader()
         self._persistent_memory = persistent_memory
+        self._memory_policy = memory_policy
 
     def build_system_prompt(self, user_message: str = "") -> str:
         """Build system prompt.
@@ -242,9 +246,18 @@ class ContextBuilder:
 
         # Auto-recall: inject relevant memories into user message
         enriched = user_message
-        if self._persistent_memory:
+        auto_recall_enabled = True
+        recall_types = None
+        if self._memory_policy is not None:
+            auto_recall_enabled = self._memory_policy.auto_recall_enabled
+            recall_types = self._memory_policy.filter_recall_types()
+        if self._persistent_memory and auto_recall_enabled:
             try:
-                recalls = self._persistent_memory.find_relevant(user_message, max_results=3)
+                recalls = self._persistent_memory.find_relevant(
+                    user_message,
+                    max_results=3,
+                    memory_types=recall_types,
+                )
                 if recalls:
                     lines = [f"- **{r.title}** ({r.memory_type}): {r.body[:500]}" for r in recalls]
                     recall_block = "\n".join(lines)
