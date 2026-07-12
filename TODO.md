@@ -33,7 +33,7 @@
 - [x] AlphaZoo 因子库卡片移除渐变并统一选中态
 - [x] 报告、运行时、RunDetail 警告态改用 warning token
 - [x] 新增 UI 审计文档与验收截图清单
-- [ ] Settings 全部 section 进一步拆分为复用组件，降低单文件复杂度：已抽取安全、组织成员、审计与用量、运行时任务、模型配置、Agent 策略与工具治理、Swarm Agent、知识库主面板与文档表/检索结果/ingestion job 组件，剩余概览、本地模型兼容设置、数据源等轻量 section 组件化
+- [ ] Settings 全部 section 进一步拆分为复用组件，降低单文件复杂度：已抽取安全、组织成员、审计与用量、运行时任务、模型配置、Agent 策略与工具治理、Swarm Agent、知识库主面板与文档表/检索结果/ingestion job、概览、本地模型兼容设置和数据源组件，剩余 IM 通道 section 组件化
 - [ ] AlphaZoo 详情、bench、compare 全量表格和筛选区二次美化
 - [x] Reports / Runtime 增加更完整的数据图表和任务操作态：Reports 已补摘要指标、状态分布和收益区间图；Runtime 已补 Alpha bench / compare 后台任务队列、进度、失败、取消与重试操作态
 - [ ] Runtime 持久化任务队列二期：将 Agent run、RAG ingestion、网页抓取与长回测统一接入 Redis/Postgres durable job 视图

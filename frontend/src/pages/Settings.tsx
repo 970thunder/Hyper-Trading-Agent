@@ -6,13 +6,10 @@ import {
   Brain,
   ClipboardList,
   Database,
-  KeyRound,
   Loader2,
   MessageSquareMore,
   Play,
   RefreshCw,
-  RotateCcw,
-  Save,
   Server,
   ShieldCheck,
   SlidersHorizontal,
@@ -54,20 +51,13 @@ import { cn } from "@/lib/utils";
 import { AgentPolicyPanel } from "./settings/AgentPolicyPanel";
 import { AuditUsagePanel } from "./settings/AuditUsagePanel";
 import { CommercialModelProvidersPanel, type ModelProviderFormState } from "./settings/CommercialModelProvidersPanel";
+import { DataSourceSettingsPanel } from "./settings/DataSourceSettingsPanel";
 import { KnowledgeSettingsPanel } from "./settings/KnowledgeSettingsPanel";
+import { LocalModelSettingsPanel, type LLMFormState } from "./settings/LocalModelSettingsPanel";
 import { OrganizationSecurityPanel } from "./settings/OrganizationSecurityPanel";
 import { RuntimeSettingsPanel } from "./settings/RuntimeSettingsPanel";
+import { SettingsOverviewPanel } from "./settings/SettingsOverviewPanel";
 import { SwarmAgentsPanel, type SwarmAgentFormState } from "./settings/SwarmAgentsPanel";
-
-interface LLMFormState {
-  provider: string;
-  model_name: string;
-  base_url: string;
-  temperature: number;
-  timeout_seconds: number;
-  max_retries: number;
-  reasoning_effort: string;
-}
 
 type SettingsSection =
   | "overview"
@@ -97,10 +87,6 @@ const SETTINGS_SECTIONS: {
   { id: "audit", icon: ClipboardList, labelKey: "settings.nav.audit", descKey: "settings.navDesc.audit" },
 ];
 
-const fieldClass =
-  "w-full rounded-md border border-border/75 bg-background px-3 py-2 text-sm outline-none transition focus:border-primary/70 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60";
-const labelClass = "text-sm font-medium";
-const hintClass = "text-xs text-muted-foreground";
 const sectionCardClass = "rounded-lg border border-border/70 bg-card p-5 shadow-sm";
 
 function toForm(settings: LLMSettings): LLMFormState {
@@ -461,16 +447,6 @@ export function Settings() {
     () => providers.find((provider) => provider.name === form?.provider),
     [form?.provider, providers],
   );
-  const modelOptionsFor = (provider?: LLMProviderOption, currentModel?: string) => {
-    const values = provider?.model_options?.length
-      ? provider.model_options
-      : provider?.default_model
-        ? [provider.default_model]
-        : [];
-    const merged = currentModel && !values.includes(currentModel) ? [currentModel, ...values] : values;
-    return Array.from(new Set(merged.filter(Boolean)));
-  };
-
   const applyProviderDefaults = (provider = selectedProvider) => {
     if (!provider || !form) return;
     setForm({
@@ -961,18 +937,12 @@ export function Settings() {
   };
 
   const renderOverview = () => (
-    <section className={sectionCardClass}>
-      <div className="mb-5 space-y-1">
-        <h2 className="text-base font-semibold">{t("settings.overview.title")}</h2>
-        <p className="text-sm text-muted-foreground">{t("settings.overview.description")}</p>
-      </div>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label={t("settings.overview.model")} value={settings?.model_name || t("settings.unavailable")} />
-        <MetricCard label={t("settings.overview.provider")} value={settings?.provider || t("settings.unavailable")} />
-        <MetricCard label={t("settings.overview.documents")} value={String(principal ? commercialDocuments.length : (knowledgeStats?.document_count ?? 0))} />
-        <MetricCard label={t("settings.overview.channels")} value={channelStatus?.running ? t("settings.channels.running") : t("settings.channels.stopped")} />
-      </div>
-    </section>
+    <SettingsOverviewPanel
+      modelName={settings?.model_name}
+      provider={settings?.provider}
+      documentCount={principal ? commercialDocuments.length : (knowledgeStats?.document_count ?? 0)}
+      channelsRunning={Boolean(channelStatus?.running)}
+    />
   );
 
   const renderModelSettings = () => {
@@ -1000,94 +970,26 @@ export function Settings() {
       );
     }
     return (
-      <form onSubmit={submit} className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.75fr)]">
-        <section className={sectionCardClass}>
-          <div className="mb-5 flex items-center gap-2">
-            <Server className="h-4 w-4 text-primary" />
-            <h2 className="text-base font-semibold">{t("settings.connection")}</h2>
-          </div>
-
-          <div className="grid gap-4">
-            <label className="grid gap-2">
-              <span className={labelClass}>{t("settings.provider")}</span>
-              <select value={form.provider} onChange={(event) => onProviderChange(event.target.value)} className={fieldClass}>
-                {providers.map((provider) => (
-                  <option key={provider.name} value={provider.name}>{provider.label}</option>
-                ))}
-              </select>
-              <span className={hintClass}>{t("settings.modelProviderHint")}</span>
-            </label>
-
-            <label className="grid gap-2">
-              <span className={labelClass}>{t("settings.model")}</span>
-              <div className="flex gap-2">
-                <select value={form.model_name} onChange={(event) => setForm({ ...form, model_name: event.target.value })} className={fieldClass} required>
-                  {modelOptionsFor(selectedProvider, form.model_name).map((model) => (
-                    <option key={model} value={model}>{model}</option>
-                  ))}
-                </select>
-                <button type="button" onClick={() => applyProviderDefaults()} className="inline-flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground" title={t("settings.useProviderDefaults")}>
-                  <RotateCcw className="h-4 w-4" />
-                  <span className="hidden sm:inline">{t("settings.useProviderDefaults")}</span>
-                </button>
-              </div>
-              <span className={hintClass}>{t("settings.modelIdHint")}</span>
-            </label>
-
-            <label className="grid gap-2">
-              <span className={labelClass}>{t("settings.baseUrl")}</span>
-              <input value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} className={fieldClass} placeholder={selectedProvider?.default_base_url} disabled={selectedProvider?.auth_type === "oauth"} />
-            </label>
-
-            <label className="grid gap-2">
-              <span className={labelClass}>{selectedProvider?.auth_type === "oauth" ? "OAuth" : "API key"}</span>
-              <div className="relative">
-                <KeyRound className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} className={`${fieldClass} pl-9`} placeholder={keyStatus} autoComplete="current-password" disabled={apiKeyDisabled} />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className={hintClass}>{keyStatus}</span>
-                {selectedProvider?.api_key_required ? (
-                  <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                    <input type="checkbox" checked={clearApiKey} onChange={(event) => {
-                      setClearApiKey(event.target.checked);
-                      if (event.target.checked) setApiKey("");
-                    }} className="h-3.5 w-3.5 accent-primary" />
-                    {t("settings.clearApiKey")}
-                  </label>
-                ) : null}
-              </div>
-            </label>
-          </div>
-        </section>
-
-        <section className={sectionCardClass}>
-          <div className="mb-5 flex items-center gap-2">
-            <SlidersHorizontal className="h-4 w-4 text-primary" />
-            <h2 className="text-base font-semibold">{t("settings.generation")}</h2>
-          </div>
-          <div className="grid gap-4">
-            <NumberField label={t("settings.temperature")} value={form.temperature} min={0} max={2} step={0.1} onChange={(value) => setForm({ ...form, temperature: value })} />
-            <NumberField label={t("settings.timeoutSeconds")} value={form.timeout_seconds} min={1} max={3600} step={1} onChange={(value) => setForm({ ...form, timeout_seconds: value })} />
-            <NumberField label={t("settings.maxRetries")} value={form.max_retries} min={0} max={20} step={1} onChange={(value) => setForm({ ...form, max_retries: value })} />
-
-            <label className="grid gap-2">
-              <span className={labelClass}>{t("settings.reasoningEffort")}</span>
-              <select value={form.reasoning_effort} onChange={(event) => setForm({ ...form, reasoning_effort: event.target.value })} className={fieldClass}>
-                <option value="">{t("settings.off")}</option>
-                <option value="low">{t("settings.reasoningEffortLow")}</option>
-                <option value="medium">{t("settings.reasoningEffortMedium")}</option>
-                <option value="high">{t("settings.reasoningEffortHigh")}</option>
-                <option value="max">{t("settings.reasoningEffortMax")}</option>
-              </select>
-              <span className={hintClass}>{t("settings.reasoningEffortDesc")}</span>
-            </label>
-
-            <EnvPath value={settings.env_path} />
-            <PrimaryButton type="submit" disabled={saving} loading={saving} label={saving ? t("settings.saving") : t("settings.save")} />
-          </div>
-        </section>
-      </form>
+      <LocalModelSettingsPanel
+        settings={settings}
+        form={form}
+        providers={providers}
+        selectedProvider={selectedProvider}
+        apiKey={apiKey}
+        clearApiKey={clearApiKey}
+        saving={saving}
+        keyStatus={keyStatus}
+        apiKeyDisabled={apiKeyDisabled}
+        onSubmit={submit}
+        onProviderChange={onProviderChange}
+        onApplyProviderDefaults={() => applyProviderDefaults()}
+        onFormChange={(patch) => setForm((prev) => prev ? { ...prev, ...patch } : prev)}
+        onApiKeyChange={setApiKey}
+        onClearApiKeyChange={(value) => {
+          setClearApiKey(value);
+          if (value) setApiKey("");
+        }}
+      />
     );
   };
 
@@ -1131,50 +1033,19 @@ export function Settings() {
   const renderDataSources = () => {
     if (!dataSettings) return unavailable(loadErrors.data || t("settings.unavailable"));
     return (
-      <form onSubmit={submitDataSources} className={sectionCardClass}>
-        <div className="mb-5 space-y-1">
-          <div className="flex items-center gap-2">
-            <Database className="h-4 w-4 text-primary" />
-            <h2 className="text-base font-semibold">{t("settings.dataSourceSettings")}</h2>
-          </div>
-          <p className="text-sm text-muted-foreground">{t("settings.dataSourceSettingsDesc")}</p>
-        </div>
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
-          <div className="grid gap-4">
-            <label className="grid gap-2">
-              <span className={labelClass}>{t("settings.tushareToken")}</span>
-              <div className="relative">
-                <KeyRound className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                <input type="password" value={tushareToken} onChange={(event) => setTushareToken(event.target.value)} className={`${fieldClass} pl-9`} placeholder={tushareStatus} autoComplete="current-password" disabled={clearTushareToken} />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className={hintClass}>{t("settings.data.tushareHint")}</span>
-                <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                  <input type="checkbox" checked={clearTushareToken} onChange={(event) => {
-                    setClearTushareToken(event.target.checked);
-                    if (event.target.checked) setTushareToken("");
-                  }} className="h-3.5 w-3.5 accent-primary" />
-                  {t("settings.clearTushareToken")}
-                </label>
-              </div>
-            </label>
-            <EnvPath value={dataSettings.env_path} />
-            <PrimaryButton type="submit" disabled={dataSaving} loading={dataSaving} label={dataSaving ? t("settings.saving") : t("settings.saveDataSourceSettings")} />
-          </div>
-          <div className="rounded-md border bg-muted/20 p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <span className="text-sm font-medium">{t("settings.baostock")}</span>
-              <span className={`rounded-full px-2 py-0.5 text-xs ${dataSettings.baostock_supported ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}>
-                {dataSettings.baostock_supported ? t("settings.loaderAvailable") : t("settings.noProjectLoader")}
-              </span>
-            </div>
-            <div className="space-y-2 text-sm text-muted-foreground">
-              <p>{dataSettings.baostock_message}</p>
-              <p>{dataSettings.baostock_installed ? t("settings.pythonPackageInstalled") : t("settings.pythonPackageNotInstalled")}</p>
-            </div>
-          </div>
-        </div>
-      </form>
+      <DataSourceSettingsPanel
+        dataSettings={dataSettings}
+        tushareToken={tushareToken}
+        clearTushareToken={clearTushareToken}
+        saving={dataSaving}
+        tushareStatus={tushareStatus}
+        onSubmit={submitDataSources}
+        onTushareTokenChange={setTushareToken}
+        onClearTushareTokenChange={(value) => {
+          setClearTushareToken(value);
+          if (value) setTushareToken("");
+        }}
+      />
     );
   };
 
@@ -1407,59 +1278,5 @@ function StatusPill({ active, on, off }: { active: boolean; on: string; off: str
     <span className={active ? "status-primary" : "status-soft"}>
       {active ? on : off}
     </span>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="grid gap-2">
-      <span className={labelClass}>{label}</span>
-      <input type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} className={fieldClass} />
-    </label>
-  );
-}
-
-function PrimaryButton({
-  type = "button",
-  disabled,
-  loading,
-  label,
-  className,
-}: {
-  type?: "button" | "submit";
-  disabled?: boolean;
-  loading?: boolean;
-  label: string;
-  className?: string;
-}) {
-  return (
-    <button type={type} disabled={disabled} className={cn("inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70", className)}>
-      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-      {label}
-    </button>
-  );
-}
-
-function EnvPath({ value }: { value: string }) {
-  const { t } = useTranslation();
-  return (
-    <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-      <span className="font-medium text-foreground">{t("settings.saved")}: </span>
-      <span className="break-all font-mono">{value}</span>
-    </div>
   );
 }
