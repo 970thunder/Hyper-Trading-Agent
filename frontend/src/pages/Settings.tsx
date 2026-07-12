@@ -9,9 +9,7 @@ import {
   KeyRound,
   Loader2,
   MessageSquareMore,
-  Pencil,
   Play,
-  Plus,
   RefreshCw,
   RotateCcw,
   Save,
@@ -19,9 +17,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Square,
-  Trash2,
 } from "lucide-react";
-import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -59,6 +55,7 @@ import { AgentPolicyPanel } from "./settings/AgentPolicyPanel";
 import { AuditUsagePanel } from "./settings/AuditUsagePanel";
 import { OrganizationSecurityPanel } from "./settings/OrganizationSecurityPanel";
 import { RuntimeSettingsPanel } from "./settings/RuntimeSettingsPanel";
+import { SwarmAgentsPanel, type SwarmAgentFormState } from "./settings/SwarmAgentsPanel";
 
 interface LLMFormState {
   provider: string;
@@ -81,19 +78,6 @@ interface ModelProviderFormState {
   max_retries: number;
   enabled: boolean;
   is_default: boolean;
-}
-
-interface SwarmAgentFormState {
-  id: string;
-  role: string;
-  system_prompt: string;
-  tools: string;
-  skills: string;
-  max_iterations: number;
-  timeout_seconds: number;
-  model_name: string;
-  model_provider_id: string;
-  max_retries: number;
 }
 
 type SettingsSection =
@@ -179,18 +163,6 @@ function splitList(value: string): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-}
-
-function swarmPresetDisplayName(t: TFunction, preset: SwarmPreset): string {
-  return t(`settings.swarmPresetNames.${preset.name}`, { defaultValue: preset.title || preset.name });
-}
-
-function swarmAgentRoleDisplayName(
-  t: TFunction,
-  presetName: string,
-  agent: Pick<SwarmPresetAgent, "id" | "role">,
-): string {
-  return t(`settings.swarmAgentRoles.${presetName}.${agent.id}`, { defaultValue: agent.role || agent.id });
 }
 
 function isSettingsSection(value: string | null): value is SettingsSection {
@@ -380,19 +352,6 @@ export function Settings() {
         model_name: value.slice("model:".length),
       }));
     }
-  };
-
-  const swarmAgentModelLabel = (agent: SwarmPresetAgent) => {
-    if (agent.model_provider_id) {
-      const provider = commercialModelProviderById.get(agent.model_provider_id);
-      if (provider) {
-        return `${provider.provider} / ${provider.model}${provider.is_default ? ` (${t("settings.modelProviders.default")})` : ""}`;
-      }
-      return agent.model_name
-        ? `${agent.model_name} (${agent.model_provider_id})`
-        : agent.model_provider_id;
-    }
-    return agent.model_name || t("settings.swarmAgents.defaultModel");
   };
 
   useEffect(() => {
@@ -1536,149 +1495,26 @@ export function Settings() {
         onRefreshToolPolicies={loadToolPolicies}
         onUpdateToolPolicy={updateToolPolicy}
       />
-
-      <section className={sectionCardClass}>
-        <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <Brain className="h-4 w-4 text-primary" />
-              <h2 className="text-base font-semibold">{t("settings.swarmAgents.title")}</h2>
-            </div>
-            <p className="max-w-3xl text-sm text-muted-foreground">{t("settings.swarmAgents.description")}</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => loadSwarmPresets().catch((error) => toast.error(t("settings.swarmAgents.loadFailed", { message: error instanceof Error ? error.message : t("settings.unknownError") })))}
-            className="inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
-          >
-            <RefreshCw className="h-4 w-4" />
-            {t("settings.refresh")}
-          </button>
-        </div>
-
-        <div className="mb-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
-          <label className="grid gap-2">
-            <span className={labelClass}>{t("settings.swarmAgents.preset")}</span>
-            <select
-              value={selectedSwarmPreset}
-              onChange={(event) => loadSwarmAgents(event.target.value).catch((error) => toast.error(t("settings.swarmAgents.loadFailed", { message: error instanceof Error ? error.message : t("settings.unknownError") })))}
-              className={fieldClass}
-            >
-              {swarmPresets.map((preset) => (
-                <option key={preset.name} value={preset.name}>{swarmPresetDisplayName(t, preset)}</option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            onClick={resetSwarmAgentForm}
-            className="inline-flex items-center justify-center gap-2 self-end rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90"
-          >
-            <Plus className="h-4 w-4" />
-            {t("settings.swarmAgents.newAgent")}
-          </button>
-        </div>
-
-        <div className="grid gap-5 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.1fr)]">
-          <div className="overflow-hidden rounded-md border">
-            <div className="border-b bg-muted/20 px-3 py-2 text-sm font-semibold">
-              {swarmAgentList
-                ? swarmPresetDisplayName(t, { name: swarmAgentList.preset_name, title: swarmAgentList.title, description: swarmAgentList.description, agent_count: swarmAgentList.agents.length, variables: [] })
-                : selectedSwarmPreset}
-            </div>
-            <table className="w-full text-sm">
-              <thead className="bg-muted/40 text-xs text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium">{t("settings.swarmAgents.agent")}</th>
-                  <th className="px-3 py-2 text-left font-medium">{t("settings.swarmAgents.model")}</th>
-                  <th className="px-3 py-2 text-right font-medium">{t("settings.swarmAgents.actions")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {swarmAgentList?.agents.length ? swarmAgentList.agents.map((agent) => (
-                  <tr key={agent.id} className={cn("border-t", editingSwarmAgentId === agent.id && "bg-primary/5")}>
-                    <td className="px-3 py-2 align-top">
-                      <div className="font-medium">{swarmAgentRoleDisplayName(t, selectedSwarmPreset, agent)}</div>
-                      <div className="text-xs text-muted-foreground">{agent.id} · {t("settings.swarmAgents.taskCount", { count: agent.task_count ?? 0 })}</div>
-                    </td>
-                    <td className="max-w-[220px] truncate px-3 py-2 align-top text-xs text-muted-foreground" title={swarmAgentModelLabel(agent)}>
-                      {swarmAgentModelLabel(agent)}
-                    </td>
-                    <td className="px-3 py-2 text-right align-top">
-                      <div className="inline-flex items-center gap-1">
-                        <button type="button" onClick={() => editSwarmAgent(agent)} className="rounded-md border px-2 py-1 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground">
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button type="button" onClick={() => deleteSwarmAgent(agent)} disabled={deletingSwarmAgentId === agent.id} className="rounded-md border px-2 py-1 text-xs text-muted-foreground transition hover:border-destructive/40 hover:text-destructive disabled:opacity-50">
-                          {deletingSwarmAgentId === agent.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )) : (
-                  <tr>
-                    <td colSpan={3} className="px-3 py-8 text-center text-sm text-muted-foreground">{t("settings.swarmAgents.empty")}</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <form onSubmit={submitSwarmAgent} className="rounded-md border bg-muted/10 p-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-semibold">{editingSwarmAgentId ? t("settings.swarmAgents.editAgent") : t("settings.swarmAgents.createAgent")}</h3>
-                <p className="mt-1 text-xs text-muted-foreground">{t("settings.swarmAgents.formHint")}</p>
-              </div>
-              {editingSwarmAgentId ? (
-                <button type="button" onClick={resetSwarmAgentForm} className="rounded-md border px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground">
-                  {t("settings.cancel")}
-                </button>
-              ) : null}
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <TextField label={t("settings.swarmAgents.id")} value={swarmAgentForm.id} onChange={(value) => setSwarmAgentForm((prev) => ({ ...prev, id: value }))} />
-              <TextField label={t("settings.swarmAgents.role")} value={swarmAgentForm.role} onChange={(value) => setSwarmAgentForm((prev) => ({ ...prev, role: value }))} />
-              <label className="grid gap-2 md:col-span-2">
-                <span className={labelClass}>{t("settings.swarmAgents.model")}</span>
-                <select value={selectedSwarmModelValue} onChange={(event) => setSwarmAgentModel(event.target.value)} className={fieldClass}>
-                  <option value="">{t("settings.swarmAgents.defaultModel")}</option>
-                  {commercialModelProviders.length ? (
-                    <optgroup label={t("settings.swarmAgents.configuredModels")}>
-                      {commercialModelProviders.map((provider) => (
-                        <option key={provider.id} value={`provider:${provider.id}`}>
-                          {provider.provider} / {provider.model}{provider.is_default ? ` (${t("settings.modelProviders.default")})` : ""}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ) : null}
-                  <optgroup label={t("settings.swarmAgents.compatibleModelNames")}>
-                    {modelOptions.map((model) => (
-                      <option key={model} value={`model:${model}`}>{model}</option>
-                    ))}
-                  </optgroup>
-                </select>
-              </label>
-              <NumberField label={t("settings.swarmAgents.maxIterations")} value={swarmAgentForm.max_iterations} min={1} max={200} step={1} onChange={(value) => setSwarmAgentForm((prev) => ({ ...prev, max_iterations: value }))} />
-              <NumberField label={t("settings.swarmAgents.timeoutSeconds")} value={swarmAgentForm.timeout_seconds} min={10} max={7200} step={10} onChange={(value) => setSwarmAgentForm((prev) => ({ ...prev, timeout_seconds: value }))} />
-              <NumberField label={t("settings.swarmAgents.maxRetries")} value={swarmAgentForm.max_retries} min={0} max={10} step={1} onChange={(value) => setSwarmAgentForm((prev) => ({ ...prev, max_retries: value }))} />
-              <label className="grid gap-2">
-                <span className={labelClass}>{t("settings.swarmAgents.tools")}</span>
-                <textarea value={swarmAgentForm.tools} onChange={(event) => setSwarmAgentForm((prev) => ({ ...prev, tools: event.target.value }))} className={`${fieldClass} min-h-24`} />
-              </label>
-              <label className="grid gap-2">
-                <span className={labelClass}>{t("settings.swarmAgents.skills")}</span>
-                <textarea value={swarmAgentForm.skills} onChange={(event) => setSwarmAgentForm((prev) => ({ ...prev, skills: event.target.value }))} className={`${fieldClass} min-h-24`} />
-              </label>
-              <label className="grid gap-2 md:col-span-2">
-                <span className={labelClass}>{t("settings.swarmAgents.systemPrompt")}</span>
-                <textarea value={swarmAgentForm.system_prompt} onChange={(event) => setSwarmAgentForm((prev) => ({ ...prev, system_prompt: event.target.value }))} className={`${fieldClass} min-h-52 font-mono text-xs`} />
-              </label>
-            </div>
-            <PrimaryButton type="submit" disabled={swarmAgentSaving} loading={swarmAgentSaving} label={editingSwarmAgentId ? t("settings.swarmAgents.update") : t("settings.swarmAgents.create")} className="mt-4" />
-          </form>
-        </div>
-      </section>
+      <SwarmAgentsPanel
+        presets={swarmPresets}
+        selectedPreset={selectedSwarmPreset}
+        agentList={swarmAgentList}
+        form={swarmAgentForm}
+        editingAgentId={editingSwarmAgentId}
+        saving={swarmAgentSaving}
+        deletingAgentId={deletingSwarmAgentId}
+        commercialModelProviders={commercialModelProviders}
+        modelOptions={modelOptions}
+        selectedModelValue={selectedSwarmModelValue}
+        onRefresh={loadSwarmPresets}
+        onPresetChange={loadSwarmAgents}
+        onResetForm={resetSwarmAgentForm}
+        onEditAgent={editSwarmAgent}
+        onDeleteAgent={deleteSwarmAgent}
+        onSubmit={submitSwarmAgent}
+        onFormChange={(patch) => setSwarmAgentForm((prev) => ({ ...prev, ...patch }))}
+        onModelChange={setSwarmAgentModel}
+      />
     </div>
   );
 
