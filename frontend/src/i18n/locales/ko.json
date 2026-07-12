@@ -109,6 +109,19 @@
     "to": "~",
     "return": "수익률",
     "sharpe": "Sharpe",
+    "analyticsTitle": "리포트 분석",
+    "analyticsDescription": "현재 리포트 보기를 성과, 상태, 수익률 분포로 요약합니다.",
+    "totalReports": "전체 리포트",
+    "bestReturn": "최고 수익률",
+    "bestSharpe": "최고 Sharpe",
+    "avgReturn": "평균 수익률",
+    "statusDistribution": "상태 분포",
+    "returnBuckets": "수익률 구간",
+    "returnBucket": {
+      "positive": "양수",
+      "flat": "보합",
+      "negative": "음수"
+    },
     "fullReport": "전체 리포트",
     "compare": "비교"
   },

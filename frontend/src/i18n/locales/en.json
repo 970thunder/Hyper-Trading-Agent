@@ -114,6 +114,19 @@
     "to": "to",
     "return": "Return",
     "sharpe": "Sharpe",
+    "analyticsTitle": "Report analytics",
+    "analyticsDescription": "Summarize the current report view by performance, status, and return distribution.",
+    "totalReports": "Total reports",
+    "bestReturn": "Best return",
+    "bestSharpe": "Best Sharpe",
+    "avgReturn": "Average return",
+    "statusDistribution": "Status distribution",
+    "returnBuckets": "Return buckets",
+    "returnBucket": {
+      "positive": "positive",
+      "flat": "flat",
+      "negative": "negative"
+    },
     "fullReport": "Full Report",
     "compare": "Compare"
   },

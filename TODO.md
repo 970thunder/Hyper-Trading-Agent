@@ -35,7 +35,7 @@
 - [x] 新增 UI 审计文档与验收截图清单
 - [ ] Settings 全部 section 进一步拆分为复用组件，降低单文件复杂度：已抽取安全与组织成员管理面板，剩余模型、知识库、Agent、审计等 section 组件化
 - [ ] AlphaZoo 详情、bench、compare 全量表格和筛选区二次美化
-- [ ] Reports / Runtime 增加更完整的数据图表和任务操作态
+- [ ] Reports / Runtime 增加更完整的数据图表和任务操作态：Reports 已补摘要指标、状态分布和收益区间图；Runtime 仍需任务操作态与队列视图
 - [x] 移动端 Agent composer 与设置页截图验收：新增 Playwright CLI 截图脚本，覆盖移动视口 Agent 与 Settings 模型/知识库页面
 - [x] 核心页面 Playwright light/dark 截图回归：新增截图回归脚本与验收文档，覆盖核心页面、浅色/深色主题、桌面/移动视口
 

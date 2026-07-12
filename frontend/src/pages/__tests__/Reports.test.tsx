@@ -87,4 +87,50 @@ describe("Reports page", () => {
     expect(screen.queryByText("aapl-report")).not.toBeInTheDocument();
     expect(screen.getByText("msft-report")).toBeInTheDocument();
   });
+
+  it("shows portfolio-level report analytics and distribution bars", async () => {
+    apiMock.listRuns.mockResolvedValue([
+      {
+        run_id: "winner",
+        status: "success",
+        created_at: "2026-06-04T00:00:00Z",
+        prompt: "Winner",
+        codes: ["AAPL"],
+        total_return: 0.18,
+        sharpe: 2.2,
+      },
+      {
+        run_id: "loss",
+        status: "failed",
+        created_at: "2026-06-03T00:00:00Z",
+        prompt: "Loss",
+        codes: ["MSFT"],
+        total_return: -0.04,
+        sharpe: -0.2,
+      },
+      {
+        run_id: "flat",
+        status: "success",
+        created_at: "2026-06-02T00:00:00Z",
+        prompt: "Flat",
+        codes: ["GOOG"],
+        total_return: 0.02,
+        sharpe: 0.5,
+      },
+    ]);
+
+    render(<Reports />, { wrapper: MemoryRouter });
+
+    expect(await screen.findByText("Report analytics")).toBeInTheDocument();
+    expect(screen.getByText("Total reports")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByText("Best return")).toBeInTheDocument();
+    expect(screen.getAllByText("+18.00%").length).toBeGreaterThan(0);
+    expect(screen.getByText("Best Sharpe")).toBeInTheDocument();
+    expect(screen.getByText("2.20")).toBeInTheDocument();
+    expect(screen.getByText("Status distribution")).toBeInTheDocument();
+    expect(screen.getByText("Return buckets")).toBeInTheDocument();
+    expect(screen.getByText("positive")).toBeInTheDocument();
+    expect(screen.getByText("negative")).toBeInTheDocument();
+  });
 });

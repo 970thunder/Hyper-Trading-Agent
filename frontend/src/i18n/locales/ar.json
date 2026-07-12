@@ -109,6 +109,19 @@
     "to": "إلى",
     "return": "العائد",
     "sharpe": "Sharpe",
+    "analyticsTitle": "تحليلات التقارير",
+    "analyticsDescription": "تلخيص عرض التقارير الحالي حسب الأداء والحالة وتوزيع العائد.",
+    "totalReports": "إجمالي التقارير",
+    "bestReturn": "أفضل عائد",
+    "bestSharpe": "أفضل Sharpe",
+    "avgReturn": "متوسط العائد",
+    "statusDistribution": "توزيع الحالات",
+    "returnBuckets": "فئات العائد",
+    "returnBucket": {
+      "positive": "موجب",
+      "flat": "مستقر",
+      "negative": "سالب"
+    },
     "fullReport": "التقرير الكامل",
     "compare": "مقارنة"
   },

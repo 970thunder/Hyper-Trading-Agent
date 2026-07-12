@@ -80,6 +80,7 @@ export function Reports() {
       })
       .sort((left, right) => compareRuns(left, right, sortMode));
   }, [runs, query, statusFilter, startDate, endDate, sortMode]);
+  const analytics = useMemo(() => buildReportAnalytics(filtered), [filtered]);
 
   return (
     <div className="min-h-screen p-6 lg:p-8">
@@ -158,6 +159,10 @@ export function Reports() {
           {t("reports.count", { shown: filtered.length, total: runs.length })}
         </div>
 
+        {!loading && !error && filtered.length > 0 ? (
+          <ReportAnalyticsPanel analytics={analytics} />
+        ) : null}
+
         {loading ? (
           <div className="grid gap-3">
             {[1, 2, 3, 4].map((item) => (
@@ -193,6 +198,57 @@ export function Reports() {
             ))}
           </section>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ReportAnalyticsPanel({ analytics }: { analytics: ReportAnalytics }) {
+  const { t } = useTranslation();
+  const maxStatusCount = Math.max(1, ...analytics.statusRows.map((row) => row.count));
+  const maxBucketCount = Math.max(1, ...analytics.returnBuckets.map((bucket) => bucket.count));
+
+  return (
+    <section className="rounded-md border bg-card p-4">
+      <div className="mb-4 flex flex-col gap-1">
+        <h2 className="text-base font-semibold">{t("reports.analyticsTitle")}</h2>
+        <p className="text-sm text-muted-foreground">{t("reports.analyticsDescription")}</p>
+      </div>
+      <div className="grid gap-3 md:grid-cols-4">
+        <MetricPill label={t("reports.totalReports")} value={String(analytics.totalReports)} />
+        <MetricPill label={t("reports.bestReturn")} value={analytics.bestReturn == null ? "-" : formatMetricVal("total_return", analytics.bestReturn)} />
+        <MetricPill label={t("reports.bestSharpe")} value={analytics.bestSharpe == null ? "-" : analytics.bestSharpe.toFixed(2)} />
+        <MetricPill label={t("reports.avgReturn")} value={analytics.averageReturn == null ? "-" : formatMetricVal("total_return", analytics.averageReturn)} />
+      </div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <DistributionPanel title={t("reports.statusDistribution")} rows={analytics.statusRows} maxCount={maxStatusCount} />
+        <DistributionPanel
+          title={t("reports.returnBuckets")}
+          rows={analytics.returnBuckets.map((bucket) => ({
+            ...bucket,
+            label: t(`reports.returnBucket.${bucket.label}`),
+          }))}
+          maxCount={maxBucketCount}
+        />
+      </div>
+    </section>
+  );
+}
+
+function DistributionPanel({ title, rows, maxCount }: { title: string; rows: Array<{ label: string; count: number }>; maxCount: number }) {
+  return (
+    <div className="rounded-md border bg-muted/10 p-3">
+      <h3 className="mb-3 text-sm font-semibold">{title}</h3>
+      <div className="space-y-2">
+        {rows.map((row) => (
+          <div key={row.label} className="grid grid-cols-[92px_minmax(0,1fr)_36px] items-center gap-2 text-xs">
+            <span className="truncate text-muted-foreground" title={row.label}>{row.label}</span>
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${Math.max(4, (row.count / maxCount) * 100)}%` }} />
+            </div>
+            <span className="text-right tabular-nums text-muted-foreground">{row.count}</span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -275,6 +331,39 @@ function MetricPill({ label, value }: { label: string; value: string }) {
       <div className="font-mono text-sm font-medium">{value}</div>
     </div>
   );
+}
+
+interface ReportAnalytics {
+  totalReports: number;
+  bestReturn: number | null;
+  bestSharpe: number | null;
+  averageReturn: number | null;
+  statusRows: Array<{ label: string; count: number }>;
+  returnBuckets: Array<{ label: "positive" | "flat" | "negative"; count: number }>;
+}
+
+function buildReportAnalytics(runs: RunListItem[]): ReportAnalytics {
+  const returns = runs.map((run) => run.total_return).filter(Number.isFinite) as number[];
+  const sharpes = runs.map((run) => run.sharpe).filter(Number.isFinite) as number[];
+  const statusCounts = new Map<string, number>();
+  for (const run of runs) {
+    const status = run.status || "unknown";
+    statusCounts.set(status, (statusCounts.get(status) || 0) + 1);
+  }
+  return {
+    totalReports: runs.length,
+    bestReturn: returns.length ? Math.max(...returns) : null,
+    bestSharpe: sharpes.length ? Math.max(...sharpes) : null,
+    averageReturn: returns.length ? returns.reduce((sum, value) => sum + value, 0) / returns.length : null,
+    statusRows: Array.from(statusCounts.entries())
+      .map(([label, count]) => ({ label, count }))
+      .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label)),
+    returnBuckets: [
+      { label: "positive", count: returns.filter((value) => value > 0.001).length },
+      { label: "flat", count: returns.filter((value) => value >= -0.001 && value <= 0.001).length },
+      { label: "negative", count: returns.filter((value) => value < -0.001).length },
+    ],
+  };
 }
 
 function isBacktestReportRun(run: RunListItem): boolean {

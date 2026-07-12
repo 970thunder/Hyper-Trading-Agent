@@ -109,6 +109,19 @@
     "to": "至",
     "return": "收益率",
     "sharpe": "夏普",
+    "analyticsTitle": "报告分析",
+    "analyticsDescription": "按表现、状态和收益分布汇总当前报告视图。",
+    "totalReports": "报告总数",
+    "bestReturn": "最佳收益",
+    "bestSharpe": "最佳 Sharpe",
+    "avgReturn": "平均收益",
+    "statusDistribution": "状态分布",
+    "returnBuckets": "收益区间",
+    "returnBucket": {
+      "positive": "正收益",
+      "flat": "持平",
+      "negative": "负收益"
+    },
     "fullReport": "完整报告",
     "compare": "对比"
   },

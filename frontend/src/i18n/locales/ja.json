@@ -109,6 +109,19 @@
     "to": "から",
     "return": "リターン",
     "sharpe": "Sharpe",
+    "analyticsTitle": "レポート分析",
+    "analyticsDescription": "現在のレポート表示をパフォーマンス、ステータス、リターン分布で要約します。",
+    "totalReports": "レポート数",
+    "bestReturn": "最高リターン",
+    "bestSharpe": "最高 Sharpe",
+    "avgReturn": "平均リターン",
+    "statusDistribution": "ステータス分布",
+    "returnBuckets": "リターン区分",
+    "returnBucket": {
+      "positive": "プラス",
+      "flat": "横ばい",
+      "negative": "マイナス"
+    },
     "fullReport": "完全なレポート",
     "compare": "比較"
   },
