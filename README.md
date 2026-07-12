@@ -60,7 +60,7 @@ For SiliconFlow, configure `agent/.env`:
 
 ```env
 LANGCHAIN_PROVIDER=siliconflow
-LANGCHAIN_MODEL_NAME=deepseek-ai/DeepSeek-V4-Flash
+LANGCHAIN_MODEL_NAME=deepseek-ai/DeepSeek-V3.2
 SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
 SILICONFLOW_API_KEY=your-api-key
 ```
@@ -104,6 +104,11 @@ docker compose --env-file .env.production -f docker-compose.prod.yml down
 For local HTTP access, set `VIBE_TRADING_COOKIE_SECURE=false` in `.env.production`. Use `true` only behind HTTPS/TLS. If host port `8899` is occupied, set `API_PORT=8898` or another free port.
 
 Docker Desktop may present browser requests to the container as the bridge gateway address instead of `127.0.0.1`. For local-only Docker usage, keep `API_BIND=127.0.0.1` and `VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1` so the bundled frontend can call protected API routes without a manual API key.
+
+Operations runbooks:
+
+- [Secret rotation and encryption migration](docs/operations-secret-rotation.md)
+- [Backup and restore drill](docs/operations-backup-restore.md)
 
 ## Commercial API Surface
 
