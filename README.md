@@ -29,9 +29,12 @@ flowchart LR
   Agent --> Tools["Research Tools"]
   Agent --> Models["LLM Providers"]
   KB --> LocalRAG["SQLite FTS MVP"]
-  KB -. next .-> PG["Postgres + pgvector"]
+  KB --> PGVector["pgvector Adapter / Local Fallback"]
   API --> Audit["Audit / Usage Logs"]
-  Worker["Worker Process"] -. next .-> Jobs["Async Jobs"]
+  API --> Jobs["Durable Runtime Jobs"]
+  Jobs --> SQLiteJobs["SQLite Local Store"]
+  Jobs -. production .-> Redis["Redis Queue"]
+  Worker["Worker Process"] --> Redis
 ```
 
 ## Local Setup
@@ -81,6 +84,15 @@ Set at least:
 - `API_AUTH_KEY`
 - `VIBE_TRADING_SECRET_KEY`
 - `SILICONFLOW_API_KEY`
+
+Runtime jobs default to the production queue contract in Docker:
+
+```env
+HYPER_TRADING_RUNTIME_JOB_BACKEND=redis-postgres
+HYPER_TRADING_RUNTIME_JOB_QUEUE=hyper:runtime:jobs
+```
+
+For a single-machine deployment without Redis/Postgres workers, set `HYPER_TRADING_RUNTIME_JOB_BACKEND=sqlite-local`.
 
 Start:
 
@@ -132,10 +144,9 @@ Operations runbooks:
 
 ## Current Limits
 
-- Runtime commercial storage is still SQLite for the MVP. The PostgreSQL + pgvector schema exists under `migrations/`, but the runtime adapter still needs to be implemented.
-- RAG currently uses FTS/BM25-style search. Embedding generation, vector search, hybrid ranking, and rerank are planned next.
-- Worker service is a deployment placeholder. Long-running ingestion, web crawling, backtests, and agent runs still need a real queue.
-- CSRF protection, member invitation, SSO, full admin console, quota enforcement, and advanced observability are still pending.
+- Runtime jobs have a SQLite durable store and a Redis/Postgres queue contract. The worker can consume queued envelopes and update job state, but full Agent run, web crawl, and long-backtest executors still need to be moved onto that worker path.
+- RAG supports local fallback, embedding status, ingestion lifecycle, hybrid-style retrieval surfaces, and pgvector adapter configuration. Full production Postgres repository parity and rerank tuning remain follow-up work.
+- CSRF protection, enterprise SSO, quota enforcement, and deeper observability hardening are still pending.
 
 ## Verification
 
@@ -147,8 +158,8 @@ npm run build
 
 ## Roadmap
 
-1. Implement Postgres/pgvector runtime repository.
-2. Add embedding provider abstraction and hybrid retrieval.
-3. Move ingestion and long-running agent tasks to Redis-backed jobs.
-4. Add complete organization member management and RBAC UI.
-5. Add cost quota, structured audit, metrics, and production hardening.
+1. Move Agent run, web crawl, RAG ingestion, and long backtest executors onto the durable Redis/Postgres worker path.
+2. Complete Postgres runtime repository parity for commercial data beyond the current SQLite MVP.
+3. Add rerank/evaluation loops for RAG and investment report quality.
+4. Add enterprise SSO, quota enforcement, and stronger observability hardening.
+5. Package private deployment runbooks, backup drills, and security review gates for commercial delivery.
