@@ -36,8 +36,8 @@
 - [ ] Settings 全部 section 进一步拆分为复用组件，降低单文件复杂度
 - [ ] AlphaZoo 详情、bench、compare 全量表格和筛选区二次美化
 - [ ] Reports / Runtime 增加更完整的数据图表和任务操作态
-- [ ] 移动端 Agent composer 与设置页截图验收
-- [ ] 核心页面 Playwright light/dark 截图回归
+- [x] 移动端 Agent composer 与设置页截图验收：新增 Playwright CLI 截图脚本，覆盖移动视口 Agent 与 Settings 模型/知识库页面
+- [x] 核心页面 Playwright light/dark 截图回归：新增截图回归脚本与验收文档，覆盖核心页面、浅色/深色主题、桌面/移动视口
 
 ## P1 Agent 核心能力
 - [x] Plan-Execute 执行模式
