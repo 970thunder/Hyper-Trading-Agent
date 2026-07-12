@@ -37,6 +37,16 @@ export interface SwarmRunStatus {
   agents: SwarmAgentStatus[];
 }
 
+export interface AgentCitationSource {
+  documentId: string;
+  chunkId: string;
+  title: string;
+  sourceUri: string;
+  citation: string;
+  text: string;
+  score?: number;
+}
+
 export interface AgentMessage {
   id: string;
   type: AgentMessageType;
@@ -55,6 +65,8 @@ export interface AgentMessage {
   stage?: string;
   /** Shadow Account id if render_shadow_report fired in this turn (RunCompleteCard renders a "View Shadow Report" button). */
   shadowId?: string;
+  /** RAG source snippets used by the answer. */
+  citations?: AgentCitationSource[];
 }
 
 /** Tool call tracking entry */

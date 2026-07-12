@@ -1142,7 +1142,9 @@
     "feedbackHelpful": "تحديد كإجابة مفيدة",
     "feedbackNotHelpful": "تحديد كإجابة غير مفيدة",
     "feedbackSaved": "تم تسجيل الملاحظات",
-    "feedbackFailed": "فشل تسجيل الملاحظات"
+    "feedbackFailed": "فشل تسجيل الملاحظات",
+    "sources": "المصادر",
+    "sourceCount": "{{count}} مصادر"
   },
   "pineViewer": {
     "pineScript": "Pine Script v6",

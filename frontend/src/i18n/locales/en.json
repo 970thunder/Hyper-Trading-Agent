@@ -1147,7 +1147,9 @@
     "feedbackHelpful": "Mark as helpful",
     "feedbackNotHelpful": "Mark as not helpful",
     "feedbackSaved": "Feedback recorded",
-    "feedbackFailed": "Failed to record feedback"
+    "feedbackFailed": "Failed to record feedback",
+    "sources": "Sources",
+    "sourceCount": "{{count}} sources"
   },
   "pineViewer": {
     "pineScript": "Pine Script v6",

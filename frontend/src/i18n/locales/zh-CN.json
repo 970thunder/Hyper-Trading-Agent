@@ -1142,7 +1142,9 @@
     "feedbackHelpful": "标记为有帮助",
     "feedbackNotHelpful": "标记为无帮助",
     "feedbackSaved": "反馈已记录",
-    "feedbackFailed": "反馈记录失败"
+    "feedbackFailed": "反馈记录失败",
+    "sources": "引用来源",
+    "sourceCount": "{{count}} 个来源"
   },
   "pineViewer": {
     "pineScript": "Pine Script v6",

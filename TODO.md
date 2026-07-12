@@ -72,7 +72,7 @@
 - [x] 用户反馈闭环：反馈事件存储/API/审计/metrics 与 Agent 回答点赞点踩入口
 - [x] 欢迎页示例分类标签页
 - [x] 关键控件 hover / active / transition 状态
-- [ ] 引用来源可展开查看原文片段
+- [x] 引用来源可展开查看原文片段：Agent 回答挂载 knowledge_search 片段，消息卡片可展开查看来源、相似度与原文
 - [x] 长回答自动摘要并保留详细运行记录：最终答案压缩展示，完整原文写入 run artifact，trace 记录压缩元数据
 
 ## P4 商业化治理

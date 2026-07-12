@@ -69,6 +69,37 @@ describe("MessageBubble", () => {
         metadata: { message_type: "answer" },
       });
     });
+
+    it("shows expandable citation snippets for RAG-backed answers", async () => {
+      const user = userEvent.setup();
+      render(
+        <MessageBubble
+          msg={makeMsg({
+            type: "answer",
+            content: "The portfolio policy requires a drawdown review.",
+            citations: [
+              {
+                documentId: "doc-1",
+                chunkId: "chunk-1",
+                title: "Risk Policy",
+                sourceUri: "uploads/risk.md",
+                citation: "Risk Policy (uploads/risk.md)#chunk-1",
+                text: "Portfolios with drawdowns over 10% require committee review before capital is increased.",
+                score: 0.91,
+              },
+            ],
+          })}
+        />,
+      );
+
+      expect(screen.getByText("Sources")).toBeInTheDocument();
+      expect(screen.queryByText(/Portfolios with drawdowns/)).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: /Risk Policy/ }));
+
+      expect(screen.getByText(/Portfolios with drawdowns/)).toBeInTheDocument();
+      expect(screen.getByText("uploads/risk.md")).toBeInTheDocument();
+    });
   });
 
   describe("error messages", () => {

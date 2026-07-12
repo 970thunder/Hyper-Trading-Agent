@@ -1142,7 +1142,9 @@
     "feedbackHelpful": "도움 됨으로 표시",
     "feedbackNotHelpful": "도움 안 됨으로 표시",
     "feedbackSaved": "피드백이 기록되었습니다",
-    "feedbackFailed": "피드백 기록에 실패했습니다"
+    "feedbackFailed": "피드백 기록에 실패했습니다",
+    "sources": "출처",
+    "sourceCount": "출처 {{count}}개"
   },
   "pineViewer": {
     "pineScript": "Pine Script v6",

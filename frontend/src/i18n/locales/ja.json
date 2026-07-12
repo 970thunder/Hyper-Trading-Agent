@@ -1142,7 +1142,9 @@
     "feedbackHelpful": "役に立ったとして記録",
     "feedbackNotHelpful": "役に立たなかったとして記録",
     "feedbackSaved": "フィードバックを記録しました",
-    "feedbackFailed": "フィードバックの記録に失敗しました"
+    "feedbackFailed": "フィードバックの記録に失敗しました",
+    "sources": "引用元",
+    "sourceCount": "{{count}} 件の引用元"
   },
   "pineViewer": {
     "pineScript": "Pine Script v6",

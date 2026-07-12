@@ -1,6 +1,6 @@
 import i18n from '@/i18n';
 import { memo, useState, useCallback } from "react";
-import { User, XCircle, RefreshCw, Copy, Check, ThumbsUp, ThumbsDown } from "lucide-react";
+import { BookOpen, Check, ChevronDown, Copy, RefreshCw, ThumbsDown, ThumbsUp, User, XCircle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -104,6 +104,59 @@ function FeedbackButtons({ msg }: { msg: AgentMessage }) {
   );
 }
 
+function CitationSources({ msg }: { msg: AgentMessage }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  const citations = msg.citations || [];
+  if (citations.length === 0) return null;
+
+  return (
+    <div className="mt-3 rounded-lg border border-border/70 bg-muted/20 p-2.5 shadow-sm">
+      <div className="mb-2 flex items-center gap-2 text-xs font-medium text-foreground">
+        <BookOpen className="h-3.5 w-3.5 text-primary" />
+        <span>{i18n.t("messageBubble.sources")}</span>
+        <span className="rounded-md bg-background/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          {i18n.t("messageBubble.sourceCount", { count: citations.length })}
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {citations.map((source, index) => {
+          const id = `${source.documentId}:${source.chunkId}:${index}`;
+          const expanded = openId === id;
+          return (
+            <div key={id} className="overflow-hidden rounded-md border border-border/60 bg-background/70">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-expanded={expanded}
+                onClick={() => setOpenId(expanded ? null : id)}
+              >
+                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`} />
+                <span className="min-w-0 flex-1 truncate font-medium text-foreground">{source.title}</span>
+                {typeof source.score === "number" && (
+                  <span className="shrink-0 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] tabular-nums text-primary">
+                    {source.score.toFixed(2)}
+                  </span>
+                )}
+              </button>
+              {expanded && (
+                <div className="space-y-2 border-t border-border/60 px-2.5 py-2 text-xs">
+                  {source.sourceUri && <div className="truncate text-primary" title={source.sourceUri}>{source.sourceUri}</div>}
+                  <p className="max-h-32 overflow-auto whitespace-pre-wrap rounded-md bg-muted/30 p-2 leading-relaxed text-muted-foreground">
+                    {source.text}
+                  </p>
+                  <div className="truncate text-[10px] text-muted-foreground/70" title={source.citation}>
+                    {source.citation}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   msg: AgentMessage;
   onRetry?: (msg: AgentMessage) => void;
@@ -135,6 +188,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props
           <div className="prose prose-sm dark:prose-invert max-w-none leading-relaxed prose-table:border prose-table:border-border/50 prose-th:bg-muted/30 prose-th:px-3 prose-th:py-1.5 prose-td:px-3 prose-td:py-1.5 prose-th:text-left prose-th:text-xs prose-th:font-medium prose-td:text-xs prose-hr:hidden">
             <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>{msg.content}</ReactMarkdown>
           </div>
+          <CitationSources msg={msg} />
           <FeedbackButtons msg={msg} />
           {ts && <span className="text-[9px] text-muted-foreground/30 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">{ts}</span>}
         </div>
