@@ -136,3 +136,37 @@ def test_commercial_role_matrix_for_governance_and_knowledge(tmp_path: Path, mon
     assert admin_client.get("/usage/model-calls").status_code == 200
     assert member_client.get("/usage/model-calls").status_code == 403
     assert viewer_client.get("/usage/model-calls").status_code == 403
+
+
+def test_knowledge_url_ingestion_queues_runtime_job_when_worker_backend_enabled(tmp_path: Path, monkeypatch) -> None:
+    pushed: list[tuple[str, str]] = []
+
+    class FakeRedisClient:
+        def rpush(self, queue_name: str, payload: str) -> int:
+            pushed.append((queue_name, payload))
+            return 1
+
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_DB", str(tmp_path / "commercial.db"))
+    monkeypatch.setenv("VIBE_TRADING_RUNTIME_JOBS_DB", str(tmp_path / "runtime_jobs.db"))
+    monkeypatch.setenv("HYPER_TRADING_RUNTIME_JOB_BACKEND", "redis-postgres")
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://vibe:secret@postgres:5432/vibe_trading")
+    monkeypatch.setenv("HYPER_TRADING_RUNTIME_JOB_QUEUE", "hyper:runtime:jobs")
+    monkeypatch.setattr("src.api.commercial_routes._runtime_redis_client", lambda: FakeRedisClient())
+
+    client = TestClient(api_server.app, client=("127.0.0.1", 50200))
+    _register_owner(client, email="url-owner@example.com")
+    kb_response = client.post("/knowledge-bases", json={"name": "URL KB"})
+    assert kb_response.status_code == 200
+
+    response = client.post(
+        f"/knowledge-bases/{kb_response.json()['id']}/urls",
+        json={"url": "https://example.com/research", "title": "Research URL"},
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["status"] == "pending"
+    assert payload["metadata"]["url"] == "https://example.com/research"
+    assert payload["metadata"]["runtime_job_id"].startswith("job_")
+    assert pushed[0][0] == "hyper:runtime:jobs"

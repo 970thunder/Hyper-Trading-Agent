@@ -13,8 +13,10 @@ import logging
 import time
 from typing import Any
 
+from src.commercial.store import CommercialStore, Principal
 from src.runtime_jobs.backend import _queue_name, _redis_client_from_url, _redis_url
 from src.runtime_jobs.store import DurableRuntimeJobStore
+from src.tools.web_reader_tool import WebReaderTool
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,51 @@ def _execute_runtime_job(job: dict[str, Any]) -> dict[str, Any]:
     payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
     if kind == "noop":
         return {"status": "completed", "message": str(payload.get("message") or "ok")}
+    if kind == "knowledge_url_ingest":
+        return _execute_knowledge_url_ingest(payload)
     raise ValueError(f"unsupported runtime job kind: {kind or 'unknown'}")
+
+
+def _principal_from_payload(payload: dict[str, Any]) -> Principal:
+    raw = payload.get("principal")
+    if not isinstance(raw, dict):
+        raise ValueError("knowledge_url_ingest payload missing principal")
+    return Principal(
+        user_id=str(raw.get("user_id") or ""),
+        organization_id=str(raw.get("organization_id") or ""),
+        email=str(raw.get("email") or ""),
+        role=str(raw.get("role") or ""),
+    )
+
+
+def _execute_knowledge_url_ingest(payload: dict[str, Any]) -> dict[str, Any]:
+    principal = _principal_from_payload(payload)
+    kb_id = str(payload.get("knowledge_base_id") or "")
+    url = str(payload.get("url") or "")
+    title = str(payload.get("title") or "")
+    if not kb_id or not url:
+        raise ValueError("knowledge_url_ingest payload missing knowledge_base_id or url")
+
+    raw = WebReaderTool().execute(url=url)
+    parsed = json.loads(raw)
+    if parsed.get("status") != "ok":
+        raise ValueError(str(parsed.get("error") or "failed to read URL"))
+    document = CommercialStore().add_knowledge_document(
+        principal,
+        kb_id,
+        title=title or str(parsed.get("title") or url),
+        source_uri=url,
+        source_type="url",
+        text=str(parsed.get("content") or parsed.get("text") or ""),
+        metadata={"url": url, "runtime_worker": True},
+    )
+    return {
+        "status": "completed",
+        "knowledge_base_id": kb_id,
+        "document_id": document["id"],
+        "ingestion_job_id": document["ingestion_job_id"],
+        "title": document["title"],
+    }
 
 
 def run_once(*, redis_client: Any | None = None, queue_name: str | None = None) -> dict[str, Any]:

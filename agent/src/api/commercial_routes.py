@@ -12,6 +12,7 @@ from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Response, st
 from pydantic import BaseModel, Field
 
 from src.commercial.store import CommercialStore, Principal, embedding_backend_status as get_embedding_backend_status
+from src.runtime_jobs.backend import REDIS_POSTGRES_RUNTIME_BACKEND, _redis_client_from_url, _redis_url, build_runtime_job_backend
 from src.tools.doc_reader_tool import read_document
 from src.tools.path_utils import safe_document_path
 from src.tools.web_reader_tool import WebReaderTool
@@ -120,6 +121,11 @@ def _host():
 
 def _store() -> CommercialStore:
     return CommercialStore()
+
+
+def _runtime_redis_client():
+    redis_url = _redis_url()
+    return _redis_client_from_url(redis_url) if redis_url else None
 
 
 def _principal_from_cookie(vibe_session: str | None = Cookie(default=None)) -> Principal:
@@ -375,10 +381,38 @@ def register_commercial_routes(app: FastAPI) -> None:
 
     @app.post("/knowledge-bases/{knowledge_base_id}/urls")
     async def add_knowledge_url(
+        response: Response,
         knowledge_base_id: str,
         payload: KnowledgeUrlCreateRequest,
         principal: Principal = Depends(_require_role("owner", "admin", "member")),
     ):
+        backend = build_runtime_job_backend(redis_client=_runtime_redis_client())
+        if backend.status().get("configured") == REDIS_POSTGRES_RUNTIME_BACKEND and backend.name == REDIS_POSTGRES_RUNTIME_BACKEND:
+            runtime_job = backend.enqueue(
+                kind="knowledge_url_ingest",
+                source="rag",
+                title=f"Knowledge URL ingestion {payload.title or payload.url}",
+                payload={
+                    "principal": principal.__dict__,
+                    "knowledge_base_id": knowledge_base_id,
+                    "url": payload.url,
+                    "title": payload.title,
+                },
+                metadata={"knowledge_base_id": knowledge_base_id, "url": payload.url},
+            )
+            try:
+                queued = _store().create_pending_url_ingestion_job(
+                    principal,
+                    knowledge_base_id,
+                    url=payload.url,
+                    title=payload.title,
+                    runtime_job_id=str(runtime_job["job_id"]),
+                )
+            except KeyError as exc:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="knowledge base not found") from exc
+            response.status_code = status.HTTP_202_ACCEPTED
+            return queued
+
         reader = WebReaderTool()
         raw = reader.execute(url=payload.url)
         import json

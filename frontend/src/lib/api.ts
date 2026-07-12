@@ -278,7 +278,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
   addCommercialKnowledgeUrl: (knowledgeBaseId: string, body: CommercialKnowledgeUrlCreateRequest) =>
-    request<CommercialKnowledgeDocument>(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/urls`, {
+    request<CommercialKnowledgeDocument | CommercialIngestionJob>(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/urls`, {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -714,6 +714,7 @@ export interface CommercialIngestionJob {
   status: string;
   progress: number;
   error: string;
+  metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   started_at?: string;

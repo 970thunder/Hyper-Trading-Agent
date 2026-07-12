@@ -160,6 +160,33 @@ def test_commercial_knowledge_base_ingest_search_and_delete(tmp_path):
     assert store.list_knowledge_documents(principal, kb["id"]) == []
 
 
+def test_commercial_store_creates_pending_url_ingestion_job(tmp_path):
+    store = CommercialStore(tmp_path / "commercial.db")
+    principal, _ = store.register_owner(
+        email="owner@example.com",
+        password="password123",
+        organization_name="Acme Research",
+    )
+    kb = store.create_knowledge_base(principal, "Web Research")
+
+    job = store.create_pending_url_ingestion_job(
+        principal,
+        kb["id"],
+        url="https://example.com/research",
+        title="Research page",
+        runtime_job_id="job_web_1",
+    )
+
+    assert job["status"] == "pending"
+    assert job["progress"] == 0
+    assert job["document_id"] == ""
+    assert job["metadata"]["url"] == "https://example.com/research"
+    assert job["metadata"]["runtime_job_id"] == "job_web_1"
+    listed = store.list_ingestion_jobs(principal, kb["id"])
+    assert listed[0]["id"] == job["id"]
+    assert listed[0]["metadata"]["title"] == "Research page"
+
+
 def test_commercial_knowledge_uses_provider_embedding_when_available(tmp_path, monkeypatch):
     store = CommercialStore(tmp_path / "commercial.db")
     principal, _ = store.register_owner(

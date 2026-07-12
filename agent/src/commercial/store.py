@@ -457,6 +457,7 @@ class CommercialStore:
                     status TEXT NOT NULL,
                     progress INTEGER NOT NULL DEFAULT 0,
                     error TEXT NOT NULL DEFAULT '',
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     started_at TEXT NOT NULL DEFAULT '',
@@ -525,6 +526,8 @@ class CommercialStore:
                 conn.execute("ALTER TABLE knowledge_ingestion_jobs ADD COLUMN started_at TEXT NOT NULL DEFAULT ''")
             if "completed_at" not in existing_job_columns:
                 conn.execute("ALTER TABLE knowledge_ingestion_jobs ADD COLUMN completed_at TEXT NOT NULL DEFAULT ''")
+            if "metadata_json" not in existing_job_columns:
+                conn.execute("ALTER TABLE knowledge_ingestion_jobs ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'")
 
     # --- auth / orgs ---
 
@@ -1414,6 +1417,43 @@ class CommercialStore:
         self.audit(principal, "knowledge_document.ingest", "knowledge_document", doc_id, {"knowledge_base_id": kb_id, "source_type": source_type, "job_id": job_id})
         return self.get_knowledge_document(principal, kb_id, doc_id) | {"ingestion_job_id": job_id}
 
+    def create_pending_url_ingestion_job(
+        self,
+        principal: Principal,
+        kb_id: str,
+        *,
+        url: str,
+        title: str = "",
+        runtime_job_id: str = "",
+    ) -> dict[str, Any]:
+        self._ensure_kb(principal, kb_id)
+        now = utcnow()
+        job_id = _new_id("job")
+        metadata = {
+            "url": url,
+            "title": title,
+            "source_type": "url",
+            "runtime_job_id": runtime_job_id,
+        }
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO knowledge_ingestion_jobs(
+                    id, organization_id, knowledge_base_id, document_id, status,
+                    progress, error, metadata_json, created_at, updated_at
+                ) VALUES (?, ?, ?, '', 'pending', 0, '', ?, ?, ?)
+                """,
+                (job_id, principal.organization_id, kb_id, json.dumps(metadata, ensure_ascii=False), now, now),
+            )
+        self.audit(
+            principal,
+            "knowledge_url.queue",
+            "knowledge_ingestion_job",
+            job_id,
+            {"knowledge_base_id": kb_id, "url": url, "runtime_job_id": runtime_job_id},
+        )
+        return self.get_ingestion_job(principal, kb_id, job_id)
+
     def _replace_document_chunks(
         self,
         conn: sqlite3.Connection,
@@ -1712,7 +1752,7 @@ class CommercialStore:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT id, knowledge_base_id, document_id, status, progress, error, created_at, updated_at, started_at, completed_at
+                SELECT id, knowledge_base_id, document_id, status, progress, error, metadata_json, created_at, updated_at, started_at, completed_at
                 FROM knowledge_ingestion_jobs
                 WHERE id = ? AND organization_id = ? AND knowledge_base_id = ?
                 """,
@@ -1720,14 +1760,19 @@ class CommercialStore:
             ).fetchone()
         if row is None:
             raise KeyError(job_id)
-        return dict(row)
+        item = dict(row)
+        try:
+            item["metadata"] = json.loads(str(item.pop("metadata_json") or "{}"))
+        except json.JSONDecodeError:
+            item["metadata"] = {}
+        return item
 
     def list_ingestion_jobs(self, principal: Principal, kb_id: str, limit: int = 50) -> list[dict[str, Any]]:
         self._ensure_kb(principal, kb_id)
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, knowledge_base_id, document_id, status, progress, error, created_at, updated_at, started_at, completed_at
+                SELECT id, knowledge_base_id, document_id, status, progress, error, metadata_json, created_at, updated_at, started_at, completed_at
                 FROM knowledge_ingestion_jobs
                 WHERE organization_id = ? AND knowledge_base_id = ?
                 ORDER BY updated_at DESC
@@ -1735,7 +1780,15 @@ class CommercialStore:
                 """,
                 (principal.organization_id, kb_id, max(1, min(limit, 200))),
             ).fetchall()
-        return [dict(row) for row in rows]
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item["metadata"] = json.loads(str(item.pop("metadata_json") or "{}"))
+            except json.JSONDecodeError:
+                item["metadata"] = {}
+            items.append(item)
+        return items
 
     def retry_ingestion_job(self, principal: Principal, kb_id: str, job_id: str) -> dict[str, Any]:
         job = self.get_ingestion_job(principal, kb_id, job_id)
