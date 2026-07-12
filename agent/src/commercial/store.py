@@ -208,9 +208,10 @@ def _embedding_config() -> dict[str, Any]:
 
 
 def embedding_backend_status() -> dict[str, Any]:
+    from src.commercial.vector_store import build_vector_store_adapter
+
     cfg = _embedding_config()
-    configured_storage = os.getenv("HYPER_TRADING_VECTOR_STORAGE", os.getenv("VIBE_TRADING_VECTOR_STORAGE", "sqlite-fts-local")).strip() or "sqlite-fts-local"
-    pgvector_dsn = os.getenv("HYPER_TRADING_PGVECTOR_DSN", os.getenv("DATABASE_URL", "")).strip()
+    vector_status = build_vector_store_adapter().status()
     return {
         "primary": {
             "provider": cfg["provider"],
@@ -227,12 +228,7 @@ def embedding_backend_status() -> dict[str, Any]:
         },
         "storage": "sqlite-fts-local",
         "target_storage": "postgres-pgvector",
-        "vector_storage": {
-            "active": "sqlite-fts-local",
-            "configured": configured_storage,
-            "pgvector_configured": bool(pgvector_dsn),
-            "pgvector_available": configured_storage == "postgres-pgvector" and bool(pgvector_dsn),
-        },
+        "vector_storage": vector_status | {"pgvector_available": vector_status["active"] == "postgres-pgvector"},
     }
 
 

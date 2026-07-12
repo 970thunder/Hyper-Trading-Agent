@@ -49,7 +49,7 @@
 - [x] Agent 工作区状态快照与恢复
 
 ## P2 RAG 与记忆
-- [ ] pgvector runtime adapter
+- [x] pgvector runtime adapter：运行时选择、fallback 原因、bootstrap SQL 与维度配置
 - [x] hybrid retrieval
 - [x] ingestion job
 - [x] citation UI
