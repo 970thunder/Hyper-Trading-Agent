@@ -16,6 +16,7 @@ from typing import Any, Dict, Optional
 # Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
 _AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
 _SESSION_TITLE_MAX_CHARS = 18
+_CONVERSATION_RECALL_MAX = 3
 _TITLE_TICKER_STOPWORDS = {"API", "CSV", "DOC", "EXCEL", "HTML", "IM", "LLM", "PDF", "RAG", "URL", "WORD"}
 
 from src.session.events import EventBus
@@ -226,6 +227,61 @@ class SessionService:
     def get_messages(self, session_id: str, limit: int = 100) -> list[Message]:
         """Return the message history."""
         return self.store.get_messages(session_id, limit)
+
+    def recall_conversation_history(
+        self,
+        query: str,
+        *,
+        current_session_id: str = "",
+        limit: int = _CONVERSATION_RECALL_MAX,
+    ) -> list[Dict[str, Any]]:
+        """Return relevant prior sessions for cross-session context recall."""
+        cleaned = " ".join(str(query or "").split())
+        if len(cleaned) < 3:
+            return []
+        safe_limit = max(1, min(int(limit or _CONVERSATION_RECALL_MAX), 10))
+        matches = self._search_index.search(cleaned, max_sessions=safe_limit + 3)
+        recalled: list[Dict[str, Any]] = []
+        for match in matches:
+            if current_session_id and match.session_id == current_session_id:
+                continue
+            recalled.append({
+                **match.to_dict(),
+                "citation": f"conversation:{match.session_id}",
+            })
+            if len(recalled) >= safe_limit:
+                break
+        return recalled
+
+    def _conversation_history_recall_messages(
+        self,
+        query: str,
+        *,
+        current_session_id: str = "",
+    ) -> list[Dict[str, Any]]:
+        recalled = self.recall_conversation_history(
+            query,
+            current_session_id=current_session_id,
+            limit=_CONVERSATION_RECALL_MAX,
+        )
+        if not recalled:
+            return []
+        lines = []
+        for item in recalled:
+            title = str(item.get("title") or "(untitled)")
+            citation = str(item.get("citation") or "")
+            snippet = str(item.get("snippet") or "").replace(">>>", "").replace("<<<", "")
+            lines.append(f"- {title} [{citation}]: {snippet[:500]}")
+        return [{
+            "role": "system",
+            "content": (
+                "<conversation-history-recall>\n"
+                + "\n".join(lines)
+                + "\n</conversation-history-recall>\n"
+                "Use these prior-session snippets only as context. Treat them as historical notes, "
+                "cite the conversation id when relying on them, and verify current market facts with tools."
+            ),
+        }]
 
     def cancel_current(self, session_id: str) -> bool:
         """Cancel the currently running AgentLoop for a session.
@@ -621,7 +677,11 @@ class SessionService:
         self._active_loops[session_id] = agent
 
         # Build the message history context.
-        history = self._convert_messages_to_history(messages) if messages else None
+        history = self._convert_messages_to_history(messages) if messages else []
+        history.extend(self._conversation_history_recall_messages(
+            attempt.prompt,
+            current_session_id=session_id,
+        ))
 
         try:
             result = await loop.run_in_executor(

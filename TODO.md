@@ -54,7 +54,7 @@
 - [x] ingestion job
 - [x] citation UI
 - [ ] persistent memory 策略
-- [ ] 会话历史检索
+- [x] 会话历史检索
 - [x] 文件上传导入入口
 - [x] URL 抓取入库入口
 - [x] PDF / Word / Excel / Markdown / TXT / HTML / CSV 解析入口

@@ -336,6 +336,25 @@ def register_sessions_routes(app: FastAPI) -> None:
     # Session CRUD routes
     # -----------------------------------------------------------------------
 
+    @app.get("/session-history/search", dependencies=[Depends(require_auth)])
+    async def search_session_history(
+        q: str = Query(..., min_length=1, max_length=500),
+        limit: int = Query(3, ge=1, le=10),
+        current_session_id: str = Query("", max_length=64),
+    ):
+        """Search prior conversation history and return citation-ready snippets."""
+        if current_session_id:
+            _host_validate_path_param(current_session_id, "session_id")
+        svc = _host_get_session_service()
+        if not svc:
+            raise HTTPException(status_code=501, detail="Session runtime not enabled")
+        results = svc.recall_conversation_history(
+            q,
+            current_session_id=current_session_id,
+            limit=limit,
+        )
+        return {"query": q, "count": len(results), "results": results}
+
     @app.post("/sessions", response_model=SessionResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_auth)])
     async def create_session(request: CreateSessionRequest):
         """Create a chat session."""

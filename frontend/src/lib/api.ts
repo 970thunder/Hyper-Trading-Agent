@@ -119,6 +119,12 @@ export const api = {
     request<{ attempt_id: string; status: string }>(`/sessions/${sid}/attempts/${attemptId}/pause`, { method: "POST" }),
   resumeAttempt: (sid: string, attemptId: string) =>
     request<{ attempt_id: string; status: string }>(`/sessions/${sid}/attempts/${attemptId}/resume`, { method: "POST" }),
+  searchSessionHistory: (query: string, options?: { limit?: number; current_session_id?: string }) => {
+    const q = new URLSearchParams({ q: query });
+    if (options?.limit) q.set("limit", String(options.limit));
+    if (options?.current_session_id) q.set("current_session_id", options.current_session_id);
+    return request<SessionHistorySearchResponse>(`/session-history/search?${q.toString()}`);
+  },
   listApprovals: (status = "pending") => request<ApprovalRecord[]>(`/approvals?status=${encodeURIComponent(status)}`),
   approveToolCall: (approvalId: string, note = "") =>
     request<{ approval: ApprovalRecord; attempt_status: string }>(`/approvals/${approvalId}/approve`, { method: "POST", body: JSON.stringify({ note }) }),
@@ -1390,6 +1396,21 @@ export interface MessageItem {
   created_at: string;
   linked_attempt_id?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface SessionHistoryMatch {
+  session_id: string;
+  title: string;
+  started_at: string;
+  message_count: number;
+  snippet: string;
+  citation: string;
+}
+
+export interface SessionHistorySearchResponse {
+  query: string;
+  count: number;
+  results: SessionHistoryMatch[];
 }
 
 export type ExecutionMode = "auto" | "react" | "plan_execute";
