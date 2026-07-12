@@ -29,6 +29,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from src.agent.context import ContextBuilder
 from src.agent.memory import WorkspaceMemory
+from src.agent.output import compress_final_answer
 from src.agent.progress import HeartbeatTimer, ProgressEvent, _set_emitter
 from src.agent.tools import ToolRegistry
 from src.agent.trace import TraceWriter
@@ -958,6 +959,20 @@ class AgentLoop:
                             goal_last_progress = current_progress
                             goal_continuations += 1
                             continue
+
+                    compressed_answer = compress_final_answer(final_content, run_dir)
+                    if compressed_answer.summary_applied:
+                        trace.write(
+                            {
+                                "type": "answer_compressed",
+                                "iter": current_iter,
+                                "original_chars": compressed_answer.original_chars,
+                                "display_chars": compressed_answer.display_chars,
+                                "full_content_path": compressed_answer.full_content_path,
+                                "metadata_path": compressed_answer.metadata_path,
+                            }
+                        )
+                        final_content = compressed_answer.display_content
 
                     trace.write_text_entry(
                         {"type": "answer", "iter": current_iter},

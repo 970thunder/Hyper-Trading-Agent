@@ -73,6 +73,32 @@ class _StubLLMWithUsage:
         return _StubLLMResponse()
 
 
+class _StubLLMLongFinal:
+    model_name = "stub-model"
+
+    def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[Any] | None = None,
+        on_text_chunk: Callable[[str], None] | None = None,
+        on_reasoning_chunk: Callable[[str], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> _StubLLMResponse:
+        response = _StubLLMResponse()
+        response.content = "\n\n".join(
+            [
+                "# Long Research Answer",
+                "This answer contains a detailed backtest discussion.",
+                "B" * 500,
+                "Risk disclosure: validate transaction costs, liquidity, and drawdown tolerance.",
+            ]
+        )
+        return response
+
+    def chat(self, messages: list[dict[str, Any]], **_: Any) -> _StubLLMResponse:
+        return _StubLLMResponse()
+
+
 class _StubLLMCancelMidStream:
     """LLM stub that cancels the loop from inside the LLM call.
 
@@ -244,6 +270,30 @@ def test_usage_metadata_is_persisted_to_run_artifact(tmp_path: Path, monkeypatch
     assert payload["updated_at"].endswith("Z")
 
 
+def test_long_final_answer_is_summarized_and_preserved(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Long final answers should be concise in chat while preserving the full artifact."""
+    monkeypatch.setenv("HYPER_TRADING_OUTPUT_SUMMARY_THRESHOLD_CHARS", "180")
+    agent = _build_agent(_StubLLMLongFinal(), max_iter=2, tmp_run_dir=tmp_path / "run")
+
+    result = agent.run(user_message="produce a long research answer")
+
+    assert result["status"] == "success"
+    assert "Full answer artifact" in result["content"]
+    assert "B" * 200 not in result["content"]
+    artifacts = tmp_path / "run" / "artifacts"
+    full_answers = list(artifacts.glob("full_answer_*.md"))
+    assert len(full_answers) == 1
+    assert "B" * 500 in full_answers[0].read_text(encoding="utf-8")
+    trace_entries = [
+        json.loads(line)
+        for line in (tmp_path / "run" / "trace.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert any(entry.get("type") == "answer_compressed" for entry in trace_entries)
+
+
 class _StubLLMAlwaysToolCalls:
     """LLM stub that returns tool calls until tools=None forces text."""
 
@@ -323,7 +373,8 @@ def test_provider_stream_error_returns_structured_failure(tmp_path: Path) -> Non
 
     assert result["status"] == "failed"
     assert result["error_code"] == "provider_stream_error"
-    assert "provider_stream_error" in result["reason"]
+    assert "Model provider failed" in result["reason"]
+    assert "deepseek" in result["reason"]
     assert result["iterations"] == 1
     assert result["max_iterations"] == 3
 
