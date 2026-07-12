@@ -410,6 +410,15 @@ function RuntimeJobsPanel({
   onCancel: (job: RuntimeJob) => void;
 }) {
   const { t } = useTranslation();
+  const [sourceFilter, setSourceFilter] = useState<DurableJobSource | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<DurableJobStatusFilter>("all");
+  const durableJobs = useMemo(() => jobs.map(normalizeDurableJob), [jobs]);
+  const sourceSummary = useMemo(() => summarizeDurableJobSources(durableJobs), [durableJobs]);
+  const visibleJobs = useMemo(
+    () => durableJobs.filter((job) => matchesDurableJobFilters(job, sourceFilter, statusFilter)),
+    [durableJobs, sourceFilter, statusFilter],
+  );
+
   return (
     <section className="rounded-md border bg-card p-4">
       <div className="mb-4 flex flex-col gap-1">
@@ -432,63 +441,135 @@ function RuntimeJobsPanel({
         </div>
       ) : null}
       {!error && jobs.length > 0 ? (
-        <div className="mt-4 overflow-hidden rounded-md border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-xs text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 text-left font-medium">{t("runtime.job")}</th>
-                <th className="px-3 py-2 text-left font-medium">{t("runtime.status")}</th>
-                <th className="px-3 py-2 text-left font-medium">{t("runtime.progress")}</th>
-                <th className="px-3 py-2 text-right font-medium">{t("runtime.actions")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobs.map((job) => (
-                <tr key={job.job_id} className="border-t transition hover:bg-muted/20">
-                  <td className="px-3 py-2 align-top">
-                    <div className="font-medium">{job.title || job.job_id}</div>
-                    <div className="font-mono text-xs text-muted-foreground">{job.kind} / {job.job_id}</div>
-                    {job.error ? <div className="mt-1 max-w-md text-xs text-danger">{job.error}</div> : null}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <StatusPill label={job.status} tone={jobStatusTone(job.status)} />
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 w-28 overflow-hidden rounded-full bg-muted">
-                        <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, Number(job.progress || 0)))}%` }} />
-                      </div>
-                      <span className="text-xs tabular-nums text-muted-foreground">{Math.round(Number(job.progress || 0))}%</span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-right align-top">
-                    <div className="flex flex-wrap justify-end gap-2">
-                      {["failed", "error"].includes(job.status) ? (
-                        <button
-                          type="button"
-                          onClick={() => onRetry(job)}
-                          disabled={actionId === `retry:${job.job_id}`}
-                          className="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-muted disabled:opacity-60"
-                        >
-                          {actionId === `retry:${job.job_id}` ? t("runtime.working") : t("runtime.retryJob")}
-                        </button>
-                      ) : null}
-                      {["queued", "pending", "running"].includes(job.status) ? (
-                        <button
-                          type="button"
-                          onClick={() => onCancel(job)}
-                          disabled={actionId === `cancel:${job.job_id}`}
-                          className="rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-destructive/40 hover:text-destructive disabled:opacity-60"
-                        >
-                          {actionId === `cancel:${job.job_id}` ? t("runtime.working") : t("runtime.cancelJob")}
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
+        <div className="mt-4 space-y-4">
+          <div className="rounded-md border bg-muted/10 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold">{t("runtime.durableTitle")}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">{t("runtime.durableDescription")}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <label className="grid gap-1 text-xs text-muted-foreground">
+                  <span>{t("runtime.sourceFilter")}</span>
+                  <select
+                    aria-label={t("runtime.sourceFilter")}
+                    value={sourceFilter}
+                    onChange={(event) => setSourceFilter(event.target.value as DurableJobSource | "all")}
+                    className="h-9 rounded-md border bg-background px-2 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="all">{t("runtime.jobSource.all")}</option>
+                    <option value="agent">{t("runtime.jobSource.agent")}</option>
+                    <option value="rag">{t("runtime.jobSource.rag")}</option>
+                    <option value="web">{t("runtime.jobSource.web")}</option>
+                    <option value="backtest">{t("runtime.jobSource.backtest")}</option>
+                    <option value="other">{t("runtime.jobSource.other")}</option>
+                  </select>
+                </label>
+                <label className="grid gap-1 text-xs text-muted-foreground">
+                  <span>{t("runtime.statusFilter")}</span>
+                  <select
+                    aria-label={t("runtime.statusFilter")}
+                    value={statusFilter}
+                    onChange={(event) => setStatusFilter(event.target.value as DurableJobStatusFilter)}
+                    className="h-9 rounded-md border bg-background px-2 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="all">{t("runtime.jobStatusFilter.all")}</option>
+                    <option value="active">{t("runtime.jobStatusFilter.active")}</option>
+                    <option value="failed">{t("runtime.jobStatusFilter.failed")}</option>
+                    <option value="completed">{t("runtime.jobStatusFilter.completed")}</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              <DurableSourceCard label={t("runtime.jobSource.agent")} count={sourceSummary.agent} />
+              <DurableSourceCard label={t("runtime.jobSource.rag")} count={sourceSummary.rag} />
+              <DurableSourceCard label={t("runtime.jobSource.web")} count={sourceSummary.web} />
+              <DurableSourceCard label={t("runtime.jobSource.backtest")} count={sourceSummary.backtest} />
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              {t("runtime.durableCount", { shown: visibleJobs.length, total: durableJobs.length })}
+            </p>
+          </div>
+
+          <div className="overflow-hidden rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">{t("runtime.job")}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t("runtime.source")}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t("runtime.status")}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t("runtime.progress")}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t("runtime.updated")}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t("runtime.actions")}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {visibleJobs.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                      {t("runtime.noDurableMatches")}
+                    </td>
+                  </tr>
+                ) : (
+                  visibleJobs.map((durableJob) => {
+                    const job = durableJob.raw;
+                    return (
+                      <tr key={job.job_id} className="border-t transition hover:bg-muted/20">
+                        <td className="px-3 py-2 align-top">
+                          <div className="font-medium">{job.title || job.job_id}</div>
+                          <div className="font-mono text-xs text-muted-foreground">{job.kind} / {job.job_id}</div>
+                          {job.error ? <div className="mt-1 max-w-md text-xs text-danger">{job.error}</div> : null}
+                        </td>
+                        <td className="px-3 py-2 align-top">
+                          <StatusPill label={t(`runtime.jobSource.${durableJob.source}`)} tone="neutral" />
+                        </td>
+                        <td className="px-3 py-2 align-top">
+                          <StatusPill label={job.status} tone={jobStatusTone(job.status)} />
+                        </td>
+                        <td className="px-3 py-2 align-top">
+                          <div className="flex items-center gap-2">
+                            <div className="h-2 w-28 overflow-hidden rounded-full bg-muted">
+                              <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, Number(job.progress || 0)))}%` }} />
+                            </div>
+                            <span className="text-xs tabular-nums text-muted-foreground">{Math.round(Number(job.progress || 0))}%</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 align-top text-xs text-muted-foreground">
+                          {formatJobDate(job.updated_at)}
+                        </td>
+                        <td className="px-3 py-2 text-right align-top">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            {["failed", "error"].includes(job.status) ? (
+                              <button
+                                type="button"
+                                onClick={() => onRetry(job)}
+                                disabled={actionId === `retry:${job.job_id}`}
+                                className="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-muted disabled:opacity-60"
+                              >
+                                {actionId === `retry:${job.job_id}` ? t("runtime.working") : t("runtime.retryJob")}
+                              </button>
+                            ) : null}
+                            {["queued", "pending", "running"].includes(job.status) ? (
+                              <button
+                                type="button"
+                                onClick={() => onCancel(job)}
+                                disabled={actionId === `cancel:${job.job_id}`}
+                                className="rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-destructive/40 hover:text-destructive disabled:opacity-60"
+                              >
+                                {actionId === `cancel:${job.job_id}` ? t("runtime.working") : t("runtime.cancelJob")}
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : null}
     </section>
@@ -500,6 +581,63 @@ function jobStatusTone(status: string): "success" | "danger" | "warning" | "neut
   if (["failed", "error"].includes(status)) return "danger";
   if (["queued", "pending", "running"].includes(status)) return "warning";
   return "neutral";
+}
+
+type DurableJobSource = "agent" | "rag" | "web" | "backtest" | "other";
+type DurableJobStatusFilter = "all" | "active" | "failed" | "completed";
+
+interface DurableJob {
+  raw: RuntimeJob;
+  source: DurableJobSource;
+}
+
+function normalizeDurableJob(job: RuntimeJob): DurableJob {
+  const kind = job.kind.toLowerCase();
+  const title = (job.title || "").toLowerCase();
+  const id = job.job_id.toLowerCase();
+  const haystack = `${kind} ${title} ${id}`;
+  let source: DurableJobSource = "other";
+  if (haystack.includes("agent") || haystack.includes("attempt") || haystack.includes("session")) source = "agent";
+  else if (haystack.includes("rag") || haystack.includes("knowledge") || haystack.includes("ingestion") || haystack.includes("embedding")) source = "rag";
+  else if (haystack.includes("web") || haystack.includes("crawl") || haystack.includes("url")) source = "web";
+  else if (haystack.includes("backtest") || haystack.includes("bench") || haystack.includes("alpha") || haystack.includes("compare")) source = "backtest";
+  return { raw: job, source };
+}
+
+function summarizeDurableJobSources(jobs: DurableJob[]) {
+  return jobs.reduce(
+    (summary, job) => {
+      summary[job.source] += 1;
+      return summary;
+    },
+    { agent: 0, rag: 0, web: 0, backtest: 0, other: 0 } as Record<DurableJobSource, number>,
+  );
+}
+
+function matchesDurableJobFilters(job: DurableJob, source: DurableJobSource | "all", status: DurableJobStatusFilter): boolean {
+  const sourceOk = source === "all" || job.source === source;
+  if (!sourceOk) return false;
+  if (status === "all") return true;
+  if (status === "active") return ["queued", "pending", "running"].includes(job.raw.status);
+  if (status === "failed") return ["failed", "error"].includes(job.raw.status);
+  if (status === "completed") return ["completed", "done"].includes(job.raw.status);
+  return true;
+}
+
+function DurableSourceCard({ label, count }: { label: string; count: number }) {
+  return (
+    <div className="rounded-md border bg-background px-3 py-2">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 text-lg font-semibold tabular-nums">{count}</div>
+    </div>
+  );
+}
+
+function formatJobDate(value: string): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }
 
 function deriveRiskState(broker: LiveBrokerStatus, globalHalted: boolean, t: TFunction): {

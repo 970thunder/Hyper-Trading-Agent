@@ -100,7 +100,29 @@
     "actions": "작업",
     "retryJob": "작업 재시도",
     "cancelJob": "작업 취소",
-    "working": "처리 중..."
+    "working": "처리 중...",
+    "durableTitle": "지속 작업 운영",
+    "durableDescription": "Agent 실행, RAG 수집, 웹 크롤링, 장기 백테스트를 하나의 큐 화면에서 봅니다. 백엔드는 Redis 또는 PostgreSQL 지속 작업에서 제공할 수 있습니다.",
+    "sourceFilter": "소스 필터",
+    "statusFilter": "상태 필터",
+    "source": "소스",
+    "updated": "업데이트",
+    "durableCount": "{{shown}} / {{total}}개 지속 작업",
+    "noDurableMatches": "현재 필터와 일치하는 지속 작업이 없습니다.",
+    "jobSource": {
+      "all": "전체 소스",
+      "agent": "Agent 실행",
+      "rag": "RAG 수집",
+      "web": "웹 크롤링",
+      "backtest": "백테스트",
+      "other": "기타 작업"
+    },
+    "jobStatusFilter": {
+      "all": "전체 상태",
+      "active": "활성",
+      "failed": "실패",
+      "completed": "완료"
+    }
   },
   "admin": {
     "badge": "상업용 거버넌스",

@@ -36,7 +36,8 @@
 - [x] Settings 全部 section 进一步拆分为复用组件，降低单文件复杂度：已抽取安全、组织成员、审计与用量、运行时任务、模型配置、Agent 策略与工具治理、Swarm Agent、知识库主面板与文档表/检索结果/ingestion job、概览、本地模型兼容设置、数据源和 IM 通道组件
 - [ ] AlphaZoo 详情、bench、compare 全量表格和筛选区二次美化
 - [x] Reports / Runtime 增加更完整的数据图表和任务操作态：Reports 已补摘要指标、状态分布和收益区间图；Runtime 已补 Alpha bench / compare 后台任务队列、进度、失败、取消与重试操作态
-- [ ] Runtime 持久化任务队列二期：将 Agent run、RAG ingestion、网页抓取与长回测统一接入 Redis/Postgres durable job 视图
+- [x] Runtime 持久化任务视图二期：统一运维视图支持 Agent run、RAG ingestion、网页抓取与长回测来源归一、来源/状态筛选、摘要卡与重试/取消动作；后端已将商业 RAG ingestion job 聚合进 `/runtime/jobs`
+- [ ] Runtime Redis/Postgres durable worker adapter：将 Agent run、网页抓取与长回测从进程内/分散存储迁移到统一 Redis/Postgres durable job 后端
 - [x] 移动端 Agent composer 与设置页截图验收：新增 Playwright CLI 截图脚本，覆盖移动视口 Agent 与 Settings 模型/知识库页面
 - [x] 核心页面 Playwright light/dark 截图回归：新增截图回归脚本与验收文档，覆盖核心页面、浅色/深色主题、桌面/移动视口
 

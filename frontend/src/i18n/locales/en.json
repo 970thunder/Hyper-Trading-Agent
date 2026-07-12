@@ -105,7 +105,29 @@
     "actions": "Actions",
     "retryJob": "Retry job",
     "cancelJob": "Cancel job",
-    "working": "Working..."
+    "working": "Working...",
+    "durableTitle": "Durable job operations",
+    "durableDescription": "Unified queue view for Agent runs, RAG ingestion, web crawling, and long backtests. Backends can feed this from Redis or PostgreSQL durable jobs.",
+    "sourceFilter": "Source filter",
+    "statusFilter": "Status filter",
+    "source": "Source",
+    "updated": "Updated",
+    "durableCount": "{{shown}} of {{total}} durable jobs",
+    "noDurableMatches": "No durable jobs match the current filters.",
+    "jobSource": {
+      "all": "All sources",
+      "agent": "Agent runs",
+      "rag": "RAG ingestion",
+      "web": "Web crawling",
+      "backtest": "Backtests",
+      "other": "Other jobs"
+    },
+    "jobStatusFilter": {
+      "all": "All statuses",
+      "active": "Active",
+      "failed": "Failed",
+      "completed": "Completed"
+    }
   },
   "admin": {
     "badge": "Commercial Governance",

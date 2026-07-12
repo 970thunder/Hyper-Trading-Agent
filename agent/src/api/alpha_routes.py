@@ -391,13 +391,109 @@ def _runtime_job_row(kind: str, job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _runtime_job_rows() -> list[dict[str, Any]]:
+def _runtime_job_rows(extra_rows: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     with _JOBS_LOCK:
         rows = [
             *(_runtime_job_row("alpha_bench", dict(job)) for job in ALPHA_BENCH_JOBS.values()),
             *(_runtime_job_row("alpha_compare", dict(job)) for job in ALPHA_COMPARE_JOBS.values()),
         ]
+    if extra_rows:
+        rows.extend(extra_rows)
     return sorted(rows, key=lambda row: row.get("updated_at") or row.get("created_at") or "", reverse=True)
+
+
+def _commercial_runtime_job_rows(request: Request) -> list[dict[str, Any]]:
+    """Return commercial durable jobs visible to the request's organization."""
+    import sys as _sys
+
+    host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
+    if host is None or not hasattr(host, "_commercial_principal_from_request"):
+        return []
+    principal = host._commercial_principal_from_request(request)
+    if principal is None:
+        return []
+
+    try:
+        from src.commercial.store import CommercialStore
+
+        return _rag_ingestion_runtime_job_rows(CommercialStore(), principal)
+    except Exception as exc:  # noqa: BLE001 - runtime monitor must stay available in local mode
+        logger.debug("Failed to load commercial runtime jobs: %s", exc)
+        return []
+
+
+def _rag_ingestion_runtime_job_rows(store: Any, principal: Any) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for kb in store.list_knowledge_bases(principal):
+        kb_id = str(kb.get("id") or "")
+        kb_name = str(kb.get("name") or "")
+        if not kb_id:
+            continue
+        for job in store.list_ingestion_jobs(principal, kb_id, limit=200):
+            document = _knowledge_document_for_job(store, principal, kb_id, str(job.get("document_id") or ""))
+            document_title = str((document or {}).get("title") or job.get("document_id") or job.get("id") or "")
+            rows.append(
+                {
+                    "job_id": str(job.get("id") or ""),
+                    "kind": "rag_ingestion",
+                    "title": f"RAG ingestion {document_title}".strip(),
+                    "status": str(job.get("status") or "unknown"),
+                    "progress": int(job.get("progress") or 0),
+                    "error": str(job.get("error") or ""),
+                    "created_at": str(job.get("created_at") or ""),
+                    "updated_at": str(job.get("updated_at") or job.get("created_at") or ""),
+                    "metadata": {
+                        "knowledge_base_id": kb_id,
+                        "knowledge_base_name": kb_name,
+                        "document_id": str(job.get("document_id") or ""),
+                        "started_at": str(job.get("started_at") or ""),
+                        "completed_at": str(job.get("completed_at") or ""),
+                    },
+                }
+            )
+    return rows
+
+
+def _knowledge_document_for_job(store: Any, principal: Any, kb_id: str, document_id: str) -> dict[str, Any] | None:
+    if not document_id:
+        return None
+    try:
+        return store.get_knowledge_document(principal, kb_id, document_id)
+    except Exception:  # noqa: BLE001 - deleted documents should not hide their job records
+        return None
+
+
+def _commercial_principal(request: Request) -> Any | None:
+    import sys as _sys
+
+    host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
+    if host is None or not hasattr(host, "_commercial_principal_from_request"):
+        return None
+    return host._commercial_principal_from_request(request)
+
+
+def _find_rag_ingestion_job(request: Request, job_id: str) -> tuple[Any, Any, str, dict[str, Any]] | None:
+    if not _JOB_ID_RE.fullmatch(job_id or ""):
+        raise HTTPException(status_code=400, detail="invalid job_id")
+    principal = _commercial_principal(request)
+    if principal is None:
+        return None
+    try:
+        from src.commercial.store import CommercialStore
+
+        store = CommercialStore()
+        for kb in store.list_knowledge_bases(principal):
+            kb_id = str(kb.get("id") or "")
+            if not kb_id:
+                continue
+            try:
+                job = store.get_ingestion_job(principal, kb_id, job_id)
+            except KeyError:
+                continue
+            return store, principal, kb_id, job
+    except Exception as exc:  # noqa: BLE001 - alpha job routes should keep their normal 404 semantics
+        logger.debug("Failed to resolve commercial RAG ingestion job: %s", exc)
+    return None
 
 
 def _find_runtime_job(job_id: str) -> tuple[str, dict[str, dict[str, Any]], dict[str, Any]]:
@@ -458,14 +554,26 @@ def register_alpha_routes(
             require_event_stream_auth = host.require_event_stream_auth
 
     @app.get("/runtime/jobs", dependencies=[Depends(require_auth)])
-    async def list_runtime_jobs() -> list[dict[str, Any]]:
+    async def list_runtime_jobs(request: Request) -> list[dict[str, Any]]:
         """Return a unified read-only snapshot of process-local background jobs."""
-        return _runtime_job_rows()
+        return _runtime_job_rows(_commercial_runtime_job_rows(request))
 
     @app.post("/runtime/jobs/{job_id}/cancel", dependencies=[Depends(require_auth)])
-    async def cancel_runtime_job(job_id: str) -> dict[str, Any]:
+    async def cancel_runtime_job(job_id: str, request: Request) -> dict[str, Any]:
         """Mark a queued/running process-local background job as cancelled."""
-        _kind, store, job = _find_runtime_job(job_id)
+        try:
+            _kind, store, job = _find_runtime_job(job_id)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            rag_job = _find_rag_ingestion_job(request, job_id)
+            if rag_job is None:
+                raise
+            commercial_store, principal, kb_id, job = rag_job
+            if str(job.get("status")) not in ("queued", "pending", "running"):
+                raise HTTPException(status_code=400, detail="only queued or running jobs can be cancelled")
+            commercial_store.cancel_ingestion_job(principal, kb_id, job_id)
+            return {"status": "cancelled", "job_id": job_id, "kind": "rag_ingestion"}
         if job.get("status") not in ("queued", "pending", "running"):
             raise HTTPException(status_code=400, detail="only queued or running jobs can be cancelled")
         with _JOBS_LOCK:
@@ -475,9 +583,21 @@ def register_alpha_routes(
         return {"status": "cancelled", "job_id": job_id}
 
     @app.post("/runtime/jobs/{job_id}/retry", dependencies=[Depends(require_auth)])
-    async def retry_runtime_job(job_id: str) -> dict[str, Any]:
+    async def retry_runtime_job(job_id: str, request: Request) -> dict[str, Any]:
         """Retry a failed alpha bench/compare job with its original parameters."""
-        kind, store, job = _find_runtime_job(job_id)
+        try:
+            kind, store, job = _find_runtime_job(job_id)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            rag_job = _find_rag_ingestion_job(request, job_id)
+            if rag_job is None:
+                raise
+            commercial_store, principal, kb_id, job = rag_job
+            if str(job.get("status")) not in ("failed", "error"):
+                raise HTTPException(status_code=400, detail="only failed jobs can be retried")
+            commercial_store.retry_ingestion_job(principal, kb_id, job_id)
+            return {"status": "queued", "job_id": job_id, "kind": "rag_ingestion"}
         if job.get("status") not in ("failed", "error"):
             raise HTTPException(status_code=400, detail="only failed jobs can be retried")
 

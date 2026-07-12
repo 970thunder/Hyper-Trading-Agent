@@ -5,6 +5,7 @@ import pytest
 
 import api_server
 from src.api import alpha_routes
+from src.commercial.store import CommercialStore
 
 
 def _client() -> TestClient:
@@ -63,6 +64,110 @@ def test_runtime_jobs_lists_alpha_background_jobs() -> None:
     assert rows[1]["job_id"] == "bench-1"
     assert rows[1]["kind"] == "alpha_bench"
     assert rows[1]["progress"] == 40
+
+
+def test_runtime_jobs_includes_commercial_rag_ingestion_jobs(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_MODE", "true")
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_DB", str(tmp_path / "commercial.db"))
+    store = CommercialStore()
+    principal, token = store.register_owner(
+        email="runtime-owner@example.com",
+        password="password123",
+        organization_name="Runtime Org",
+    )
+    kb = store.create_knowledge_base(principal, name="Research KB", description="")
+    document = store.add_knowledge_document(
+        principal,
+        str(kb["id"]),
+        title="Annual report",
+        source_uri="file:///annual-report.pdf",
+        source_type="file",
+        text="Operating margin and revenue trend analysis.",
+        metadata={},
+    )
+
+    client = _client()
+    client.cookies.set("vibe_session", token)
+    response = client.get("/runtime/jobs")
+
+    assert response.status_code == 200
+    rows = response.json()
+    rag_rows = [row for row in rows if row["kind"] == "rag_ingestion"]
+    assert len(rag_rows) == 1
+    assert rag_rows[0]["job_id"] == document["ingestion_job_id"]
+    assert rag_rows[0]["title"] == "RAG ingestion Annual report"
+    assert rag_rows[0]["progress"] == 100
+    assert rag_rows[0]["metadata"]["knowledge_base_id"] == kb["id"]
+
+
+def test_runtime_jobs_retry_commercial_rag_ingestion_job(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_MODE", "true")
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_DB", str(tmp_path / "commercial.db"))
+    store = CommercialStore()
+    principal, token = store.register_owner(
+        email="retry-owner@example.com",
+        password="password123",
+        organization_name="Retry Org",
+    )
+    kb = store.create_knowledge_base(principal, name="Research KB", description="")
+    document = store.add_knowledge_document(
+        principal,
+        str(kb["id"]),
+        title="Failed report",
+        source_uri="file:///failed-report.pdf",
+        source_type="file",
+        text="Revenue growth",
+        metadata={"text": "Revenue growth"},
+    )
+    job_id = document["ingestion_job_id"]
+    with store._connect() as conn:
+        conn.execute(
+            "UPDATE knowledge_ingestion_jobs SET status = 'failed', error = 'embedding failed' WHERE id = ?",
+            (job_id,),
+        )
+
+    client = _client()
+    client.cookies.set("vibe_session", token)
+    response = client.post(f"/runtime/jobs/{job_id}/retry")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "queued"
+    assert payload["kind"] == "rag_ingestion"
+    rows = client.get("/runtime/jobs").json()
+    assert any(row["kind"] == "rag_ingestion" and row["status"] == "completed" for row in rows)
+
+
+def test_runtime_jobs_cancel_commercial_rag_ingestion_job(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_MODE", "true")
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_DB", str(tmp_path / "commercial.db"))
+    store = CommercialStore()
+    principal, token = store.register_owner(
+        email="cancel-owner@example.com",
+        password="password123",
+        organization_name="Cancel Org",
+    )
+    kb = store.create_knowledge_base(principal, name="Research KB", description="")
+    document = store.add_knowledge_document(
+        principal,
+        str(kb["id"]),
+        title="Running report",
+        source_uri="file:///running-report.pdf",
+        source_type="file",
+        text="Operating cash flow",
+        metadata={},
+    )
+    job_id = document["ingestion_job_id"]
+    with store._connect() as conn:
+        conn.execute("UPDATE knowledge_ingestion_jobs SET status = 'running', progress = 25 WHERE id = ?", (job_id,))
+
+    client = _client()
+    client.cookies.set("vibe_session", token)
+    response = client.post(f"/runtime/jobs/{job_id}/cancel")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "cancelled", "job_id": job_id, "kind": "rag_ingestion"}
+    assert store.get_ingestion_job(principal, str(kb["id"]), job_id)["status"] == "cancelled"
 
 
 def test_runtime_jobs_cancel_marks_running_job_cancelled() -> None:

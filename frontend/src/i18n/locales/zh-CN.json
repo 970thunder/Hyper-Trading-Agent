@@ -100,7 +100,29 @@
     "actions": "操作",
     "retryJob": "重试任务",
     "cancelJob": "取消任务",
-    "working": "处理中..."
+    "working": "处理中...",
+    "durableTitle": "持久化任务运维",
+    "durableDescription": "统一查看 Agent run、RAG 入库、网页抓取和长回测任务。后端可由 Redis 或 PostgreSQL 持久化任务队列供给。",
+    "sourceFilter": "来源筛选",
+    "statusFilter": "状态筛选",
+    "source": "来源",
+    "updated": "更新时间",
+    "durableCount": "显示 {{shown}} / {{total}} 个持久化任务",
+    "noDurableMatches": "当前筛选条件下没有匹配的持久化任务。",
+    "jobSource": {
+      "all": "全部来源",
+      "agent": "Agent 运行",
+      "rag": "RAG 入库",
+      "web": "网页抓取",
+      "backtest": "回测任务",
+      "other": "其他任务"
+    },
+    "jobStatusFilter": {
+      "all": "全部状态",
+      "active": "活跃",
+      "failed": "失败",
+      "completed": "已完成"
+    }
   },
   "admin": {
     "badge": "商业治理",

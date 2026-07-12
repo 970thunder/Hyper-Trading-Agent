@@ -100,7 +100,29 @@
     "actions": "الإجراءات",
     "retryJob": "إعادة محاولة المهمة",
     "cancelJob": "إلغاء المهمة",
-    "working": "جارٍ التنفيذ..."
+    "working": "جارٍ التنفيذ...",
+    "durableTitle": "تشغيل المهام الدائمة",
+    "durableDescription": "عرض موحد لتشغيل Agent وإدخال RAG وزحف الويب والاختبارات الخلفية الطويلة. يمكن للخلفية تغذيته من مهام Redis أو PostgreSQL الدائمة.",
+    "sourceFilter": "مرشح المصدر",
+    "statusFilter": "مرشح الحالة",
+    "source": "المصدر",
+    "updated": "آخر تحديث",
+    "durableCount": "{{shown}} من {{total}} مهمة دائمة",
+    "noDurableMatches": "لا توجد مهام دائمة تطابق المرشحات الحالية.",
+    "jobSource": {
+      "all": "كل المصادر",
+      "agent": "تشغيل Agent",
+      "rag": "إدخال RAG",
+      "web": "زحف الويب",
+      "backtest": "اختبارات خلفية",
+      "other": "مهام أخرى"
+    },
+    "jobStatusFilter": {
+      "all": "كل الحالات",
+      "active": "نشطة",
+      "failed": "فاشلة",
+      "completed": "مكتملة"
+    }
   },
   "admin": {
     "badge": "حوكمة تجارية",

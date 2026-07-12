@@ -100,7 +100,29 @@
     "actions": "操作",
     "retryJob": "ジョブを再試行",
     "cancelJob": "ジョブをキャンセル",
-    "working": "処理中..."
+    "working": "処理中...",
+    "durableTitle": "永続ジョブ運用",
+    "durableDescription": "Agent 実行、RAG 取り込み、Web クロール、長時間バックテストを統合して表示します。バックエンドは Redis または PostgreSQL の永続ジョブから供給できます。",
+    "sourceFilter": "ソースフィルター",
+    "statusFilter": "ステータスフィルター",
+    "source": "ソース",
+    "updated": "更新日時",
+    "durableCount": "{{shown}} / {{total}} 件の永続ジョブ",
+    "noDurableMatches": "現在のフィルターに一致する永続ジョブはありません。",
+    "jobSource": {
+      "all": "すべてのソース",
+      "agent": "Agent 実行",
+      "rag": "RAG 取り込み",
+      "web": "Web クロール",
+      "backtest": "バックテスト",
+      "other": "その他のジョブ"
+    },
+    "jobStatusFilter": {
+      "all": "すべてのステータス",
+      "active": "アクティブ",
+      "failed": "失敗",
+      "completed": "完了"
+    }
   },
   "admin": {
     "badge": "商用ガバナンス",

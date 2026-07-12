@@ -227,4 +227,67 @@ describe("Runtime page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry job" }));
     expect(apiMock.retryRuntimeJob).toHaveBeenCalledWith("compare-1");
   });
+
+  it("groups durable jobs by source and filters the unified operations view", async () => {
+    apiMock.getLiveStatus.mockResolvedValue(makeStatus());
+    apiMock.listRuntimeJobs.mockResolvedValue([
+      {
+        job_id: "agent-1",
+        kind: "agent_run",
+        title: "Portfolio research agent run",
+        status: "running",
+        progress: 35,
+        created_at: "2026-07-12T00:00:00Z",
+        updated_at: "2026-07-12T00:02:00Z",
+      },
+      {
+        job_id: "rag-1",
+        kind: "rag_ingestion",
+        title: "Index annual report PDF",
+        status: "failed",
+        progress: 100,
+        error: "embedding provider unavailable",
+        created_at: "2026-07-12T00:00:00Z",
+        updated_at: "2026-07-12T00:03:00Z",
+      },
+      {
+        job_id: "web-1",
+        kind: "web_crawl",
+        title: "Crawl macro policy URL",
+        status: "queued",
+        progress: 0,
+        created_at: "2026-07-12T00:00:00Z",
+        updated_at: "2026-07-12T00:01:00Z",
+      },
+      {
+        job_id: "backtest-1",
+        kind: "long_backtest",
+        title: "CSI 300 long backtest",
+        status: "completed",
+        progress: 100,
+        created_at: "2026-07-12T00:00:00Z",
+        updated_at: "2026-07-12T00:04:00Z",
+      },
+    ]);
+
+    render(<Runtime />);
+
+    expect(await screen.findByText("Durable job operations")).toBeInTheDocument();
+    expect(screen.getAllByText("Agent runs").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("RAG ingestion").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Web crawling").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Backtests").length).toBeGreaterThan(0);
+    expect(screen.getByText("4 of 4 durable jobs")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Source filter"), { target: { value: "rag" } });
+
+    expect(screen.getByText("Index annual report PDF")).toBeInTheDocument();
+    expect(screen.getByText("embedding provider unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("Portfolio research agent run")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Status filter"), { target: { value: "failed" } });
+
+    expect(screen.getByText("1 of 4 durable jobs")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry job" })).toBeInTheDocument();
+  });
 });
