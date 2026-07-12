@@ -1,0 +1,2 @@
+"""Structured research report utilities."""
+
