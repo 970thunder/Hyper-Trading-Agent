@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
+from pathlib import Path
 from typing import Any
 
 from src.commercial.store import CommercialStore, Principal
@@ -43,6 +45,8 @@ def _execute_runtime_job(job: dict[str, Any]) -> dict[str, Any]:
         return _execute_alpha_bench(payload)
     if kind == "alpha_compare":
         return _execute_alpha_compare(payload)
+    if kind == "agent_run":
+        return _execute_agent_run(payload)
     raise ValueError(f"unsupported runtime job kind: {kind or 'unknown'}")
 
 
@@ -152,6 +156,32 @@ def _execute_alpha_compare(payload: dict[str, Any]) -> dict[str, Any]:
     if str(job.get("status")) in {"error", "failed"}:
         raise ValueError(str(job.get("error") or "alpha compare failed"))
     return {"status": "completed", "alpha_status": str(job.get("status") or ""), "result": job.get("result")}
+
+
+def _build_session_service():
+    from src.session.events import EventBus
+    from src.session.service import SessionService
+    from src.session.store import SessionStore
+
+    agent_dir = Path(__file__).resolve().parents[2]
+    sessions_dir = Path(os.getenv("HYPER_TRADING_SESSIONS_DIR", "") or os.getenv("VIBE_TRADING_SESSIONS_DIR", "") or agent_dir / "sessions")
+    runs_dir = Path(os.getenv("HYPER_TRADING_RUNS_DIR", "") or os.getenv("VIBE_TRADING_RUNS_DIR", "") or agent_dir / "runs")
+    return SessionService(
+        store=SessionStore(sessions_dir),
+        event_bus=EventBus(),
+        runs_dir=runs_dir,
+    )
+
+
+def _execute_agent_run(payload: dict[str, Any]) -> dict[str, Any]:
+    session_id = str(payload.get("session_id") or "")
+    attempt_id = str(payload.get("attempt_id") or "")
+    if not session_id or not attempt_id:
+        raise ValueError("agent_run payload missing session_id or attempt_id")
+    result = _build_session_service().run_queued_attempt(session_id, attempt_id)
+    if str(result.get("attempt_status") or result.get("status") or "") in {"failed", "cancelled", "blocked"}:
+        raise ValueError(str(result.get("error") or f"agent attempt {result.get('attempt_status')}"))
+    return result
 
 
 def run_once(*, redis_client: Any | None = None, queue_name: str | None = None) -> dict[str, Any]:

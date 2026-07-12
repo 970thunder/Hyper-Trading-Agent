@@ -222,3 +222,38 @@ def test_worker_run_once_executes_alpha_compare_job(tmp_path: Path, monkeypatch)
     assert durable["status"] == "completed"
     assert durable["metadata"]["worker_result"]["alpha_status"] == "done"
     assert alpha_routes.ALPHA_COMPARE_JOBS["compare-worker-1"]["status"] == "done"
+
+
+def test_worker_run_once_executes_agent_run_job(tmp_path: Path, monkeypatch) -> None:
+    redis_client = FakeRedisClient()
+    monkeypatch.setenv("VIBE_TRADING_RUNTIME_JOBS_DB", str(tmp_path / "runtime_jobs.db"))
+    monkeypatch.setenv("HYPER_TRADING_RUNTIME_JOB_BACKEND", "redis-postgres")
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://vibe:secret@postgres:5432/vibe_trading")
+
+    calls: list[dict[str, str]] = []
+
+    class FakeSessionService:
+        def run_queued_attempt(self, session_id: str, attempt_id: str) -> dict[str, str]:
+            calls.append({"session_id": session_id, "attempt_id": attempt_id})
+            return {"status": "completed", "attempt_status": "completed"}
+
+    monkeypatch.setattr("src.commercial.worker._build_session_service", lambda: FakeSessionService())
+
+    backend = build_runtime_job_backend(redis_client=redis_client)
+    backend.enqueue(
+        kind="agent_run",
+        source="agent",
+        title="Agent run",
+        payload={"session_id": "sess-worker-1", "attempt_id": "attempt-worker-1", "message_id": "msg-worker-1"},
+        metadata={"session_id": "sess-worker-1", "attempt_id": "attempt-worker-1"},
+        job_id="agent_run_attempt-worker-1",
+    )
+
+    result = run_once(redis_client=redis_client)
+
+    assert result == {"status": "completed", "job_id": "agent_run_attempt-worker-1", "kind": "agent_run"}
+    assert calls == [{"session_id": "sess-worker-1", "attempt_id": "attempt-worker-1"}]
+    durable = DurableRuntimeJobStore().get_job("agent_run_attempt-worker-1")
+    assert durable["status"] == "completed"
+    assert durable["metadata"]["worker_result"]["attempt_status"] == "completed"

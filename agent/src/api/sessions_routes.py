@@ -17,6 +17,13 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 
+def _runtime_redis_client():
+    from src.runtime_jobs.backend import _redis_client_from_url, _redis_url
+
+    redis_url = _redis_url()
+    return _redis_client_from_url(redis_url) if redis_url else None
+
+
 # ============================================================================
 # Pydantic Models
 # ============================================================================
@@ -673,6 +680,13 @@ def register_sessions_routes(app: FastAPI) -> None:
                 except ValueError as exc:
                     raise HTTPException(status_code=400, detail=str(exc)) from exc
         try:
+            from src.runtime_jobs.backend import REDIS_POSTGRES_RUNTIME_BACKEND, build_runtime_job_backend
+
+            backend = build_runtime_job_backend(redis_client=_runtime_redis_client())
+            queue_agent_run = (
+                backend.status().get("configured") == REDIS_POSTGRES_RUNTIME_BACKEND
+                and backend.name == REDIS_POSTGRES_RUNTIME_BACKEND
+            )
             result = await svc.send_message(
                 session_id=session_id,
                 content=payload.content,
@@ -680,7 +694,27 @@ def register_sessions_routes(app: FastAPI) -> None:
                 commercial_principal=commercial_principal,
                 commercial_model_provider=commercial_model_provider,
                 execution_mode=payload.execution_mode,
+                schedule=not queue_agent_run,
             )
+            if queue_agent_run and result.get("attempt_id"):
+                runtime_job = backend.enqueue(
+                    kind="agent_run",
+                    source="agent",
+                    title=f"Agent run {result['attempt_id']}",
+                    payload={
+                        "session_id": session_id,
+                        "message_id": str(result.get("message_id") or ""),
+                        "attempt_id": str(result["attempt_id"]),
+                    },
+                    metadata={
+                        "session_id": session_id,
+                        "message_id": str(result.get("message_id") or ""),
+                        "attempt_id": str(result["attempt_id"]),
+                        "execution_mode": str(result.get("execution_mode") or payload.execution_mode),
+                    },
+                    job_id=f"agent_run_{result['attempt_id']}",
+                )
+                result["runtime_job_id"] = runtime_job["job_id"]
             return result
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))

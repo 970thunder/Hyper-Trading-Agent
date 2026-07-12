@@ -11,13 +11,7 @@ import re
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
-
-# Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
-_AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
-_SESSION_TITLE_MAX_CHARS = 18
-_CONVERSATION_RECALL_MAX = 3
-_TITLE_TICKER_STOPWORDS = {"API", "CSV", "DOC", "EXCEL", "HTML", "IM", "LLM", "PDF", "RAG", "URL", "WORD"}
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from src.session.events import EventBus
 from src.session.models import (
@@ -29,6 +23,15 @@ from src.session.models import (
 )
 from src.session.search import get_shared_index
 from src.session.store import SessionStore
+
+if TYPE_CHECKING:
+    from src.agent.loop import AgentLoop
+
+# Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
+_AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
+_SESSION_TITLE_MAX_CHARS = 18
+_CONVERSATION_RECALL_MAX = 3
+_TITLE_TICKER_STOPWORDS = {"API", "CSV", "DOC", "EXCEL", "HTML", "IM", "LLM", "PDF", "RAG", "URL", "WORD"}
 
 
 class SessionService:
@@ -101,6 +104,7 @@ class SessionService:
         commercial_principal: Dict[str, Any] | None = None,
         commercial_model_provider: Dict[str, Any] | None = None,
         execution_mode: str = "auto",
+        schedule: bool = True,
     ) -> Dict[str, Any]:
         """Send a message to a session and trigger execution.
 
@@ -159,18 +163,51 @@ class SessionService:
         })
         self._save_snapshot(attempt)
 
-        asyncio.create_task(
-            self._run_attempt(
-                session,
-                attempt,
-                include_shell_tools=include_shell_tools,
-                commercial_model_provider=commercial_model_provider,
+        if schedule:
+            asyncio.create_task(
+                self._run_attempt(
+                    session,
+                    attempt,
+                    include_shell_tools=include_shell_tools,
+                    commercial_model_provider=commercial_model_provider,
+                )
             )
-        )
         return {
             "message_id": message.message_id,
             "attempt_id": attempt.attempt_id,
             "execution_mode": resolved_mode,
+        }
+
+    def run_queued_attempt(self, session_id: str, attempt_id: str) -> Dict[str, Any]:
+        """Run a persisted queued attempt from a durable worker process."""
+        session = self.store.get_session(session_id)
+        if not session:
+            raise ValueError(f"Session {session_id} not found")
+        attempt = self.store.get_attempt(session_id, attempt_id)
+        if not attempt:
+            raise ValueError("attempt not found")
+        if attempt.status not in {AttemptStatus.QUEUED, AttemptStatus.PAUSED, AttemptStatus.BLOCKED}:
+            raise ValueError(f"attempt cannot be run from status {attempt.status.value}")
+
+        provider = self._resolve_resume_model_provider(session)
+
+        async def _runner() -> None:
+            await self._run_attempt(
+                session,
+                attempt,
+                include_shell_tools=bool(session.config.get("include_shell_tools")),
+                commercial_model_provider=provider,
+            )
+
+        asyncio.run(_runner())
+        refreshed = self.store.get_attempt(session_id, attempt_id) or attempt
+        return {
+            "status": "completed" if refreshed.status == AttemptStatus.COMPLETED else refreshed.status.value,
+            "attempt_status": refreshed.status.value,
+            "session_id": session_id,
+            "attempt_id": attempt_id,
+            "run_dir": refreshed.run_dir or "",
+            "error": refreshed.error or "",
         }
 
     @staticmethod
