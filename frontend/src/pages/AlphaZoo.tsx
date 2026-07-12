@@ -510,6 +510,16 @@ function DetailView({ alphaId }: DetailProps) {
   const formulaLatex = (meta["formula_latex"] as string | undefined) || "";
   const nickname = (meta["nickname"] as string | undefined) || "";
   const firstUniverse = ((meta["universe"] as string[] | undefined) || [])[0] || "";
+  const universeLabel = Array.isArray(meta.universe)
+    ? meta.universe.map((u: string) => i18n.t("alphaZoo.universeOption." + u, { defaultValue: u })).join(", ")
+    : typeof meta.universe === "string"
+      ? i18n.t("alphaZoo.universeOption." + meta.universe, { defaultValue: meta.universe })
+      : "—";
+  const themeLabel = Array.isArray(meta.theme)
+    ? meta.theme.map((t: string) => i18n.t("alphaZoo.themes." + t, { defaultValue: t })).join(", ")
+    : typeof meta.theme === "string"
+      ? i18n.t("alphaZoo.themes." + meta.theme, { defaultValue: meta.theme })
+      : "—";
 
   // Keep period in sync with the BenchView form default so the prefilled
   // form values match what users see if they click "Run bench" from here.
@@ -550,6 +560,21 @@ function DetailView({ alphaId }: DetailProps) {
         )}
       </div>
 
+      <section className="rounded-lg border border-border/70 bg-card p-4 shadow-sm">
+        <div className="mb-3 flex flex-col gap-1">
+          <h2 className="text-sm font-semibold">{i18n.t("alphaZoo.researchBrief")}</h2>
+          <p className="text-xs text-muted-foreground">{i18n.t("alphaZoo.researchBriefDesc")}</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <BriefMetric label={i18n.t("alphaZoo.sourceModule")} value={a.module_path || "—"} />
+          <BriefMetric label={i18n.t("alphaZoo.tradableUniverse")} value={universeLabel} />
+          <BriefMetric
+            label={i18n.t("alphaZoo.benchmarkSetup")}
+            value={`${i18n.t("alphaZoo.period")} 2020-2025 · ${themeLabel}`}
+          />
+        </div>
+      </section>
+
       {/* Formula */}
       <section className="space-y-2">
         <h2 className="text-sm font-medium text-muted-foreground">{i18n.t("alphaZoo.formula")}</h2>
@@ -566,23 +591,11 @@ function DetailView({ alphaId }: DetailProps) {
             <tbody>
               <MetaRow
                 label={i18n.t("alphaZoo.theme")}
-                value={
-                  Array.isArray(meta.theme)
-                    ? meta.theme.map((t: string) => i18n.t("alphaZoo.themes." + t, { defaultValue: t })).join(", ")
-                    : typeof meta.theme === "string"
-                    ? i18n.t("alphaZoo.themes." + meta.theme, { defaultValue: meta.theme })
-                    : "—"
-                }
+                value={themeLabel}
               />
               <MetaRow
                 label={i18n.t("alphaZoo.universe")}
-                value={
-                  Array.isArray(meta.universe)
-                    ? meta.universe.map((u: string) => i18n.t("alphaZoo.universeOption." + u, { defaultValue: u })).join(", ")
-                    : typeof meta.universe === "string"
-                    ? i18n.t("alphaZoo.universeOption." + meta.universe, { defaultValue: meta.universe })
-                    : "—"
-                }
+                value={universeLabel}
               />
               <MetaRow label={i18n.t("alphaZoo.frequency")} value={metaString(meta, "frequency")} />
               <MetaRow label={i18n.t("alphaZoo.decayHorizon")} value={metaString(meta, "decay_horizon")} />
@@ -607,6 +620,15 @@ function DetailView({ alphaId }: DetailProps) {
           </pre>
         </details>
       </section>
+    </div>
+  );
+}
+
+function BriefMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-background px-3 py-2">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 break-words text-xs font-medium text-foreground">{value}</div>
     </div>
   );
 }
@@ -922,6 +944,7 @@ function ProgressPanel({
 function ResultPanel({ result }: { result: AlphaBenchResult }) {
   const { dark } = useDarkMode();
   const chartRef = useRef<HTMLDivElement>(null);
+  const [categoryFilter, setCategoryFilter] = useState<"all" | AlphaBenchTopRow["category"]>("all");
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -974,6 +997,22 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
     { label: i18n.t("alphaZoo.dead"), value: result.dead, icon: XCircle, tone: "text-danger" },
     { label: i18n.t("alphaZoo.skipped"), value: result.skipped ?? 0, icon: Loader2, tone: "text-muted-foreground" },
   ];
+  const rankingRows = useMemo(() => {
+    const rows = [...(result.top5_by_ir || []), ...(result.dead_examples || [])];
+    const seen = new Set<string>();
+    return rows
+      .filter((row) => {
+        const key = `${row.id}:${row.category}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => Number(b.ir || 0) - Number(a.ir || 0));
+  }, [result]);
+  const visibleRows = useMemo(
+    () => rankingRows.filter((row) => categoryFilter === "all" || row.category === categoryFilter),
+    [rankingRows, categoryFilter],
+  );
 
   return (
     <div className="space-y-4">
@@ -990,10 +1029,72 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
         ))}
       </div>
 
-      {/* Top tables */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <TopTable title={i18n.t("alphaZoo.topByIr")} rows={result.top5_by_ir || []} />
-        <TopTable title={i18n.t("alphaZoo.mostReversed")} rows={(result.dead_examples || []).slice(0, 3)} />
+      <div className="rounded-lg border bg-card">
+        <div className="flex flex-col gap-3 border-b bg-muted/20 px-4 py-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold">{i18n.t("alphaZoo.benchmarkTableControls")}</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {i18n.t("alphaZoo.benchmarkTableDesc", { shown: visibleRows.length, total: rankingRows.length })}
+            </p>
+          </div>
+          <label className="grid gap-1 text-xs text-muted-foreground md:w-48">
+            <span>{i18n.t("alphaZoo.categoryFilter")}</span>
+            <select
+              aria-label={i18n.t("alphaZoo.categoryFilter")}
+              value={categoryFilter}
+              onChange={(event) => setCategoryFilter(event.target.value as "all" | AlphaBenchTopRow["category"])}
+              className="h-9 rounded-md border bg-background px-2 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="all">{i18n.t("alphaZoo.allCategories")}</option>
+              <option value="alive">{i18n.t("alphaZoo.alive")}</option>
+              <option value="reversed">{i18n.t("alphaZoo.reversed")}</option>
+              <option value="dead">{i18n.t("alphaZoo.dead")}</option>
+            </select>
+          </label>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" aria-label={i18n.t("alphaZoo.benchmarkAlphaRanking")}>
+            <thead>
+              <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
+                <th className="px-4 py-2 text-left font-medium">{i18n.t("alphaZoo.id")}</th>
+                <th className="px-4 py-2 text-right font-medium">{i18n.t("alphaZoo.meanIc")}</th>
+                <th className="px-4 py-2 text-right font-medium">{i18n.t("alphaZoo.ir")}</th>
+                <th className="px-4 py-2 text-left font-medium">{i18n.t("alphaZoo.theme")}</th>
+                <th className="px-4 py-2 text-left font-medium">{i18n.t("alphaZoo.category")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRows.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-xs text-muted-foreground">
+                    {i18n.t("alphaZoo.noRows")}
+                  </td>
+                </tr>
+              ) : (
+                visibleRows.map((row) => (
+                  <tr key={`${row.id}:${row.category}`} className="border-b last:border-0 transition hover:bg-muted/20">
+                    <td className="px-4 py-2">
+                      <Link
+                        to={`/alpha-zoo/${encodeURIComponent(row.id)}`}
+                        className="font-mono text-xs text-primary hover:underline"
+                      >
+                        {row.id}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono text-xs tabular-nums">{fmtNum(row.ic_mean)}</td>
+                    <td className="px-4 py-2 text-right font-mono text-xs tabular-nums">{fmtNum(row.ir)}</td>
+                    <td className="px-4 py-2 text-xs text-muted-foreground">
+                      {(row.theme || []).map((theme) => i18n.t("alphaZoo.themes." + theme, { defaultValue: theme })).join(", ") || "—"}
+                    </td>
+                    <td className="px-4 py-2 text-xs">
+                      <CategoryBadge category={row.category} />
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* By-theme breakdown */}
@@ -1004,55 +1105,6 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
           </h3>
           <div ref={chartRef} style={{ height: 240 }} />
         </div>
-      )}
-    </div>
-  );
-}
-
-function TopTable({ title, rows }: { title: string; rows: AlphaBenchTopRow[] }) {
-  return (
-    <div className="border rounded-lg overflow-hidden bg-card">
-      <div className="px-4 py-2.5 border-b bg-muted/40">
-        <h3 className="text-sm font-medium">{title}</h3>
-      </div>
-      {rows.length === 0 ? (
-        <div className="px-4 py-6 text-xs text-muted-foreground text-center">
-          {i18n.t("alphaZoo.noRows")}
-        </div>
-      ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b">
-              <th className="text-left px-4 py-2 text-xs text-muted-foreground font-medium">{i18n.t("alphaZoo.id")}</th>
-              <th className="text-right px-4 py-2 text-xs text-muted-foreground font-medium">{i18n.t("alphaZoo.meanIc")}</th>
-              <th className="text-right px-4 py-2 text-xs text-muted-foreground font-medium">{i18n.t("alphaZoo.ir")}</th>
-              <th className="text-left px-4 py-2 text-xs text-muted-foreground font-medium">{i18n.t("alphaZoo.theme")}</th>
-              <th className="text-left px-4 py-2 text-xs text-muted-foreground font-medium">{i18n.t("alphaZoo.category")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className="border-b last:border-0 hover:bg-muted/20">
-                <td className="px-4 py-2">
-                  <Link
-                    to={`/alpha-zoo/${encodeURIComponent(r.id)}`}
-                    className="text-primary hover:underline font-mono text-xs"
-                  >
-                    {r.id}
-                  </Link>
-                </td>
-                <td className="px-4 py-2 text-right font-mono tabular-nums text-xs">{fmtNum(r.ic_mean)}</td>
-                <td className="px-4 py-2 text-right font-mono tabular-nums text-xs">{fmtNum(r.ir)}</td>
-                <td className="px-4 py-2 text-xs text-muted-foreground">
-                  {(r.theme || []).map((t) => i18n.t("alphaZoo.themes." + t, { defaultValue: t })).join(", ") || "—"}
-                </td>
-                <td className="px-4 py-2 text-xs">
-                  <CategoryBadge category={r.category} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       )}
     </div>
   );
@@ -1345,7 +1397,17 @@ function CompareView() {
 }
 
 function CompareResultPanel({ result }: { result: AlphaCompareResult }) {
+  const [rankingFilter, setRankingFilter] = useState<"all" | "leader" | "laggards">("all");
   const deltaKey = `delta_${result.sort}_vs_best`;
+  const visibleRanking = useMemo(
+    () =>
+      result.ranking.filter((row) => {
+        if (rankingFilter === "leader") return row.rank === 1;
+        if (rankingFilter === "laggards") return row.rank > 1;
+        return true;
+      }),
+    [rankingFilter, result.ranking],
+  );
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
@@ -1369,6 +1431,27 @@ function CompareResultPanel({ result }: { result: AlphaCompareResult }) {
       </div>
 
       <div className="border rounded-lg overflow-hidden">
+        <div className="flex flex-col gap-3 border-b bg-muted/20 px-4 py-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold">{i18n.t("alphaZoo.comparisonTableControls")}</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {i18n.t("alphaZoo.comparisonTableDesc", { shown: visibleRanking.length, total: result.ranking.length })}
+            </p>
+          </div>
+          <label className="grid gap-1 text-xs text-muted-foreground md:w-48">
+            <span>{i18n.t("alphaZoo.rankingFilter")}</span>
+            <select
+              aria-label={i18n.t("alphaZoo.rankingFilter")}
+              value={rankingFilter}
+              onChange={(event) => setRankingFilter(event.target.value as "all" | "leader" | "laggards")}
+              className="h-9 rounded-md border bg-background px-2 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="all">{i18n.t("alphaZoo.allRankings")}</option>
+              <option value="leader">{i18n.t("alphaZoo.leaderOnly")}</option>
+              <option value="laggards">{i18n.t("alphaZoo.laggardsOnly")}</option>
+            </select>
+          </label>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" aria-label={i18n.t("alphaZoo.alphaComparisonRanking")}>
             <thead>
@@ -1385,34 +1468,42 @@ function CompareResultPanel({ result }: { result: AlphaCompareResult }) {
               </tr>
             </thead>
             <tbody>
-              {result.ranking.map((r) => (
-                <tr
-                  key={`${r.zoo}:${r.id}`}
-                  className={cn(
-                    "border-b last:border-0 hover:bg-muted/20",
-                    r.rank === 1 && "bg-success/5",
-                  )}
-                >
-                  <td className="px-3 py-2 text-right font-mono tabular-nums">{r.rank}</td>
-                  <td className="px-3 py-2 font-mono text-xs">
-                    <Link
-                      to={`/alpha-zoo/${encodeURIComponent(r.id)}`}
-                      className="text-primary hover:underline"
-                    >
-                      {r.id}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{r.zoo}</td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtNum(r.ic_mean, 4)}</td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums hidden md:table-cell">{fmtNum(r.ic_std, 4)}</td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtNum(r.ir, 3)}</td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums hidden md:table-cell">{fmtNum(r.ic_positive_ratio, 3)}</td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums hidden lg:table-cell">{r.ic_count}</td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">
-                    {r.rank === 1 ? "—" : fmtNum(Number(r[deltaKey]), 4)}
+              {visibleRanking.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-3 py-6 text-center text-xs text-muted-foreground">
+                    {i18n.t("alphaZoo.noRows")}
                   </td>
                 </tr>
-              ))}
+              ) : (
+                visibleRanking.map((r) => (
+                  <tr
+                    key={`${r.zoo}:${r.id}`}
+                    className={cn(
+                      "border-b last:border-0 hover:bg-muted/20",
+                      r.rank === 1 && "bg-success/5",
+                    )}
+                  >
+                    <td className="px-3 py-2 text-right font-mono tabular-nums">{r.rank}</td>
+                    <td className="px-3 py-2 font-mono text-xs">
+                      <Link
+                        to={`/alpha-zoo/${encodeURIComponent(r.id)}`}
+                        className="text-primary hover:underline"
+                      >
+                        {r.id}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{r.zoo}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtNum(r.ic_mean, 4)}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums hidden md:table-cell">{fmtNum(r.ic_std, 4)}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtNum(r.ir, 3)}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums hidden md:table-cell">{fmtNum(r.ic_positive_ratio, 3)}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums hidden lg:table-cell">{r.ic_count}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">
+                      {r.rank === 1 ? "—" : fmtNum(Number(r[deltaKey]), 4)}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

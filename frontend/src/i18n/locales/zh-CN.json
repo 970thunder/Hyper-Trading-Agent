@@ -1194,7 +1194,23 @@
       "icMean": "IC 均值",
       "icPositiveRatio": "IC > 0 期占比",
       "icCount": "样本数量"
-    }
+    },
+    "researchBrief": "Alpha 研究摘要",
+    "researchBriefDesc": "汇总实现来源、适用市场和基准参数，便于可审计的因子复核。",
+    "sourceModule": "源码模块",
+    "tradableUniverse": "可交易市场",
+    "benchmarkSetup": "基准设置",
+    "benchmarkTableControls": "基准表格控制",
+    "benchmarkTableDesc": "显示 {{shown}} / {{total}} 条基准结果。",
+    "categoryFilter": "类别筛选",
+    "allCategories": "全部类别",
+    "benchmarkAlphaRanking": "基准 Alpha 排名",
+    "comparisonTableControls": "对比表格控制",
+    "comparisonTableDesc": "显示 {{shown}} / {{total}} 个对比 Alpha。",
+    "rankingFilter": "排名筛选",
+    "allRankings": "全部排名",
+    "leaderOnly": "仅看领先者",
+    "laggardsOnly": "仅看落后项"
   },
   "validation": {
     "noData": "暂无验证数据。",

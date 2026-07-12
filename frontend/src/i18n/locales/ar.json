@@ -1194,7 +1194,23 @@
       "icMean": "متوسط IC",
       "icPositiveRatio": "نسبة IC > 0",
       "icCount": "عدد العينات"
-    }
+    },
+    "researchBrief": "ملخص بحث Alpha",
+    "researchBriefDesc": "سياق موجز للمصدر والسوق وإعدادات القياس لمراجعة عامل قابلة للتدقيق.",
+    "sourceModule": "وحدة المصدر",
+    "tradableUniverse": "نطاق التداول",
+    "benchmarkSetup": "إعداد القياس",
+    "benchmarkTableControls": "عناصر تحكم جدول القياس",
+    "benchmarkTableDesc": "عرض {{shown}} من {{total}} صفا من نتائج القياس.",
+    "categoryFilter": "تصفية الفئة",
+    "allCategories": "كل الفئات",
+    "benchmarkAlphaRanking": "ترتيب Alpha في القياس",
+    "comparisonTableControls": "عناصر تحكم جدول المقارنة",
+    "comparisonTableDesc": "عرض {{shown}} من {{total}} Alpha مقارنة.",
+    "rankingFilter": "تصفية الترتيب",
+    "allRankings": "كل الترتيبات",
+    "leaderOnly": "المتصدر فقط",
+    "laggardsOnly": "المتأخرون فقط"
   },
   "validation": {
     "noData": "لا توجد بيانات تحقق متاحة.",

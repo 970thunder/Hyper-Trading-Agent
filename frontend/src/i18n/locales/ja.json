@@ -1194,7 +1194,23 @@
       "icMean": "IC 平均",
       "icPositiveRatio": "IC > 0 比率",
       "icCount": "サンプル数"
-    }
+    },
+    "researchBrief": "Alpha リサーチ要約",
+    "researchBriefDesc": "監査可能なファクター確認のため、実装元、対象ユニバース、ベンチマーク条件をまとめます。",
+    "sourceModule": "ソースモジュール",
+    "tradableUniverse": "取引対象ユニバース",
+    "benchmarkSetup": "ベンチマーク設定",
+    "benchmarkTableControls": "ベンチマーク表コントロール",
+    "benchmarkTableDesc": "{{total}} 件中 {{shown}} 件のベンチマーク行を表示。",
+    "categoryFilter": "カテゴリフィルター",
+    "allCategories": "すべてのカテゴリ",
+    "benchmarkAlphaRanking": "ベンチマーク Alpha ランキング",
+    "comparisonTableControls": "比較表コントロール",
+    "comparisonTableDesc": "{{total}} 件中 {{shown}} 件の比較 Alpha を表示。",
+    "rankingFilter": "ランキングフィルター",
+    "allRankings": "すべてのランキング",
+    "leaderOnly": "首位のみ",
+    "laggardsOnly": "下位のみ"
   },
   "validation": {
     "noData": "検証データがありません。",

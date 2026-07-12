@@ -1194,7 +1194,23 @@
       "icMean": "IC 평균",
       "icPositiveRatio": "IC > 0 비율",
       "icCount": "샘플 수"
-    }
+    },
+    "researchBrief": "Alpha 리서치 요약",
+    "researchBriefDesc": "감사 가능한 팩터 검토를 위해 구현 출처, 투자 유니버스, 벤치마크 조건을 요약합니다.",
+    "sourceModule": "소스 모듈",
+    "tradableUniverse": "거래 가능 유니버스",
+    "benchmarkSetup": "벤치마크 설정",
+    "benchmarkTableControls": "벤치마크 표 제어",
+    "benchmarkTableDesc": "{{total}}개 중 {{shown}}개 벤치마크 행 표시.",
+    "categoryFilter": "카테고리 필터",
+    "allCategories": "전체 카테고리",
+    "benchmarkAlphaRanking": "벤치마크 Alpha 순위",
+    "comparisonTableControls": "비교 표 제어",
+    "comparisonTableDesc": "{{total}}개 중 {{shown}}개 비교 Alpha 표시.",
+    "rankingFilter": "순위 필터",
+    "allRankings": "전체 순위",
+    "leaderOnly": "선두만",
+    "laggardsOnly": "후순위만"
   },
   "validation": {
     "noData": "검증 데이터가 없습니다.",

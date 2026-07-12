@@ -1199,7 +1199,23 @@
       "icMean": "IC mean",
       "icPositiveRatio": "IC > 0 ratio",
       "icCount": "Sample count"
-    }
+    },
+    "researchBrief": "Alpha research brief",
+    "researchBriefDesc": "Compact implementation, universe, and benchmark context for audit-ready factor review.",
+    "sourceModule": "Source module",
+    "tradableUniverse": "Tradable universe",
+    "benchmarkSetup": "Benchmark setup",
+    "benchmarkTableControls": "Benchmark table controls",
+    "benchmarkTableDesc": "Showing {{shown}} of {{total}} benchmark rows.",
+    "categoryFilter": "Category filter",
+    "allCategories": "All categories",
+    "benchmarkAlphaRanking": "Benchmark alpha ranking",
+    "comparisonTableControls": "Comparison table controls",
+    "comparisonTableDesc": "Showing {{shown}} of {{total}} compared alphas.",
+    "rankingFilter": "Ranking filter",
+    "allRankings": "All rankings",
+    "leaderOnly": "Leader only",
+    "laggardsOnly": "Laggards only"
   },
   "validation": {
     "noData": "No validation data available.",

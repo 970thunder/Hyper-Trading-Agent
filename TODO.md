@@ -34,7 +34,7 @@
 - [x] 报告、运行时、RunDetail 警告态改用 warning token
 - [x] 新增 UI 审计文档与验收截图清单
 - [x] Settings 全部 section 进一步拆分为复用组件，降低单文件复杂度：已抽取安全、组织成员、审计与用量、运行时任务、模型配置、Agent 策略与工具治理、Swarm Agent、知识库主面板与文档表/检索结果/ingestion job、概览、本地模型兼容设置、数据源和 IM 通道组件
-- [ ] AlphaZoo 详情、bench、compare 全量表格和筛选区二次美化
+- [x] AlphaZoo 详情、bench、compare 全量表格和筛选区二次美化：详情页新增研究摘要卡，bench 结果升级为类别可筛选排名表，compare 结果增加领先者/落后项筛选控制
 - [x] Reports / Runtime 增加更完整的数据图表和任务操作态：Reports 已补摘要指标、状态分布和收益区间图；Runtime 已补 Alpha bench / compare 后台任务队列、进度、失败、取消与重试操作态
 - [x] Runtime 持久化任务视图二期：统一运维视图支持 Agent run、RAG ingestion、网页抓取与长回测来源归一、来源/状态筛选、摘要卡与重试/取消动作；后端已将商业 RAG ingestion job 聚合进 `/runtime/jobs`
 - [ ] Runtime Redis/Postgres durable worker adapter：将 Agent run、网页抓取与长回测从进程内/分散存储迁移到统一 Redis/Postgres durable job 后端
