@@ -225,6 +225,21 @@ export const api = {
   logoutCommercial: () => request<{ status: string }>("/auth/logout", { method: "POST" }),
   getCommercialMe: () => request<CommercialPrincipal>("/auth/me"),
   getCurrentOrganization: () => request<CommercialOrganization>("/organizations/current"),
+  listOrganizationMembers: () => request<CommercialOrganizationMember[]>("/organizations/current/members"),
+  createOrganizationMember: (body: CommercialOrganizationMemberCreateRequest) =>
+    request<CommercialOrganizationMember>("/organizations/current/members", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateOrganizationMember: (userId: string, body: CommercialOrganizationMemberUpdateRequest) =>
+    request<CommercialOrganizationMember>(`/organizations/current/members/${encodeURIComponent(userId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteOrganizationMember: (userId: string) =>
+    request<{ status: string; user_id: string }>(`/organizations/current/members/${encodeURIComponent(userId)}`, {
+      method: "DELETE",
+    }),
   listCommercialModelProviders: () => request<CommercialModelProvider[]>("/models/providers"),
   createCommercialModelProvider: (body: CommercialModelProviderCreateRequest) =>
     request<CommercialModelProvider>("/models/providers", {
@@ -536,6 +551,27 @@ export interface CommercialOrganization {
   id: string;
   name: string;
   created_at: string;
+}
+
+export type CommercialRole = "owner" | "admin" | "member" | "viewer";
+
+export interface CommercialOrganizationMember {
+  user_id: string;
+  email: string;
+  display_name: string;
+  role: CommercialRole;
+  created_at: string;
+}
+
+export interface CommercialOrganizationMemberCreateRequest {
+  email: string;
+  password: string;
+  display_name?: string;
+  role: CommercialRole;
+}
+
+export interface CommercialOrganizationMemberUpdateRequest {
+  role: CommercialRole;
 }
 
 export interface CommercialModelProvider {

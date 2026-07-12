@@ -84,6 +84,17 @@ class KnowledgeSearchRequest(BaseModel):
     limit: int = Field(5, ge=1, le=20)
 
 
+class OrganizationMemberCreateRequest(BaseModel):
+    email: str
+    password: str = Field(..., min_length=8)
+    display_name: str = ""
+    role: str = "member"
+
+
+class OrganizationMemberUpdateRequest(BaseModel):
+    role: str
+
+
 class ToolPolicyUpdateRequest(BaseModel):
     risk_level: str | None = None
     permission_scope: str | None = None
@@ -212,6 +223,43 @@ def register_commercial_routes(app: FastAPI) -> None:
     @app.get("/organizations/current")
     async def current_organization(principal: Principal = Depends(_principal_from_cookie)):
         return _store().current_organization(principal)
+
+    @app.get("/organizations/current/members")
+    async def list_organization_members(principal: Principal = Depends(_require_role("owner", "admin"))):
+        return _store().list_organization_members(principal)
+
+    @app.post("/organizations/current/members")
+    async def create_organization_member(
+        payload: OrganizationMemberCreateRequest,
+        principal: Principal = Depends(_require_role("owner")),
+    ):
+        try:
+            return _store().create_organization_member(principal, payload.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.patch("/organizations/current/members/{user_id}")
+    async def update_organization_member(
+        user_id: str,
+        payload: OrganizationMemberUpdateRequest,
+        principal: Principal = Depends(_require_role("owner")),
+    ):
+        try:
+            return _store().update_organization_member_role(principal, user_id, payload.role)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="member not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.delete("/organizations/current/members/{user_id}")
+    async def delete_organization_member(user_id: str, principal: Principal = Depends(_require_role("owner"))):
+        try:
+            _store().delete_organization_member(principal, user_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="member not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return {"status": "deleted", "user_id": user_id}
 
     @app.get("/models/providers")
     async def list_model_providers(principal: Principal = Depends(_principal_from_cookie)):

@@ -621,6 +621,115 @@ class CommercialStore:
             row = conn.execute("SELECT id, name, created_at FROM organizations WHERE id = ?", (principal.organization_id,)).fetchone()
         return dict(row) if row else {}
 
+    def list_organization_members(self, principal: Principal) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT u.id AS user_id, u.email, u.display_name, m.role, m.created_at
+                FROM memberships m
+                JOIN users u ON u.id = m.user_id
+                WHERE m.organization_id = ?
+                ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'member' THEN 2 ELSE 3 END,
+                         u.email ASC
+                """,
+                (principal.organization_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def create_organization_member(self, principal: Principal, payload: dict[str, Any]) -> dict[str, Any]:
+        email = str(payload.get("email") or "").strip().lower()
+        password = str(payload.get("password") or "")
+        display_name = str(payload.get("display_name") or "").strip()
+        role = str(payload.get("role") or "member").strip().lower()
+        if not email or "@" not in email:
+            raise ValueError("valid email is required")
+        if len(password) < 8:
+            raise ValueError("password must be at least 8 characters")
+        if role not in ROLES:
+            raise ValueError("invalid role")
+        now = utcnow()
+        user_id = _new_id("usr")
+        with self._connect() as conn:
+            existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+            if existing is None:
+                conn.execute(
+                    "INSERT INTO users(id, email, password_hash, display_name, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (user_id, email, _hash_password(password), display_name, now),
+                )
+            else:
+                user_id = str(existing["id"])
+                membership = conn.execute(
+                    "SELECT 1 FROM memberships WHERE organization_id = ? AND user_id = ?",
+                    (principal.organization_id, user_id),
+                ).fetchone()
+                if membership is not None:
+                    raise ValueError("member already exists")
+            conn.execute(
+                "INSERT INTO memberships(organization_id, user_id, role, created_at) VALUES (?, ?, ?, ?)",
+                (principal.organization_id, user_id, role, now),
+            )
+        self.audit(principal, "organization.member.create", "user", user_id, {"email": email, "role": role})
+        return self._get_organization_member(principal, user_id)
+
+    def update_organization_member_role(self, principal: Principal, user_id: str, role: str) -> dict[str, Any]:
+        role = role.strip().lower()
+        if role not in ROLES:
+            raise ValueError("invalid role")
+        current = self._get_organization_member(principal, user_id)
+        if current["role"] == "owner" and role != "owner" and self._owner_count(principal.organization_id) <= 1:
+            raise ValueError("organization must keep at least one owner")
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE memberships SET role = ? WHERE organization_id = ? AND user_id = ?",
+                (role, principal.organization_id, user_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(user_id)
+        self.audit(principal, "organization.member.update", "user", user_id, {"role": role, "previous_role": current["role"]})
+        return self._get_organization_member(principal, user_id)
+
+    def delete_organization_member(self, principal: Principal, user_id: str) -> None:
+        current = self._get_organization_member(principal, user_id)
+        if user_id == principal.user_id:
+            raise ValueError("owner cannot remove their own membership")
+        if current["role"] == "owner" and self._owner_count(principal.organization_id) <= 1:
+            raise ValueError("organization must keep at least one owner")
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM memberships WHERE organization_id = ? AND user_id = ?",
+                (principal.organization_id, user_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(user_id)
+            conn.execute(
+                "DELETE FROM auth_sessions WHERE organization_id = ? AND user_id = ?",
+                (principal.organization_id, user_id),
+            )
+        self.audit(principal, "organization.member.delete", "user", user_id, {"role": current["role"], "email": current["email"]})
+
+    def _get_organization_member(self, principal: Principal, user_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT u.id AS user_id, u.email, u.display_name, m.role, m.created_at
+                FROM memberships m
+                JOIN users u ON u.id = m.user_id
+                WHERE m.organization_id = ? AND m.user_id = ?
+                """,
+                (principal.organization_id, user_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError(user_id)
+        return dict(row)
+
+    def _owner_count(self, organization_id: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS count FROM memberships WHERE organization_id = ? AND role = 'owner'",
+                (organization_id,),
+            ).fetchone()
+        return int(row["count"] if row else 0)
+
     # --- audit / usage ---
 
     def audit(self, principal: Principal | None, action: str, target_type: str = "", target_id: str = "", metadata: dict[str, Any] | None = None) -> None:
