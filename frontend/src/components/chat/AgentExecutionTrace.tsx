@@ -27,6 +27,7 @@ interface Props {
   plan?: ExecutionPlanStep[];
   approval?: ApprovalRecord | null;
   attemptStatus?: string;
+  outputActive?: boolean;
   onApprove?: () => void;
   onReject?: () => void;
   onPause?: () => void;
@@ -86,6 +87,7 @@ export function AgentExecutionTrace({
   plan = [],
   approval = null,
   attemptStatus = "",
+  outputActive = false,
   onApprove,
   onReject,
   onPause,
@@ -112,6 +114,27 @@ export function AgentExecutionTrace({
     return t("executionTrace.reasoning");
   }, [t, toolCalls]);
 
+  const stageItems = [
+    {
+      key: "planning",
+      label: String(t("executionTrace.layers.planning")),
+      active: plan.length > 0 && plan.some((step) => step.status === "running" || step.status === "pending"),
+      count: plan.filter((step) => step.status === "running" || step.status === "pending").length,
+    },
+    {
+      key: "tools",
+      label: String(t("executionTrace.layers.tools")),
+      active: toolCalls.length > 0,
+      count: toolCalls.filter((item) => item.status === "running").length,
+    },
+    {
+      key: "drafting",
+      label: String(t("executionTrace.layers.drafting")),
+      active: outputActive || reasoningActive || reasoningChars > 0,
+      count: Number(Boolean(outputActive || reasoningActive || reasoningChars > 0)),
+    },
+  ];
+
   if (!hasActivity) return null;
 
   return (
@@ -136,6 +159,28 @@ export function AgentExecutionTrace({
             </button>
           )}
         </span>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {stageItems.map((item) => (
+          <span
+            key={item.key}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition-colors",
+              item.active
+                ? "border-primary/35 bg-primary/10 text-primary"
+                : "border-border/70 bg-muted/30 text-muted-foreground",
+            )}
+          >
+            <span className={cn("h-1.5 w-1.5 rounded-full", item.active ? "bg-primary" : "bg-muted-foreground/50")} />
+            {item.label}
+            {item.count > 0 && (
+              <span className="rounded-full bg-background/70 px-1.5 py-0.5 font-mono text-[9px] text-foreground/80">
+                {item.count}
+              </span>
+            )}
+          </span>
+        ))}
       </div>
 
       {plan.length > 0 && (

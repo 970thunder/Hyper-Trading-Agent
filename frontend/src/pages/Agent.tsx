@@ -1538,6 +1538,7 @@ export function Agent() {
                   plan={executionPlan}
                   approval={pendingApproval}
                   attemptStatus={attemptStatus}
+                  outputActive={Boolean(streamingText)}
                   onApprove={() => handleApproval(true)}
                   onReject={() => handleApproval(false)}
                   onPause={handlePauseAttempt}

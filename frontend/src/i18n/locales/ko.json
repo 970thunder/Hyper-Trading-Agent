@@ -1222,6 +1222,11 @@
     "resumed": "Execution resumed",
     "approvalApproved": "Tool approved; execution resumed",
     "approvalRejected": "Tool request rejected",
+    "layers": {
+      "planning": "Planning",
+      "tools": "Tools",
+      "drafting": "Drafting"
+    },
     "status": {
       "pending": "Pending",
       "running": "Running",

@@ -1222,6 +1222,11 @@
     "resumed": "执行已恢复",
     "approvalApproved": "工具已批准，任务继续执行",
     "approvalRejected": "已拒绝工具调用",
+    "layers": {
+      "planning": "规划",
+      "tools": "工具",
+      "drafting": "输出"
+    },
     "status": {
       "pending": "待执行",
       "running": "执行中",
