@@ -54,8 +54,7 @@ import { cn } from "@/lib/utils";
 import { AgentPolicyPanel } from "./settings/AgentPolicyPanel";
 import { AuditUsagePanel } from "./settings/AuditUsagePanel";
 import { CommercialModelProvidersPanel, type ModelProviderFormState } from "./settings/CommercialModelProvidersPanel";
-import { KnowledgeDocumentTable, KnowledgeSearchResults } from "./settings/KnowledgeFragments";
-import { KnowledgeIngestionJobs } from "./settings/KnowledgeIngestionJobs";
+import { KnowledgeSettingsPanel } from "./settings/KnowledgeSettingsPanel";
 import { OrganizationSecurityPanel } from "./settings/OrganizationSecurityPanel";
 import { RuntimeSettingsPanel } from "./settings/RuntimeSettingsPanel";
 import { SwarmAgentsPanel, type SwarmAgentFormState } from "./settings/SwarmAgentsPanel";
@@ -772,6 +771,16 @@ export function Settings() {
     setKnowledgeDocuments(docs);
   };
 
+  const changeSelectedKnowledgeBase = async (knowledgeBaseId: string) => {
+    setSelectedKnowledgeBaseId(knowledgeBaseId);
+    const [docs, jobs] = await Promise.all([
+      api.listCommercialKnowledgeDocuments(knowledgeBaseId),
+      api.listCommercialIngestionJobs(knowledgeBaseId, 20).catch(() => []),
+    ]);
+    setCommercialDocuments(docs);
+    setIngestionJobs(jobs);
+  };
+
   const createDefaultKnowledgeBase = async () => {
     setCreatingKnowledgeBase(true);
     try {
@@ -1083,183 +1092,40 @@ export function Settings() {
   };
 
   const renderKnowledge = () => (
-    <section className={sectionCardClass}>
-      <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Database className="h-4 w-4 text-primary" />
-            <h2 className="text-base font-semibold">{t("settings.knowledge.title")}</h2>
-          </div>
-          <p className="max-w-3xl text-sm text-muted-foreground">{t("settings.knowledge.description")}</p>
-        </div>
-        <button type="button" onClick={() => refreshKnowledge().catch((error) => toast.error(t("settings.knowledge.refreshFailed", { message: error instanceof Error ? error.message : t("settings.unknownError") })))} className="inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground">
-          <RefreshCw className="h-4 w-4" />
-          {t("settings.refresh")}
-        </button>
-      </div>
-
-      {principal ? (
-        <>
-          <div className="mb-5 grid gap-3 md:grid-cols-5">
-            <MetricCard label={t("settings.knowledge.mode")} value={t("settings.knowledge.commercialMode")} />
-            <MetricCard label={t("settings.knowledge.knowledgeBases")} value={String(knowledgeBases.length)} />
-            <MetricCard label={t("settings.knowledge.documents")} value={String(commercialDocuments.length)} />
-            <MetricCard label={t("settings.knowledge.retrieval")} value={t("settings.knowledge.hybridRetrieval")} />
-            <MetricCard
-              label={t("settings.knowledge.embedding")}
-              value={knowledgeBackendStatus?.primary.available ? knowledgeBackendStatus.primary.provider : t("settings.knowledge.localFallback")}
-              title={knowledgeBackendStatus?.primary.available ? knowledgeBackendStatus.primary.model : knowledgeBackendStatus?.fallback.model}
-            />
-          </div>
-
-          {knowledgeBases.length ? (
-            <div className="mb-5 grid gap-4 lg:grid-cols-[minmax(0,320px)_1fr]">
-              <label className="grid gap-2">
-                <span className={labelClass}>{t("settings.knowledge.selectKb")}</span>
-                <select
-                  value={selectedKnowledgeBaseId}
-                  onChange={(event) => {
-                    const nextId = event.target.value;
-                    setSelectedKnowledgeBaseId(nextId);
-                    api.listCommercialKnowledgeDocuments(nextId)
-                      .then(setCommercialDocuments)
-                      .catch((error) => toast.error(t("settings.knowledge.refreshFailed", { message: error instanceof Error ? error.message : t("settings.unknownError") })));
-                  }}
-                  className={fieldClass}
-                >
-                  {knowledgeBases.map((kb) => (
-                    <option key={kb.id} value={kb.id}>{kb.name}</option>
-                  ))}
-                </select>
-              </label>
-              <div className="grid gap-2 rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
-                <span>{t("settings.knowledge.pipelineDescription")}</span>
-                {knowledgeBackendStatus ? (
-                  <span>
-                    {knowledgeBackendStatus.primary.available
-                      ? t("settings.knowledge.embeddingProviderReady", {
-                        provider: knowledgeBackendStatus.primary.provider,
-                        model: knowledgeBackendStatus.primary.model,
-                      })
-                      : t("settings.knowledge.embeddingFallbackActive", {
-                        provider: knowledgeBackendStatus.primary.provider,
-                        model: knowledgeBackendStatus.fallback.model,
-                      })}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          ) : (
-            <div className="mb-5 rounded-md border bg-muted/20 p-4">
-              <p className="text-sm text-muted-foreground">{t("settings.knowledge.noKnowledgeBaseHint")}</p>
-              <button type="button" onClick={createDefaultKnowledgeBase} disabled={creatingKnowledgeBase} className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60">
-                {creatingKnowledgeBase ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
-                {t("settings.knowledge.createDefaultKb")}
-              </button>
-            </div>
-          )}
-
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <form onSubmit={submitKnowledge} className="grid gap-4 rounded-md border bg-muted/10 p-4">
-              <TextField label={t("settings.knowledge.documentTitle")} value={knowledgeTitle} onChange={setKnowledgeTitle} placeholder={t("settings.optional")} />
-              <label className="grid gap-2">
-                <span className={labelClass}>{t("settings.knowledge.uploadFile")}</span>
-                <input
-                  type="file"
-                  onChange={(event) => setKnowledgeFile(event.target.files?.[0] ?? null)}
-                  className={fieldClass}
-                  accept=".pdf,.doc,.docx,.xls,.xlsx,.md,.txt,.html,.htm,.csv,.tsv,.json,.yaml,.yml"
-                />
-                <span className={hintClass}>{t("settings.knowledge.fileTypes")}</span>
-              </label>
-              <TextField label={t("settings.knowledge.documentPath")} value={knowledgePath} onChange={setKnowledgePath} placeholder="uploads/research-notes.md" />
-              <TextField label={t("settings.knowledge.url")} value={knowledgeUrl} onChange={setKnowledgeUrl} placeholder="https://example.com/research.html" />
-              <PrimaryButton type="submit" disabled={knowledgeSaving || !selectedKnowledgeBaseId || (!knowledgeFile && !knowledgePath.trim() && !knowledgeUrl.trim())} loading={knowledgeSaving} label={t("settings.knowledge.index")} />
-            </form>
-
-            <div className="rounded-md border bg-muted/10 p-4">
-              <form onSubmit={submitKnowledgeSearch} className="grid gap-3">
-                <TextField label={t("settings.knowledge.searchTest")} value={knowledgeQuery} onChange={setKnowledgeQuery} placeholder={t("settings.knowledge.searchPlaceholder")} />
-                <PrimaryButton type="submit" disabled={knowledgeSearching || !knowledgeQuery.trim() || !selectedKnowledgeBaseId} loading={knowledgeSearching} label={t("settings.knowledge.search")} />
-              </form>
-              <KnowledgeSearchResults results={knowledgeSearchResults} emptyLabel={t("settings.knowledge.noSearchResults")} />
-            </div>
-          </div>
-
-          <KnowledgeIngestionJobs
-            jobs={ingestionJobs}
-            actionBusyId={knowledgeJobAction}
-            onRetry={retryIngestionJob}
-            onCancel={cancelIngestionJob}
-          />
-
-          {commercialDocuments.length ? (
-            <KnowledgeDocumentTable
-              rows={commercialDocuments.map((doc) => ({
-                id: doc.id,
-                title: doc.title,
-                chunkCount: doc.chunk_count,
-                source: doc.source_uri,
-                status: doc.status,
-                ingestionStatus: doc.ingestion_status || "",
-                ingestionProgress: Number(doc.ingestion_progress || 0),
-                ingestionError: doc.ingestion_error || "",
-              }))}
-              titleLabel={t("settings.knowledge.documentTitle")}
-              chunksLabel={t("settings.knowledge.chunks")}
-              sourceLabel={t("settings.knowledge.source")}
-              statusLabel={t("settings.status")}
-              actionsLabel={t("settings.swarmAgents.actions")}
-              reindexLabel={t("settings.knowledge.reindex")}
-              loadingLabel={t("settings.loading")}
-              actionBusyId={knowledgeJobAction}
-              onReindex={reindexKnowledgeDocument}
-            />
-          ) : (
-            <div className="mt-5 rounded-md border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
-              {t("settings.knowledge.empty")}
-            </div>
-          )}
-        </>
-      ) : knowledgeStats ? (
-        <>
-          <div className="mb-5 grid gap-3 md:grid-cols-3">
-            <MetricCard label={t("settings.knowledge.documents")} value={String(knowledgeStats.document_count)} />
-            <MetricCard label={t("settings.knowledge.chunks")} value={String(knowledgeStats.chunk_count)} />
-            <MetricCard label={t("settings.knowledge.storage")} value={knowledgeStats.db_path} title={knowledgeStats.db_path} />
-          </div>
-          <form onSubmit={submitKnowledge} className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.45fr)_auto]">
-            <TextField label={t("settings.knowledge.documentPath")} value={knowledgePath} onChange={setKnowledgePath} placeholder="uploads/research-notes.md" />
-            <TextField label={t("settings.knowledge.documentTitle")} value={knowledgeTitle} onChange={setKnowledgeTitle} placeholder={t("settings.optional")} />
-            <PrimaryButton type="submit" disabled={knowledgeSaving || !knowledgePath.trim()} loading={knowledgeSaving} label={t("settings.knowledge.index")} className="self-end" />
-          </form>
-          <form onSubmit={submitKnowledgeSearch} className="mt-5 grid gap-4 rounded-md border bg-muted/10 p-4 lg:grid-cols-[minmax(0,1fr)_auto]">
-            <TextField label={t("settings.knowledge.searchTest")} value={knowledgeQuery} onChange={setKnowledgeQuery} placeholder={t("settings.knowledge.searchPlaceholder")} />
-            <PrimaryButton type="submit" disabled={knowledgeSearching || !knowledgeQuery.trim()} loading={knowledgeSearching} label={t("settings.knowledge.search")} className="self-end" />
-          </form>
-          <KnowledgeSearchResults results={knowledgeSearchResults} emptyLabel={t("settings.knowledge.noSearchResults")} />
-          {knowledgeDocuments.length ? (
-            <KnowledgeDocumentTable
-              rows={knowledgeDocuments.slice(0, 8).map((doc) => ({
-                id: doc.id,
-                title: doc.title,
-                chunkCount: doc.chunk_count,
-                source: doc.source_path,
-                status: t("settings.knowledge.ready"),
-              }))}
-              titleLabel={t("settings.knowledge.documentTitle")}
-              chunksLabel={t("settings.knowledge.chunks")}
-              sourceLabel={t("settings.knowledge.source")}
-              statusLabel={t("settings.status")}
-            />
-          ) : (
-            <div className="mt-5 rounded-md border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
-              {t("settings.knowledge.empty")}
-            </div>
-          )}
-        </>
-      ) : unavailable(loadErrors.knowledge || t("settings.unavailable"))}
-    </section>
+    <KnowledgeSettingsPanel
+      principal={principal}
+      loadError={loadErrors.knowledge || ""}
+      knowledgeStats={knowledgeStats}
+      localDocuments={knowledgeDocuments}
+      knowledgeBases={knowledgeBases}
+      selectedKnowledgeBaseId={selectedKnowledgeBaseId}
+      backendStatus={knowledgeBackendStatus}
+      commercialDocuments={commercialDocuments}
+      ingestionJobs={ingestionJobs}
+      searchResults={knowledgeSearchResults}
+      knowledgeTitle={knowledgeTitle}
+      knowledgePath={knowledgePath}
+      knowledgeUrl={knowledgeUrl}
+      knowledgeQuery={knowledgeQuery}
+      hasKnowledgeFile={Boolean(knowledgeFile)}
+      creatingKnowledgeBase={creatingKnowledgeBase}
+      knowledgeSaving={knowledgeSaving}
+      knowledgeSearching={knowledgeSearching}
+      knowledgeJobAction={knowledgeJobAction}
+      onRefresh={refreshKnowledge}
+      onCreateDefaultKnowledgeBase={createDefaultKnowledgeBase}
+      onKnowledgeBaseChange={changeSelectedKnowledgeBase}
+      onTitleChange={setKnowledgeTitle}
+      onPathChange={setKnowledgePath}
+      onUrlChange={setKnowledgeUrl}
+      onQueryChange={setKnowledgeQuery}
+      onFileChange={setKnowledgeFile}
+      onSubmitKnowledge={submitKnowledge}
+      onSubmitSearch={submitKnowledgeSearch}
+      onReindexDocument={reindexKnowledgeDocument}
+      onRetryJob={retryIngestionJob}
+      onCancelJob={cancelIngestionJob}
+    />
   );
 
   const renderDataSources = () => {
@@ -1541,27 +1407,6 @@ function StatusPill({ active, on, off }: { active: boolean; on: string; off: str
     <span className={active ? "status-primary" : "status-soft"}>
       {active ? on : off}
     </span>
-  );
-}
-
-function TextField({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  type?: string;
-}) {
-  return (
-    <label className="grid gap-2">
-      <span className={labelClass}>{label}</span>
-      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className={fieldClass} placeholder={placeholder} autoComplete={type === "password" ? "current-password" : undefined} />
-    </label>
   );
 }
 
