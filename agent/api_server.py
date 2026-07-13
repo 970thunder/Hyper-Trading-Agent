@@ -386,6 +386,9 @@ async def require_auth(
         HTTPException: 403 when dev-mode auth is reached from a non-local client.
         HTTPException: 401 when API_AUTH_KEY is set but the token is missing or wrong.
     """
+    if _env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
+        _validate_commercial_session_or_api_key(request=request, cred=cred)
+        return
     _validate_api_auth(request=request, cred=cred)
 
 
@@ -405,6 +408,14 @@ async def require_event_stream_auth(
         api_key: Optional query-string API key for EventSource clients.
         cred: HTTP Bearer credentials extracted from the Authorization header.
     """
+    if _env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
+        _validate_commercial_session_or_api_key(
+            request=request,
+            cred=cred,
+            query_api_key=api_key,
+            allow_query=True,
+        )
+        return
     _validate_api_auth(request=request, cred=cred, query_api_key=api_key, allow_query=True)
 
 
@@ -539,6 +550,25 @@ def _validate_api_auth(
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
+def _validate_commercial_session_or_api_key(
+    *,
+    request: Request,
+    cred: Optional[HTTPAuthorizationCredentials],
+    query_api_key: Optional[str] = None,
+    allow_query: bool = False,
+) -> None:
+    """Authenticate organization users without granting implicit loopback access."""
+    if request.method.upper() not in _SAFE_BROWSER_METHODS:
+        _reject_cross_site_browser_request(request)
+    if _commercial_principal_from_request(request) is not None:
+        return
+    configured_key = _configured_api_key()
+    token = _auth_credential_from_header_or_query(cred, query_api_key, allow_query=allow_query)
+    if configured_key and token and hmac.compare_digest(token, configured_key):
+        return
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+
 def _commercial_principal_from_request(request: Request):
     """Return the commercial principal from the session cookie when enabled."""
     if not _env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
@@ -641,6 +671,9 @@ async def require_local_or_auth(
     loopback clients so an API server bound to 0.0.0.0 cannot accept remote
     credential reads or writes in dev mode.
     """
+    if _env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
+        await require_auth(request, cred)
+        return
     if request.method.upper() not in _SAFE_BROWSER_METHODS:
         _reject_cross_site_browser_request(request)
     if _is_local_client(request):
@@ -659,6 +692,35 @@ async def require_local_or_auth(
         )
 
 
+async def require_commercial_user_or_auth(
+    request: Request,
+    cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
+):
+    """Require a commercial session when commercial mode is enabled.
+
+    Loopback trust is retained for the local single-user runtime, but it must
+    never bypass organization authentication in a commercial deployment.
+    """
+    if _env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
+        principal = _commercial_principal_from_request(request)
+        if principal is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+        return principal
+    await require_auth(request, cred)
+    return None
+
+
+async def require_commercial_admin_or_auth(
+    request: Request,
+    cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
+):
+    """Require Owner/Admin in commercial mode and preserve local compatibility."""
+    principal = await require_commercial_user_or_auth(request, cred)
+    if principal is not None and principal.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+    return principal
+
+
 async def require_settings_write_auth(
     request: Request,
     cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
@@ -672,6 +734,16 @@ async def require_settings_write_auth(
     """
     api_key = _configured_api_key()
     _reject_cross_site_browser_request(request)
+    if _env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
+        principal = _commercial_principal_from_request(request)
+        if principal is not None:
+            if principal.role in {"owner", "admin"}:
+                return
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+        token = _auth_credential_from_header_or_query(cred, None, allow_query=False)
+        if api_key and token and hmac.compare_digest(token, api_key):
+            return
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     if _is_local_client(request):
         return
     if api_key:

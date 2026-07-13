@@ -1,4 +1,4 @@
--- Commercial Vibe-Trading platform schema for PostgreSQL + pgvector.
+-- Hyper Trading Agent commercial platform schema for PostgreSQL + pgvector.
 -- Apply with:
 --   psql "$DATABASE_URL" -f migrations/001_commercial_pgvector.sql
 
@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     organization_id text NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     name text NOT NULL,
     description text NOT NULL DEFAULT '',
+    config_json jsonb NOT NULL DEFAULT '{"chunk_size":1400,"chunk_overlap":180,"retrieval_mode":"hybrid","top_k":8}'::jsonb,
+    access_json jsonb NOT NULL DEFAULT '{"read_roles":["owner","admin","member","viewer"],"write_roles":["owner","admin","member"]}'::jsonb,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -127,9 +129,13 @@ CREATE TABLE IF NOT EXISTS knowledge_ingestion_jobs (
     knowledge_base_id text NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
     document_id text REFERENCES knowledge_documents(id) ON DELETE SET NULL,
     status text NOT NULL,
+    progress integer NOT NULL DEFAULT 0,
     error text NOT NULL DEFAULT '',
+    metadata_json jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    started_at timestamptz,
+    completed_at timestamptz
 );
 
 CREATE TABLE IF NOT EXISTS knowledge_retrieval_logs (

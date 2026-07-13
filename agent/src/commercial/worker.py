@@ -18,6 +18,8 @@ from typing import Any
 from src.commercial.store import CommercialStore, Principal
 from src.runtime_jobs.backend import _queue_name, _redis_client_from_url, _redis_url
 from src.runtime_jobs.store import DurableRuntimeJobStore
+from src.tools.doc_reader_tool import read_document
+from src.tools.path_utils import safe_document_path
 from src.tools.web_reader_tool import WebReaderTool
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,8 @@ def _execute_runtime_job(job: dict[str, Any]) -> dict[str, Any]:
         return {"status": "completed", "message": str(payload.get("message") or "ok")}
     if kind == "knowledge_url_ingest":
         return _execute_knowledge_url_ingest(payload)
+    if kind == "knowledge_file_ingest":
+        return _execute_knowledge_file_ingest(payload)
     if kind == "alpha_bench":
         return _execute_alpha_bench(payload)
     if kind == "alpha_compare":
@@ -67,22 +71,92 @@ def _execute_knowledge_url_ingest(payload: dict[str, Any]) -> dict[str, Any]:
     kb_id = str(payload.get("knowledge_base_id") or "")
     url = str(payload.get("url") or "")
     title = str(payload.get("title") or "")
+    chunk_size = payload.get("chunk_size")
+    chunk_overlap = payload.get("chunk_overlap")
+    ingestion_job_id = str(payload.get("ingestion_job_id") or "")
     if not kb_id or not url:
         raise ValueError("knowledge_url_ingest payload missing knowledge_base_id or url")
 
-    raw = WebReaderTool().execute(url=url)
-    parsed = json.loads(raw)
-    if parsed.get("status") != "ok":
-        raise ValueError(str(parsed.get("error") or "failed to read URL"))
-    document = CommercialStore().add_knowledge_document(
-        principal,
-        kb_id,
-        title=title or str(parsed.get("title") or url),
-        source_uri=url,
-        source_type="url",
-        text=str(parsed.get("content") or parsed.get("text") or ""),
-        metadata={"url": url, "runtime_worker": True},
-    )
+    store = CommercialStore()
+    try:
+        if ingestion_job_id:
+            store.start_ingestion_job(principal, kb_id, ingestion_job_id, stage="fetching", progress=5)
+        raw = WebReaderTool().execute(url=url)
+        parsed = json.loads(raw)
+        if parsed.get("status") != "ok":
+            raise ValueError(str(parsed.get("error") or "failed to read URL"))
+        document = store.add_knowledge_document(
+            principal,
+            kb_id,
+            title=title or str(parsed.get("title") or url),
+            source_uri=url,
+            source_type="url",
+            text=str(parsed.get("content") or parsed.get("text") or ""),
+            metadata={"url": url, "runtime_worker": True},
+            chunk_size=int(chunk_size) if chunk_size is not None else None,
+            chunk_overlap=int(chunk_overlap) if chunk_overlap is not None else None,
+            ingestion_job_id=ingestion_job_id,
+        )
+    except Exception as exc:
+        if ingestion_job_id:
+            try:
+                store.fail_ingestion_job(principal, kb_id, ingestion_job_id, str(exc))
+            except Exception:  # noqa: BLE001 - preserve the ingestion failure
+                logger.exception("could not persist failed ingestion job %s", ingestion_job_id)
+        raise
+    return {
+        "status": "completed",
+        "knowledge_base_id": kb_id,
+        "document_id": document["id"],
+        "ingestion_job_id": document["ingestion_job_id"],
+        "title": document["title"],
+    }
+
+
+def _execute_knowledge_file_ingest(payload: dict[str, Any]) -> dict[str, Any]:
+    principal = _principal_from_payload(payload)
+    kb_id = str(payload.get("knowledge_base_id") or "")
+    path_value = str(payload.get("path") or "")
+    title = str(payload.get("title") or "")
+    ingestion_job_id = str(payload.get("ingestion_job_id") or "")
+    chunk_size = payload.get("chunk_size")
+    chunk_overlap = payload.get("chunk_overlap")
+    if not kb_id or not path_value:
+        raise ValueError("knowledge_file_ingest payload missing knowledge_base_id or path")
+
+    store = CommercialStore()
+    try:
+        if ingestion_job_id:
+            store.start_ingestion_job(principal, kb_id, ingestion_job_id, stage="parsing", progress=5)
+        path = safe_document_path(path_value)
+        if not path.exists() or not path.is_file():
+            raise ValueError(f"file not found: {path_value}")
+        parsed = json.loads(read_document(str(path)))
+        if parsed.get("status") != "ok":
+            raise ValueError(str(parsed.get("error") or "failed to read document"))
+        text = str(parsed.get("text") or "").strip()
+        if not text:
+            raise ValueError("document produced no readable text")
+        metadata = {key: value for key, value in parsed.items() if key not in {"status", "text"}}
+        document = store.add_knowledge_document(
+            principal,
+            kb_id,
+            title=title or path.name,
+            source_uri=str(path),
+            source_type="file",
+            text=text,
+            metadata={"path": str(path), "runtime_worker": True, **metadata},
+            chunk_size=int(chunk_size) if chunk_size is not None else None,
+            chunk_overlap=int(chunk_overlap) if chunk_overlap is not None else None,
+            ingestion_job_id=ingestion_job_id,
+        )
+    except Exception as exc:
+        if ingestion_job_id:
+            try:
+                store.fail_ingestion_job(principal, kb_id, ingestion_job_id, str(exc))
+            except Exception:  # noqa: BLE001 - preserve the ingestion failure
+                logger.exception("could not persist failed ingestion job %s", ingestion_job_id)
+        raise
     return {
         "status": "completed",
         "knowledge_base_id": kb_id,

@@ -62,6 +62,7 @@ AuthDep = Callable[..., Awaitable[Any] | Any]
 def register_swarm_routes(
     app: FastAPI,
     require_auth: AuthDep | None = None,
+    require_admin: AuthDep | None = None,
     require_event_stream_auth: AuthDep | None = None,
 ) -> None:
     """Mount the swarm routes onto ``app``.
@@ -80,6 +81,8 @@ def register_swarm_routes(
 
     if require_auth is None:
         require_auth = host.require_auth
+    if require_admin is None:
+        require_admin = host.require_commercial_admin_or_auth
     if require_event_stream_auth is None:
         require_event_stream_auth = host.require_event_stream_auth
 
@@ -90,6 +93,27 @@ def register_swarm_routes(
     def _host_shell_tools_enabled_for_request(request: Request) -> bool:
         h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
         return h._shell_tools_enabled_for_request(request)
+
+    def _audit_agent_management(
+        request: Request,
+        action: str,
+        preset_name: str,
+        agent_id: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
+        principal = h._commercial_principal_from_request(request) if h and hasattr(h, "_commercial_principal_from_request") else None
+        if principal is None:
+            return
+        from src.commercial.store import CommercialStore
+
+        CommercialStore().audit(
+            principal,
+            action,
+            "swarm_agent",
+            f"{preset_name}:{agent_id}",
+            {"preset_name": preset_name, "agent_id": agent_id, **(metadata or {})},
+        )
 
     def _resolve_model_provider_runtimes(request: Request, preset_name: str) -> dict[str, dict[str, Any]] | None:
         """Resolve organization model providers referenced by editable agents.
@@ -150,21 +174,29 @@ def register_swarm_routes(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    @app.post("/swarm/presets/{preset_name}/agents", dependencies=[Depends(require_auth)])
-    async def create_swarm_preset_agent(preset_name: str, payload: SwarmAgentPayload):
+    @app.post("/swarm/presets/{preset_name}/agents", dependencies=[Depends(require_admin)])
+    async def create_swarm_preset_agent(preset_name: str, payload: SwarmAgentPayload, request: Request):
         """Create an editable agent definition for a swarm preset."""
         _host_validate_path_param(preset_name, "preset_name")
         from src.swarm.presets import save_preset_agent
 
         try:
-            return save_preset_agent(preset_name, payload.model_dump(), create=True)
+            result = save_preset_agent(preset_name, payload.model_dump(), create=True)
+            _audit_agent_management(
+                request,
+                "swarm_agent.create",
+                preset_name,
+                payload.id,
+                {"role": payload.role, "model_provider_id": payload.model_provider_id or ""},
+            )
+            return result
         except FileNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    @app.put("/swarm/presets/{preset_name}/agents/{agent_id}", dependencies=[Depends(require_auth)])
-    async def update_swarm_preset_agent(preset_name: str, agent_id: str, payload: SwarmAgentPayload):
+    @app.put("/swarm/presets/{preset_name}/agents/{agent_id}", dependencies=[Depends(require_admin)])
+    async def update_swarm_preset_agent(preset_name: str, agent_id: str, payload: SwarmAgentPayload, request: Request):
         """Update an editable agent definition for a swarm preset."""
         _host_validate_path_param(preset_name, "preset_name")
         _host_validate_path_param(agent_id, "agent_id")
@@ -173,7 +205,15 @@ def register_swarm_routes(
         data = payload.model_dump()
         data["id"] = agent_id
         try:
-            return save_preset_agent(preset_name, data, create=False)
+            result = save_preset_agent(preset_name, data, create=False)
+            _audit_agent_management(
+                request,
+                "swarm_agent.update",
+                preset_name,
+                agent_id,
+                {"role": payload.role, "model_provider_id": payload.model_provider_id or ""},
+            )
+            return result
         except FileNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
         except KeyError as e:
@@ -181,15 +221,17 @@ def register_swarm_routes(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    @app.delete("/swarm/presets/{preset_name}/agents/{agent_id}", dependencies=[Depends(require_auth)])
-    async def delete_swarm_preset_agent(preset_name: str, agent_id: str):
+    @app.delete("/swarm/presets/{preset_name}/agents/{agent_id}", dependencies=[Depends(require_admin)])
+    async def delete_swarm_preset_agent(preset_name: str, agent_id: str, request: Request):
         """Delete an agent definition and dependent tasks from a swarm preset override."""
         _host_validate_path_param(preset_name, "preset_name")
         _host_validate_path_param(agent_id, "agent_id")
         from src.swarm.presets import delete_preset_agent
 
         try:
-            return delete_preset_agent(preset_name, agent_id)
+            result = delete_preset_agent(preset_name, agent_id)
+            _audit_agent_management(request, "swarm_agent.delete", preset_name, agent_id)
+            return result
         except FileNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
         except KeyError:

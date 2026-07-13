@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -170,3 +171,137 @@ def test_knowledge_url_ingestion_queues_runtime_job_when_worker_backend_enabled(
     assert payload["metadata"]["url"] == "https://example.com/research"
     assert payload["metadata"]["runtime_job_id"].startswith("job_")
     assert pushed[0][0] == "hyper:runtime:jobs"
+    queued_envelope = json.loads(pushed[0][1])
+    assert queued_envelope["payload"]["ingestion_job_id"] == payload["id"]
+
+
+def test_commercial_governance_routes_require_admin_even_from_loopback(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_DB", str(tmp_path / "commercial.db"))
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_MODE", "1")
+    owner_client = TestClient(api_server.app, client=("127.0.0.1", 50300))
+    _register_owner(owner_client, email="governance-owner@example.com")
+    _create_member(owner_client, email="governance-admin@example.com", role="admin")
+    _create_member(owner_client, email="governance-member@example.com", role="member")
+    _create_member(owner_client, email="governance-viewer@example.com", role="viewer")
+
+    admin_client = _login("governance-admin@example.com", 50301)
+    member_client = _login("governance-member@example.com", 50302)
+    viewer_client = _login("governance-viewer@example.com", 50303)
+    anonymous_client = TestClient(api_server.app, client=("127.0.0.1", 50304))
+    assert anonymous_client.get("/auth/status").json() == {"commercial_mode": True}
+
+    for client in (member_client, viewer_client):
+        assert client.post("/swarm/presets/missing/agents", json={"id": "blocked"}).status_code == 403
+        assert client.get("/runtime/jobs").status_code == 403
+
+    assert anonymous_client.post("/swarm/presets/missing/agents", json={"id": "blocked"}).status_code == 401
+    assert anonymous_client.get("/runtime/jobs").status_code == 401
+    assert anonymous_client.get("/sessions").status_code == 401
+    assert anonymous_client.get("/settings/llm").status_code == 401
+    assert member_client.get("/sessions").status_code == 200
+    assert member_client.get("/settings/llm").status_code == 200
+    assert member_client.put("/settings/llm", json={"provider": "siliconflow"}).status_code == 403
+
+    # Admin requests pass the role guard and reach the underlying resource lookup.
+    assert admin_client.post("/swarm/presets/missing/agents", json={"id": "allowed"}).status_code == 404
+    assert admin_client.get("/runtime/jobs").status_code == 200
+
+
+def test_knowledge_file_ingestion_queues_parsing_and_vectorization_job(tmp_path: Path, monkeypatch) -> None:
+    pushed: list[tuple[str, str]] = []
+
+    class FakeRedisClient:
+        def rpush(self, queue_name: str, payload: str) -> int:
+            pushed.append((queue_name, payload))
+            return 1
+
+    source = tmp_path / "research.txt"
+    source.write_text("Portfolio construction and risk limits.", encoding="utf-8")
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_DB", str(tmp_path / "commercial.db"))
+    monkeypatch.setenv("VIBE_TRADING_RUNTIME_JOBS_DB", str(tmp_path / "runtime_jobs.db"))
+    monkeypatch.setenv("HYPER_TRADING_RUNTIME_JOB_BACKEND", "redis-postgres")
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://vibe:secret@postgres:5432/vibe_trading")
+    monkeypatch.setattr("src.api.commercial_routes._runtime_redis_client", lambda: FakeRedisClient())
+    monkeypatch.setattr("src.api.commercial_routes.safe_document_path", lambda _path: source)
+
+    client = TestClient(api_server.app, client=("127.0.0.1", 50400))
+    _register_owner(client, email="file-owner@example.com")
+    kb_response = client.post("/knowledge-bases", json={"name": "File KB"})
+
+    response = client.post(
+        f"/knowledge-bases/{kb_response.json()['id']}/documents",
+        json={"path": "uploads/research.txt", "title": "Research", "chunk_size": 600, "chunk_overlap": 60},
+    )
+
+    assert response.status_code == 202
+    job = response.json()
+    assert job["status"] == "pending"
+    queued_envelope = json.loads(pushed[0][1])
+    assert queued_envelope["kind"] == "knowledge_file_ingest"
+    assert queued_envelope["payload"]["ingestion_job_id"] == job["id"]
+    assert queued_envelope["payload"]["path"] == str(source)
+
+
+def test_failed_url_ingestion_can_retry_before_a_document_exists(tmp_path: Path, monkeypatch) -> None:
+    pushed: list[tuple[str, str]] = []
+
+    class FakeRedisClient:
+        def rpush(self, queue_name: str, payload: str) -> int:
+            pushed.append((queue_name, payload))
+            return 1
+
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_DB", str(tmp_path / "commercial.db"))
+    monkeypatch.setenv("VIBE_TRADING_RUNTIME_JOBS_DB", str(tmp_path / "runtime_jobs.db"))
+    monkeypatch.setenv("HYPER_TRADING_RUNTIME_JOB_BACKEND", "redis-postgres")
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://vibe:secret@postgres:5432/vibe_trading")
+    monkeypatch.setattr("src.api.commercial_routes._runtime_redis_client", lambda: FakeRedisClient())
+
+    client = TestClient(api_server.app, client=("127.0.0.1", 50500))
+    _register_owner(client, email="retry-owner@example.com")
+    kb_id = client.post("/knowledge-bases", json={"name": "Retry KB"}).json()["id"]
+    from src.commercial.store import CommercialStore
+
+    commercial_store = CommercialStore(tmp_path / "commercial.db")
+    principal = commercial_store.login(email="retry-owner@example.com", password=PASSWORD)[0]
+    failed = commercial_store.create_pending_url_ingestion_job(
+        principal,
+        kb_id,
+        url="https://example.com/failing",
+        title="Failing URL",
+    )
+    commercial_store.fail_ingestion_job(principal, kb_id, failed["id"], "temporary fetch failure")
+
+    response = client.post(f"/knowledge-bases/{kb_id}/ingestion-jobs/{failed['id']}/retry")
+
+    assert response.status_code == 202
+    retried = response.json()
+    assert retried["id"] == failed["id"]
+    assert retried["status"] == "pending"
+    assert retried["error"] == ""
+    queued_envelope = json.loads(pushed[0][1])
+    assert queued_envelope["kind"] == "knowledge_url_ingest"
+    assert queued_envelope["payload"]["ingestion_job_id"] == failed["id"]
+
+
+def test_swarm_agent_management_writes_commercial_audit_event(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_DB", str(tmp_path / "commercial.db"))
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_MODE", "1")
+    owner_client = TestClient(api_server.app, client=("127.0.0.1", 50600))
+    _register_owner(owner_client, email="audit-owner@example.com")
+
+    monkeypatch.setattr(
+        "src.swarm.presets.save_preset_agent",
+        lambda preset_name, payload, create: {"preset_name": preset_name, "agent": payload, "created": create},
+    )
+    response = owner_client.post(
+        "/swarm/presets/quant_strategy_desk/agents",
+        json={"id": "portfolio_reviewer", "role": "Portfolio Reviewer"},
+    )
+
+    assert response.status_code == 200
+    logs = owner_client.get("/audit-logs", params={"type": "swarm_agent.create"}).json()
+    assert len(logs) == 1
+    assert logs[0]["action"] == "swarm_agent.create"
+    assert logs[0]["target_id"] == "quant_strategy_desk:portfolio_reviewer"

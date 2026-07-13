@@ -662,6 +662,7 @@ AuthDep = Callable[..., Awaitable[Any] | Any]
 def register_alpha_routes(
     app: FastAPI,
     require_auth: AuthDep | None = None,
+    require_admin: AuthDep | None = None,
     require_event_stream_auth: AuthDep | None = None,
 ) -> None:
     """Mount the alpha routes onto ``app``.
@@ -675,7 +676,7 @@ def register_alpha_routes(
     explicitly we resolve them from the host ``api_server`` module via
     ``sys.modules``. Prefer the explicit form in new call sites.
     """
-    if require_auth is None or require_event_stream_auth is None:
+    if require_auth is None or require_admin is None or require_event_stream_auth is None:
         import sys as _sys
 
         host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
@@ -686,15 +687,17 @@ def register_alpha_routes(
             )
         if require_auth is None:
             require_auth = host.require_auth
+        if require_admin is None:
+            require_admin = host.require_commercial_admin_or_auth
         if require_event_stream_auth is None:
             require_event_stream_auth = host.require_event_stream_auth
 
-    @app.get("/runtime/jobs", dependencies=[Depends(require_auth)])
+    @app.get("/runtime/jobs", dependencies=[Depends(require_admin)])
     async def list_runtime_jobs(request: Request) -> list[dict[str, Any]]:
         """Return a unified read-only snapshot of process-local background jobs."""
         return _runtime_job_rows(_commercial_runtime_job_rows(request))
 
-    @app.post("/runtime/jobs/{job_id}/cancel", dependencies=[Depends(require_auth)])
+    @app.post("/runtime/jobs/{job_id}/cancel", dependencies=[Depends(require_admin)])
     async def cancel_runtime_job(job_id: str, request: Request) -> dict[str, Any]:
         """Mark a queued/running process-local background job as cancelled."""
         try:
@@ -727,7 +730,7 @@ def register_alpha_routes(
         _sync_alpha_job_to_durable(_kind, snapshot)
         return {"status": "cancelled", "job_id": job_id}
 
-    @app.post("/runtime/jobs/{job_id}/retry", dependencies=[Depends(require_auth)])
+    @app.post("/runtime/jobs/{job_id}/retry", dependencies=[Depends(require_admin)])
     async def retry_runtime_job(job_id: str, request: Request) -> dict[str, Any]:
         """Retry a failed alpha bench/compare job with its original parameters."""
         try:

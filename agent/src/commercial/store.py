@@ -30,6 +30,17 @@ JOB_STATUSES = {"pending", "running", "completed", "failed", "cancelled"}
 TOOL_RISK_LEVELS = {"low", "medium", "high", "critical"}
 EMBEDDING_DIMENSIONS = int(os.getenv("VIBE_TRADING_LOCAL_EMBEDDING_DIMENSIONS", "64"))
 _TOKEN_RE = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
+KNOWLEDGE_RETRIEVAL_MODES = {"hybrid", "vector", "keyword"}
+DEFAULT_KNOWLEDGE_CONFIG: dict[str, Any] = {
+    "chunk_size": 1400,
+    "chunk_overlap": 180,
+    "retrieval_mode": "hybrid",
+    "top_k": 8,
+}
+DEFAULT_KNOWLEDGE_ACCESS: dict[str, list[str]] = {
+    "read_roles": ["owner", "admin", "member", "viewer"],
+    "write_roles": ["owner", "admin", "member"],
+}
 
 
 @dataclass(frozen=True)
@@ -58,6 +69,78 @@ def _clamp_progress(value: int | float | None) -> int:
         return max(0, min(100, int(value or 0)))
     except (TypeError, ValueError):
         return 0
+
+
+def _json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return dict(parsed) if isinstance(parsed, dict) else {}
+
+
+def _normalize_knowledge_config(
+    value: dict[str, Any] | None,
+    *,
+    base: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    merged = {**DEFAULT_KNOWLEDGE_CONFIG, **(base or {}), **(value or {})}
+    try:
+        chunk_size = max(300, min(8000, int(merged.get("chunk_size") or 1400)))
+        chunk_overlap = max(0, int(merged.get("chunk_overlap") or 0))
+        top_k = max(1, min(20, int(merged.get("top_k") or 8)))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("knowledge configuration contains invalid numeric values") from exc
+    if chunk_overlap >= chunk_size:
+        raise ValueError("chunk overlap must be smaller than chunk size")
+    retrieval_mode = str(merged.get("retrieval_mode") or "hybrid").strip().lower()
+    if retrieval_mode not in KNOWLEDGE_RETRIEVAL_MODES:
+        raise ValueError("retrieval mode must be hybrid, vector, or keyword")
+    return {
+        "chunk_size": chunk_size,
+        "chunk_overlap": chunk_overlap,
+        "retrieval_mode": retrieval_mode,
+        "top_k": top_k,
+    }
+
+
+def _normalize_knowledge_access(
+    value: dict[str, Any] | None,
+    *,
+    base: dict[str, Any] | None = None,
+) -> dict[str, list[str]]:
+    merged = {**DEFAULT_KNOWLEDGE_ACCESS, **(base or {}), **(value or {})}
+    normalized: dict[str, list[str]] = {}
+    for field in ("read_roles", "write_roles"):
+        raw = merged.get(field)
+        if not isinstance(raw, list):
+            raise ValueError(f"{field} must be a role list")
+        roles = [str(role).strip().lower() for role in raw]
+        invalid = [role for role in roles if role not in ROLES]
+        if invalid:
+            raise ValueError(f"invalid knowledge access role: {invalid[0]}")
+        normalized[field] = [role for role in ("owner", "admin", "member", "viewer") if role in set(roles)]
+    if "owner" not in normalized["read_roles"]:
+        normalized["read_roles"].insert(0, "owner")
+    if "owner" not in normalized["write_roles"]:
+        normalized["write_roles"].insert(0, "owner")
+    normalized["read_roles"] = [
+        role
+        for role in ("owner", "admin", "member", "viewer")
+        if role in set(normalized["read_roles"] + normalized["write_roles"])
+    ]
+    return normalized
+
+
+def _knowledge_base_payload(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    item = dict(row)
+    item["config"] = _normalize_knowledge_config(_json_object(item.pop("config_json", None)))
+    item["access"] = _normalize_knowledge_access(_json_object(item.pop("access_json", None)))
+    return item
 
 
 def _summarize_value(value: Any, limit: int = 500) -> str:
@@ -412,6 +495,8 @@ class CommercialStore:
                     organization_id TEXT NOT NULL,
                     name TEXT NOT NULL,
                     description TEXT NOT NULL DEFAULT '',
+                    config_json TEXT NOT NULL DEFAULT '{}',
+                    access_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -528,6 +613,14 @@ class CommercialStore:
                 conn.execute("ALTER TABLE knowledge_ingestion_jobs ADD COLUMN completed_at TEXT NOT NULL DEFAULT ''")
             if "metadata_json" not in existing_job_columns:
                 conn.execute("ALTER TABLE knowledge_ingestion_jobs ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'")
+            existing_knowledge_base_columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(knowledge_bases)").fetchall()
+            }
+            if "config_json" not in existing_knowledge_base_columns:
+                conn.execute("ALTER TABLE knowledge_bases ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}'")
+            if "access_json" not in existing_knowledge_base_columns:
+                conn.execute("ALTER TABLE knowledge_bases ADD COLUMN access_json TEXT NOT NULL DEFAULT '{}'")
 
     # --- auth / orgs ---
 
@@ -1330,76 +1423,271 @@ class CommercialStore:
     def list_knowledge_bases(self, principal: Principal) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT id, name, description, created_at, updated_at FROM knowledge_bases WHERE organization_id = ? ORDER BY updated_at DESC",
+                """
+                SELECT id, name, description, config_json, access_json, created_at, updated_at
+                FROM knowledge_bases
+                WHERE organization_id = ?
+                ORDER BY updated_at DESC
+                """,
                 (principal.organization_id,),
             ).fetchall()
-        return [dict(row) for row in rows]
+        items = [_knowledge_base_payload(row) for row in rows]
+        return [item for item in items if principal.role in item["access"]["read_roles"]]
 
     def create_knowledge_base(self, principal: Principal, name: str, description: str = "") -> dict[str, Any]:
         now = utcnow()
         kb_id = _new_id("kb")
+        config = _normalize_knowledge_config(None)
+        access = _normalize_knowledge_access(None)
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO knowledge_bases(id, organization_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (kb_id, principal.organization_id, name.strip() or "Knowledge Base", description.strip(), now, now),
+                """
+                INSERT INTO knowledge_bases(
+                    id, organization_id, name, description, config_json, access_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    kb_id,
+                    principal.organization_id,
+                    name.strip() or "Knowledge Base",
+                    description.strip(),
+                    json.dumps(config, ensure_ascii=False),
+                    json.dumps(access, ensure_ascii=False),
+                    now,
+                    now,
+                ),
             )
         self.audit(principal, "knowledge_base.create", "knowledge_base", kb_id, {"name": name})
-        return {"id": kb_id, "name": name.strip() or "Knowledge Base", "description": description.strip(), "created_at": now, "updated_at": now}
+        return {
+            "id": kb_id,
+            "name": name.strip() or "Knowledge Base",
+            "description": description.strip(),
+            "config": config,
+            "access": access,
+            "created_at": now,
+            "updated_at": now,
+        }
 
-    def _ensure_kb(self, principal: Principal, kb_id: str) -> None:
+    def get_knowledge_base(self, principal: Principal, kb_id: str, *, write: bool = False) -> dict[str, Any]:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT id FROM knowledge_bases WHERE id = ? AND organization_id = ?",
+                """
+                SELECT id, name, description, config_json, access_json, created_at, updated_at
+                FROM knowledge_bases
+                WHERE id = ? AND organization_id = ?
+                """,
                 (kb_id, principal.organization_id),
             ).fetchone()
         if row is None:
             raise KeyError(kb_id)
+        item = _knowledge_base_payload(row)
+        allowed_roles = item["access"]["write_roles" if write else "read_roles"]
+        if principal.role not in allowed_roles:
+            raise KeyError(kb_id)
+        return item
 
-    def add_knowledge_document(self, principal: Principal, kb_id: str, *, title: str, source_uri: str, source_type: str, text: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
-        from src.knowledge.store import _chunk_text, _normalize_text
+    def _ensure_kb(self, principal: Principal, kb_id: str, *, write: bool = False) -> dict[str, Any]:
+        return self.get_knowledge_base(principal, kb_id, write=write)
 
-        self._ensure_kb(principal, kb_id)
-        doc_id = _new_id("doc")
-        job_id = _new_id("job")
+    def update_knowledge_base(
+        self,
+        principal: Principal,
+        kb_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        current = self._ensure_kb(principal, kb_id)
+        name = str(payload.get("name") if payload.get("name") is not None else current["name"]).strip()
+        description = str(
+            payload.get("description") if payload.get("description") is not None else current["description"]
+        ).strip()
+        if not name:
+            raise ValueError("knowledge base name is required")
+        config = _normalize_knowledge_config(
+            payload.get("config") if isinstance(payload.get("config"), dict) else None,
+            base=current["config"],
+        )
+        access = _normalize_knowledge_access(
+            payload.get("access") if isinstance(payload.get("access"), dict) else None,
+            base=current["access"],
+        )
         now = utcnow()
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO knowledge_ingestion_jobs(
-                    id, organization_id, knowledge_base_id, document_id, status,
-                    progress, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, 'pending', 0, ?, ?)
+                UPDATE knowledge_bases
+                SET name = ?, description = ?, config_json = ?, access_json = ?, updated_at = ?
+                WHERE id = ? AND organization_id = ?
                 """,
-                (job_id, principal.organization_id, kb_id, doc_id, now, now),
+                (
+                    name,
+                    description,
+                    json.dumps(config, ensure_ascii=False),
+                    json.dumps(access, ensure_ascii=False),
+                    now,
+                    kb_id,
+                    principal.organization_id,
+                ),
             )
+        self.audit(
+            principal,
+            "knowledge_base.update",
+            "knowledge_base",
+            kb_id,
+            {"config": config, "access": access},
+        )
+        return self.get_knowledge_base(principal, kb_id)
+
+    def add_knowledge_document(
+        self,
+        principal: Principal,
+        kb_id: str,
+        *,
+        title: str,
+        source_uri: str,
+        source_type: str,
+        text: str,
+        metadata: dict[str, Any] | None = None,
+        chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
+        ingestion_job_id: str = "",
+    ) -> dict[str, Any]:
+        from src.knowledge.store import _chunk_text, _normalize_text
+
+        knowledge_base = self._ensure_kb(principal, kb_id, write=True)
+        config_override: dict[str, Any] = {}
+        if chunk_size is not None:
+            config_override["chunk_size"] = chunk_size
+        if chunk_overlap is not None:
+            config_override["chunk_overlap"] = chunk_overlap
+        ingestion_config = _normalize_knowledge_config(config_override, base=knowledge_base["config"])
+        existing_job: dict[str, Any] | None = None
+        if ingestion_job_id:
+            existing_job = self.get_ingestion_job(principal, kb_id, ingestion_job_id)
+            if str(existing_job.get("status") or "") not in {"pending", "running", "failed"}:
+                raise ValueError("ingestion job is not executable")
+        doc_id = str((existing_job or {}).get("document_id") or "") or _new_id("doc")
+        job_id = str((existing_job or {}).get("id") or "") or _new_id("job")
+        now = utcnow()
+        job_metadata = {
+            **((existing_job or {}).get("metadata") or {}),
+            "stage": "queued",
+            "source_type": source_type,
+            "chunk_size": ingestion_config["chunk_size"],
+            "chunk_overlap": ingestion_config["chunk_overlap"],
+        }
+        with self._connect() as conn:
+            if existing_job is None:
+                conn.execute(
+                    """
+                    INSERT INTO knowledge_ingestion_jobs(
+                        id, organization_id, knowledge_base_id, document_id, status,
+                        progress, metadata_json, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?)
+                    """,
+                    (
+                        job_id,
+                        principal.organization_id,
+                        kb_id,
+                        doc_id,
+                        json.dumps(job_metadata, ensure_ascii=False),
+                        now,
+                        now,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE knowledge_ingestion_jobs
+                    SET document_id = ?, status = 'running', progress = 2, error = '',
+                        metadata_json = ?, started_at = COALESCE(NULLIF(started_at, ''), ?),
+                        completed_at = '', updated_at = ?
+                    WHERE id = ? AND organization_id = ? AND knowledge_base_id = ?
+                    """,
+                    (
+                        doc_id,
+                        json.dumps({**job_metadata, "stage": "parsing"}, ensure_ascii=False),
+                        now,
+                        now,
+                        job_id,
+                        principal.organization_id,
+                        kb_id,
+                    ),
+                )
         try:
             normalized = _normalize_text(text)
             if not normalized:
                 raise ValueError("document text is empty")
-            chunks = _chunk_text(normalized)
+            chunks = _chunk_text(
+                normalized,
+                chunk_chars=ingestion_config["chunk_size"],
+                overlap=ingestion_config["chunk_overlap"],
+            )
             source_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+            document_metadata = {
+                **(metadata or {}),
+                "chunk_size": ingestion_config["chunk_size"],
+                "chunk_overlap": ingestion_config["chunk_overlap"],
+                "retrieval_mode": ingestion_config["retrieval_mode"],
+            }
             with self._connect() as conn:
                 started_at = utcnow()
                 conn.execute(
-                    "UPDATE knowledge_ingestion_jobs SET status = 'running', progress = 5, started_at = ?, updated_at = ? WHERE id = ?",
-                    (started_at, started_at, job_id),
+                    """
+                    UPDATE knowledge_ingestion_jobs
+                    SET status = 'running', progress = 5, metadata_json = ?, started_at = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        json.dumps({**job_metadata, "stage": "chunking"}, ensure_ascii=False),
+                        started_at,
+                        started_at,
+                        job_id,
+                    ),
                 )
                 conn.execute(
                     """
                     INSERT INTO knowledge_documents(id, organization_id, knowledge_base_id, title, source_uri, source_type, source_hash, status, chunk_count, metadata_json, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, 'indexing', 0, ?, ?, ?)
                     """,
-                    (doc_id, principal.organization_id, kb_id, title, source_uri, source_type, source_hash, json.dumps(metadata or {}, ensure_ascii=False), now, now),
+                    (
+                        doc_id,
+                        principal.organization_id,
+                        kb_id,
+                        title,
+                        source_uri,
+                        source_type,
+                        source_hash,
+                        json.dumps(document_metadata, ensure_ascii=False),
+                        now,
+                        now,
+                    ),
+                )
+                conn.execute(
+                    "UPDATE knowledge_ingestion_jobs SET progress = 25, metadata_json = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps({**job_metadata, "stage": "embedding"}, ensure_ascii=False), utcnow(), job_id),
                 )
                 self._replace_document_chunks(conn, principal, kb_id, doc_id, title, source_type, chunks, job_id=job_id)
+                conn.execute(
+                    "UPDATE knowledge_ingestion_jobs SET progress = 96, metadata_json = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps({**job_metadata, "stage": "indexing"}, ensure_ascii=False), utcnow(), job_id),
+                )
                 completed_at = utcnow()
                 conn.execute(
                     "UPDATE knowledge_documents SET status = 'ready', chunk_count = ?, updated_at = ? WHERE id = ?",
                     (len(chunks), completed_at, doc_id),
                 )
                 conn.execute(
-                    "UPDATE knowledge_ingestion_jobs SET status = 'completed', progress = 100, error = '', completed_at = ?, updated_at = ? WHERE id = ?",
-                    (completed_at, completed_at, job_id),
+                    """
+                    UPDATE knowledge_ingestion_jobs
+                    SET status = 'completed', progress = 100, error = '', metadata_json = ?, completed_at = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        json.dumps({**job_metadata, "stage": "completed"}, ensure_ascii=False),
+                        completed_at,
+                        completed_at,
+                        job_id,
+                    ),
                 )
                 conn.execute("UPDATE knowledge_bases SET updated_at = ? WHERE id = ?", (completed_at, kb_id))
         except Exception as exc:
@@ -1425,15 +1713,26 @@ class CommercialStore:
         url: str,
         title: str = "",
         runtime_job_id: str = "",
+        chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
     ) -> dict[str, Any]:
-        self._ensure_kb(principal, kb_id)
+        knowledge_base = self._ensure_kb(principal, kb_id, write=True)
+        overrides: dict[str, Any] = {}
+        if chunk_size is not None:
+            overrides["chunk_size"] = chunk_size
+        if chunk_overlap is not None:
+            overrides["chunk_overlap"] = chunk_overlap
+        ingestion_config = _normalize_knowledge_config(overrides, base=knowledge_base["config"])
         now = utcnow()
         job_id = _new_id("job")
         metadata = {
+            "stage": "queued",
             "url": url,
             "title": title,
             "source_type": "url",
             "runtime_job_id": runtime_job_id,
+            "chunk_size": ingestion_config["chunk_size"],
+            "chunk_overlap": ingestion_config["chunk_overlap"],
         }
         with self._connect() as conn:
             conn.execute(
@@ -1452,6 +1751,129 @@ class CommercialStore:
             job_id,
             {"knowledge_base_id": kb_id, "url": url, "runtime_job_id": runtime_job_id},
         )
+        return self.get_ingestion_job(principal, kb_id, job_id)
+
+    def create_pending_file_ingestion_job(
+        self,
+        principal: Principal,
+        kb_id: str,
+        *,
+        path: str,
+        title: str = "",
+        runtime_job_id: str = "",
+        chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
+    ) -> dict[str, Any]:
+        knowledge_base = self._ensure_kb(principal, kb_id, write=True)
+        overrides: dict[str, Any] = {}
+        if chunk_size is not None:
+            overrides["chunk_size"] = chunk_size
+        if chunk_overlap is not None:
+            overrides["chunk_overlap"] = chunk_overlap
+        ingestion_config = _normalize_knowledge_config(overrides, base=knowledge_base["config"])
+        now = utcnow()
+        job_id = _new_id("job")
+        metadata = {
+            "stage": "queued",
+            "path": path,
+            "title": title,
+            "source_type": "file",
+            "runtime_job_id": runtime_job_id,
+            "chunk_size": ingestion_config["chunk_size"],
+            "chunk_overlap": ingestion_config["chunk_overlap"],
+        }
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO knowledge_ingestion_jobs(
+                    id, organization_id, knowledge_base_id, document_id, status,
+                    progress, error, metadata_json, created_at, updated_at
+                ) VALUES (?, ?, ?, '', 'pending', 0, '', ?, ?, ?)
+                """,
+                (job_id, principal.organization_id, kb_id, json.dumps(metadata, ensure_ascii=False), now, now),
+            )
+        self.audit(
+            principal,
+            "knowledge_file.queue",
+            "knowledge_ingestion_job",
+            job_id,
+            {"knowledge_base_id": kb_id, "path": path, "runtime_job_id": runtime_job_id},
+        )
+        return self.get_ingestion_job(principal, kb_id, job_id)
+
+    def attach_ingestion_runtime_job(
+        self,
+        principal: Principal,
+        kb_id: str,
+        job_id: str,
+        runtime_job_id: str,
+    ) -> dict[str, Any]:
+        self._ensure_kb(principal, kb_id, write=True)
+        job = self.get_ingestion_job(principal, kb_id, job_id)
+        metadata = {**(job.get("metadata") or {}), "runtime_job_id": runtime_job_id}
+        now = utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE knowledge_ingestion_jobs SET metadata_json = ?, updated_at = ? WHERE id = ? AND organization_id = ? AND knowledge_base_id = ?",
+                (json.dumps(metadata, ensure_ascii=False), now, job_id, principal.organization_id, kb_id),
+            )
+        return self.get_ingestion_job(principal, kb_id, job_id)
+
+    def start_ingestion_job(
+        self,
+        principal: Principal,
+        kb_id: str,
+        job_id: str,
+        *,
+        stage: str,
+        progress: int,
+    ) -> dict[str, Any]:
+        self._ensure_kb(principal, kb_id, write=True)
+        job = self.get_ingestion_job(principal, kb_id, job_id)
+        if str(job.get("status") or "") == "cancelled":
+            raise ValueError("ingestion job was cancelled")
+        metadata = {**(job.get("metadata") or {}), "stage": stage}
+        now = utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE knowledge_ingestion_jobs
+                SET status = 'running', progress = ?, error = '', metadata_json = ?,
+                    started_at = COALESCE(NULLIF(started_at, ''), ?), completed_at = '', updated_at = ?
+                WHERE id = ? AND organization_id = ? AND knowledge_base_id = ?
+                """,
+                (
+                    _clamp_progress(progress),
+                    json.dumps(metadata, ensure_ascii=False),
+                    now,
+                    now,
+                    job_id,
+                    principal.organization_id,
+                    kb_id,
+                ),
+            )
+        return self.get_ingestion_job(principal, kb_id, job_id)
+
+    def fail_ingestion_job(
+        self,
+        principal: Principal,
+        kb_id: str,
+        job_id: str,
+        error: str,
+    ) -> dict[str, Any]:
+        self._ensure_kb(principal, kb_id, write=True)
+        job = self.get_ingestion_job(principal, kb_id, job_id)
+        metadata = {**(job.get("metadata") or {}), "stage": "failed"}
+        now = utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE knowledge_ingestion_jobs
+                SET status = 'failed', error = ?, metadata_json = ?, completed_at = ?, updated_at = ?
+                WHERE id = ? AND organization_id = ? AND knowledge_base_id = ?
+                """,
+                (error[:2000], json.dumps(metadata, ensure_ascii=False), now, now, job_id, principal.organization_id, kb_id),
+            )
         return self.get_ingestion_job(principal, kb_id, job_id)
 
     def _replace_document_chunks(
@@ -1505,7 +1927,8 @@ class CommercialStore:
     def reindex_knowledge_document(self, principal: Principal, kb_id: str, doc_id: str) -> dict[str, Any]:
         from src.knowledge.store import _chunk_text, _normalize_text
 
-        self._ensure_kb(principal, kb_id)
+        knowledge_base = self._ensure_kb(principal, kb_id, write=True)
+        ingestion_config = _normalize_knowledge_config(None, base=knowledge_base["config"])
         now = utcnow()
         job_id = _new_id("job")
         with self._connect() as conn:
@@ -1532,16 +1955,36 @@ class CommercialStore:
                 """
                 INSERT INTO knowledge_ingestion_jobs(
                     id, organization_id, knowledge_base_id, document_id, status,
-                    progress, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, 'pending', 0, ?, ?)
+                    progress, metadata_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?)
                 """,
-                (job_id, principal.organization_id, kb_id, doc_id, now, now),
+                (
+                    job_id,
+                    principal.organization_id,
+                    kb_id,
+                    doc_id,
+                    json.dumps(
+                        {
+                            "stage": "queued",
+                            "source_type": str(doc["source_type"]),
+                            "chunk_size": ingestion_config["chunk_size"],
+                            "chunk_overlap": ingestion_config["chunk_overlap"],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    now,
+                    now,
+                ),
             )
         try:
             normalized = _normalize_text(original_text)
             if not normalized:
                 raise ValueError("document text is empty")
-            chunks = _chunk_text(normalized)
+            chunks = _chunk_text(
+                normalized,
+                chunk_chars=ingestion_config["chunk_size"],
+                overlap=ingestion_config["chunk_overlap"],
+            )
             started_at = utcnow()
             with self._connect() as conn:
                 conn.execute(
@@ -1553,6 +1996,18 @@ class CommercialStore:
                 conn.execute(
                     "UPDATE knowledge_documents SET status = 'ready', chunk_count = ?, source_hash = ?, updated_at = ? WHERE id = ?",
                     (len(chunks), hashlib.sha256(normalized.encode("utf-8")).hexdigest(), completed_at, doc_id),
+                )
+                document_metadata = _json_object(doc["metadata_json"])
+                document_metadata.update(
+                    {
+                        "chunk_size": ingestion_config["chunk_size"],
+                        "chunk_overlap": ingestion_config["chunk_overlap"],
+                        "retrieval_mode": ingestion_config["retrieval_mode"],
+                    }
+                )
+                conn.execute(
+                    "UPDATE knowledge_documents SET metadata_json = ? WHERE id = ?",
+                    (json.dumps(document_metadata, ensure_ascii=False), doc_id),
                 )
                 conn.execute(
                     "UPDATE knowledge_ingestion_jobs SET status = 'completed', progress = 100, error = '', completed_at = ?, updated_at = ? WHERE id = ?",
@@ -1581,7 +2036,7 @@ class CommercialStore:
                 """
                 SELECT
                     d.id, d.title, d.source_uri, d.source_type, d.status,
-                    d.chunk_count, d.created_at, d.updated_at,
+                    d.chunk_count, d.metadata_json, d.created_at, d.updated_at,
                     j.id AS ingestion_job_id,
                     j.status AS ingestion_status,
                     j.progress AS ingestion_progress,
@@ -1600,7 +2055,12 @@ class CommercialStore:
                 """,
                 (principal.organization_id, kb_id),
             ).fetchall()
-        return [dict(row) for row in rows]
+        documents: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = _json_object(item.pop("metadata_json", None))
+            documents.append(item)
+        return documents
 
     def get_knowledge_document(self, principal: Principal, kb_id: str, doc_id: str) -> dict[str, Any]:
         docs = [doc for doc in self.list_knowledge_documents(principal, kb_id) if doc["id"] == doc_id]
@@ -1608,8 +2068,90 @@ class CommercialStore:
             raise KeyError(doc_id)
         return docs[0]
 
-    def delete_knowledge_document(self, principal: Principal, kb_id: str, doc_id: str) -> None:
+    def list_knowledge_document_chunks(
+        self,
+        principal: Principal,
+        kb_id: str,
+        doc_id: str,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
         self._ensure_kb(principal, kb_id)
+        self.get_knowledge_document(principal, kb_id, doc_id)
+        capped_limit = max(1, min(int(limit), 500))
+        capped_offset = max(0, int(offset))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, chunk_index, text, embedding_json, metadata_json, created_at
+                FROM knowledge_chunks
+                WHERE organization_id = ? AND knowledge_base_id = ? AND document_id = ?
+                ORDER BY chunk_index
+                LIMIT ? OFFSET ?
+                """,
+                (principal.organization_id, kb_id, doc_id, capped_limit, capped_offset),
+            ).fetchall()
+        chunks: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            metadata = _json_object(item.pop("metadata_json", None))
+            try:
+                embedding = json.loads(str(item.pop("embedding_json") or "[]"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                embedding = []
+            text = str(item.get("text") or "")
+            chunks.append(
+                {
+                    **item,
+                    "character_count": len(text),
+                    "embedding_dimensions": len(embedding) if isinstance(embedding, list) else 0,
+                    "embedding_source": str(metadata.get("embedding_source") or "unknown"),
+                    "embedding_fallback": bool(metadata.get("embedding_fallback", False)),
+                    "metadata": metadata,
+                }
+            )
+        return chunks
+
+    def get_knowledge_document_detail(
+        self,
+        principal: Principal,
+        kb_id: str,
+        doc_id: str,
+    ) -> dict[str, Any]:
+        document = self.get_knowledge_document(principal, kb_id, doc_id)
+        with self._connect() as conn:
+            vector_row = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_chunks,
+                    SUM(CASE WHEN embedding_json IS NOT NULL AND embedding_json NOT IN ('', '[]') THEN 1 ELSE 0 END) AS embedded_chunks
+                FROM knowledge_chunks
+                WHERE organization_id = ? AND knowledge_base_id = ? AND document_id = ?
+                """,
+                (principal.organization_id, kb_id, doc_id),
+            ).fetchone()
+        history = [
+            job
+            for job in self.list_ingestion_jobs(principal, kb_id, limit=200)
+            if str(job.get("document_id") or "") == doc_id
+        ]
+        total_chunks = int(vector_row["total_chunks"] or 0) if vector_row else 0
+        embedded_chunks = int(vector_row["embedded_chunks"] or 0) if vector_row else 0
+        vector_progress = round((embedded_chunks / total_chunks) * 100) if total_chunks else 0
+        return {
+            **document,
+            "vectorization": {
+                "status": "completed" if total_chunks > 0 and embedded_chunks == total_chunks else "pending",
+                "progress": vector_progress,
+                "embedded_chunks": embedded_chunks,
+                "total_chunks": total_chunks,
+            },
+            "ingestion_history": history,
+        }
+
+    def delete_knowledge_document(self, principal: Principal, kb_id: str, doc_id: str) -> None:
+        self._ensure_kb(principal, kb_id, write=True)
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT id FROM knowledge_documents WHERE id = ? AND organization_id = ? AND knowledge_base_id = ?",
@@ -1623,38 +2165,47 @@ class CommercialStore:
             conn.execute("DELETE FROM knowledge_documents WHERE id = ?", (doc_id,))
         self.audit(principal, "knowledge_document.delete", "knowledge_document", doc_id, {"knowledge_base_id": kb_id})
 
-    def search_knowledge(self, principal: Principal, kb_id: str, query: str, limit: int = 5) -> list[dict[str, Any]]:
+    def search_knowledge(self, principal: Principal, kb_id: str, query: str, limit: int | None = None) -> list[dict[str, Any]]:
         from src.knowledge.store import _fts_query
 
-        self._ensure_kb(principal, kb_id)
-        capped = max(1, min(limit, 20))
-        query_embedding, query_embedding_metadata = _embedding_for_text(query)
-        query_embedding_source = str(query_embedding_metadata.get("embedding_source") or "")
+        knowledge_base = self._ensure_kb(principal, kb_id)
+        retrieval_mode = str(knowledge_base["config"].get("retrieval_mode") or "hybrid")
+        configured_limit = int(knowledge_base["config"].get("top_k") or 8)
+        capped = max(1, min(int(limit if limit is not None else configured_limit), 20))
+        query_embedding: list[float] = []
+        query_embedding_source = ""
+        if retrieval_mode != "keyword":
+            query_embedding, query_embedding_metadata = _embedding_for_text(query)
+            query_embedding_source = str(query_embedding_metadata.get("embedding_source") or "")
         with self._connect() as conn:
-            try:
-                fts_rows = conn.execute(
+            fts_rows: list[Any] = []
+            if retrieval_mode != "vector":
+                try:
+                    fts_rows = conn.execute(
+                        """
+                        SELECT chunk_id, document_id, title, text, bm25(knowledge_chunks_fts) AS rank
+                        FROM knowledge_chunks_fts
+                        WHERE knowledge_chunks_fts MATCH ?
+                          AND organization_id = ?
+                          AND knowledge_base_id = ?
+                        ORDER BY rank
+                        LIMIT ?
+                        """,
+                        (_fts_query(query), principal.organization_id, kb_id, capped * 2),
+                    ).fetchall()
+                except sqlite3.Error:
+                    fts_rows = []
+            vector_rows: list[Any] = []
+            if retrieval_mode != "keyword":
+                vector_rows = conn.execute(
                     """
-                    SELECT chunk_id, document_id, title, text, bm25(knowledge_chunks_fts) AS rank
-                    FROM knowledge_chunks_fts
-                    WHERE knowledge_chunks_fts MATCH ?
-                      AND organization_id = ?
-                      AND knowledge_base_id = ?
-                    ORDER BY rank
-                    LIMIT ?
+                    SELECT c.id AS chunk_id, c.document_id, d.title, d.source_uri, c.text, c.embedding_json, c.metadata_json
+                    FROM knowledge_chunks c
+                    JOIN knowledge_documents d ON d.id = c.document_id
+                    WHERE c.organization_id = ? AND c.knowledge_base_id = ?
                     """,
-                    (_fts_query(query), principal.organization_id, kb_id, capped * 2),
+                    (principal.organization_id, kb_id),
                 ).fetchall()
-            except sqlite3.Error:
-                fts_rows = []
-            vector_rows = conn.execute(
-                """
-                SELECT c.id AS chunk_id, c.document_id, d.title, d.source_uri, c.text, c.embedding_json, c.metadata_json
-                FROM knowledge_chunks c
-                JOIN knowledge_documents d ON d.id = c.document_id
-                WHERE c.organization_id = ? AND c.knowledge_base_id = ?
-                """,
-                (principal.organization_id, kb_id),
-            ).fetchall()
             doc_map = {
                 str(row["id"]): {"source_uri": str(row["source_uri"])}
                 for row in conn.execute(
@@ -1670,7 +2221,7 @@ class CommercialStore:
                     "chunk_id": str(row["chunk_id"]),
                     "title": str(row["title"]),
                     "source_uri": doc_map.get(str(row["document_id"]), {}).get("source_uri", ""),
-                    "score": lexical_score * 0.65,
+                    "score": lexical_score * (0.65 if retrieval_mode == "hybrid" else 1.0),
                     "text": str(row["text"]),
                 }
             for row in vector_rows:
@@ -1701,7 +2252,7 @@ class CommercialStore:
                         "text": str(row["text"]),
                     },
                 )
-                item["score"] = float(item["score"]) + vector_score * 0.35
+                item["score"] = float(item["score"]) + vector_score * (0.35 if retrieval_mode == "hybrid" else 1.0)
             rows = sorted(scored.values(), key=lambda item: float(item["score"]), reverse=True)[:capped]
             conn.execute(
                 "INSERT INTO knowledge_retrieval_logs(id, organization_id, user_id, knowledge_base_id, query, result_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -1725,6 +2276,7 @@ class CommercialStore:
                                 "query": query[:200],
                                 "result_count": len(rows),
                                 "embedding_source": query_embedding_source,
+                                "retrieval_mode": retrieval_mode,
                             },
                             ensure_ascii=False,
                         ),
@@ -1791,13 +2343,41 @@ class CommercialStore:
         return items
 
     def retry_ingestion_job(self, principal: Principal, kb_id: str, job_id: str) -> dict[str, Any]:
+        self._ensure_kb(principal, kb_id, write=True)
         job = self.get_ingestion_job(principal, kb_id, job_id)
         doc_id = str(job.get("document_id") or "")
         if not doc_id:
             raise ValueError("job has no document to retry")
         return self.reindex_knowledge_document(principal, kb_id, doc_id)
 
+    def reset_ingestion_job_for_retry(self, principal: Principal, kb_id: str, job_id: str) -> dict[str, Any]:
+        self._ensure_kb(principal, kb_id, write=True)
+        job = self.get_ingestion_job(principal, kb_id, job_id)
+        if str(job.get("status") or "") != "failed":
+            raise ValueError("only failed jobs can be retried")
+        metadata = {**(job.get("metadata") or {}), "stage": "queued", "runtime_job_id": ""}
+        now = utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE knowledge_ingestion_jobs
+                SET status = 'pending', progress = 0, error = '', metadata_json = ?,
+                    started_at = '', completed_at = '', updated_at = ?
+                WHERE id = ? AND organization_id = ? AND knowledge_base_id = ?
+                """,
+                (json.dumps(metadata, ensure_ascii=False), now, job_id, principal.organization_id, kb_id),
+            )
+        self.audit(
+            principal,
+            "knowledge_ingestion.retry",
+            "knowledge_ingestion_job",
+            job_id,
+            {"knowledge_base_id": kb_id},
+        )
+        return self.get_ingestion_job(principal, kb_id, job_id)
+
     def cancel_ingestion_job(self, principal: Principal, kb_id: str, job_id: str) -> dict[str, Any]:
+        self._ensure_kb(principal, kb_id, write=True)
         job = self.get_ingestion_job(principal, kb_id, job_id)
         if str(job.get("status")) not in {"pending", "running"}:
             raise ValueError("only pending or running jobs can be cancelled")
