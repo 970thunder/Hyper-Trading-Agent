@@ -22,7 +22,7 @@ interface ProgressBarProps {
  * Visual pattern mirrors AlphaZoo's progress bar
  * (`frontend/src/pages/AlphaZoo.tsx:854-859`):
  *   `bg-muted rounded-full overflow-hidden` track + `bg-primary
- *   transition-all duration-300` fill.
+ *   transition-[width] duration-slow` fill.
  *
  * Accessibility: a native `<progress>` element carries the semantics
  * for assistive technologies; the visual fill div is purely decorative.
@@ -59,7 +59,7 @@ export function ProgressBar({
         )}
       >
         <div
-          className="h-full bg-primary transition-all duration-300"
+          className="h-full bg-primary transition-[width] duration-slow ease-standard"
           style={{ width: `${pct}%` }}
         />
       </div>

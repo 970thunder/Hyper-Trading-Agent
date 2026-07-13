@@ -1,43 +1,33 @@
 import { Suspense, lazy, type ComponentType } from "react";
+import { useTranslation } from "react-i18next";
 import { createBrowserRouter } from "react-router-dom";
+import { AdminShell } from "@/components/admin/AdminShell";
 import { Layout } from "@/components/layout/Layout";
+import { RequireRole } from "@/components/layout/RequireRole";
 
-const Home = lazy(() => import("@/pages/Home").then((m) => ({ default: m.Home })));
-const Agent = lazy(() => import("@/pages/Agent").then((m) => ({ default: m.Agent })));
-const RunDetail = lazy(() =>
-  import("@/pages/RunDetail").then((m) => ({ default: m.RunDetail })),
-);
-const Compare = lazy(() =>
-  import("@/pages/Compare").then((m) => ({ default: m.Compare })),
-);
-const Settings = lazy(() =>
-  import("@/pages/Settings").then((m) => ({ default: m.Settings })),
-);
-const Admin = lazy(() =>
-  import("@/pages/Admin").then((m) => ({ default: m.Admin })),
-);
-const Login = lazy(() =>
-  import("@/pages/Login").then((m) => ({ default: m.Login })),
-);
-const Runtime = lazy(() =>
-  import("@/pages/Runtime").then((m) => ({ default: m.Runtime })),
-);
-const Reports = lazy(() =>
-  import("@/pages/Reports").then((m) => ({ default: m.Reports })),
-);
-const Correlation = lazy(() =>
-  import("@/pages/Correlation").then((m) => ({ default: m.Correlation })),
-);
-const AlphaZoo = lazy(() =>
-  import("@/pages/AlphaZoo").then((m) => ({ default: m.AlphaZoo })),
-);
+const Home = lazy(() => import("@/pages/Home").then((module) => ({ default: module.Home })));
+const Agent = lazy(() => import("@/pages/Agent").then((module) => ({ default: module.Agent })));
+const RunDetail = lazy(() => import("@/pages/RunDetail").then((module) => ({ default: module.RunDetail })));
+const Compare = lazy(() => import("@/pages/Compare").then((module) => ({ default: module.Compare })));
+const Settings = lazy(() => import("@/pages/Settings").then((module) => ({ default: module.Settings })));
+const Admin = lazy(() => import("@/pages/Admin").then((module) => ({ default: module.Admin })));
+const AdminUsers = lazy(() => import("@/pages/admin/Users").then((module) => ({ default: module.Users })));
+const AdminModels = lazy(() => import("@/pages/admin/Models").then((module) => ({ default: module.Models })));
+const AdminAgents = lazy(() => import("@/pages/admin/Agents").then((module) => ({ default: module.Agents })));
+const AdminKnowledge = lazy(() => import("@/pages/admin/KnowledgeGovernance").then((module) => ({ default: module.KnowledgeGovernance })));
+const AdminRuntime = lazy(() => import("@/pages/admin/RuntimeGovernance").then((module) => ({ default: module.RuntimeGovernance })));
+const AdminAudit = lazy(() => import("@/pages/admin/Audit").then((module) => ({ default: module.Audit })));
+const AdminUsage = lazy(() => import("@/pages/admin/Usage").then((module) => ({ default: module.Usage })));
+const Knowledge = lazy(() => import("@/pages/Knowledge").then((module) => ({ default: module.Knowledge })));
+const Login = lazy(() => import("@/pages/Login").then((module) => ({ default: module.Login })));
+const Runtime = lazy(() => import("@/pages/Runtime").then((module) => ({ default: module.Runtime })));
+const Reports = lazy(() => import("@/pages/Reports").then((module) => ({ default: module.Reports })));
+const Correlation = lazy(() => import("@/pages/Correlation").then((module) => ({ default: module.Correlation })));
+const AlphaZoo = lazy(() => import("@/pages/AlphaZoo").then((module) => ({ default: module.AlphaZoo })));
 
 function PageLoader() {
-  return (
-    <div className="flex h-[60vh] items-center justify-center text-muted-foreground">
-      Loading…
-    </div>
-  );
+  const { t } = useTranslation();
+  return <div className="flex h-[60vh] items-center justify-center text-ink-muted">{t("settings.loading")}</div>;
 }
 
 function wrap(Component: ComponentType) {
@@ -48,24 +38,42 @@ function wrap(Component: ComponentType) {
   );
 }
 
+function requireRole(Component: ComponentType, roles?: Array<"owner" | "admin" | "member" | "viewer">) {
+  return <RequireRole roles={roles}>{wrap(Component)}</RequireRole>;
+}
+
 export const router = createBrowserRouter([
   {
     element: <Layout />,
     children: [
       { path: "/", element: wrap(Home) },
-      { path: "/agent", element: wrap(Agent) },
       { path: "/login", element: wrap(Login) },
-      { path: "/runtime", element: wrap(Runtime) },
-      { path: "/reports", element: wrap(Reports) },
-      { path: "/admin", element: wrap(Admin) },
-      { path: "/settings", element: wrap(Settings) },
-      { path: "/runs/:runId", element: wrap(RunDetail) },
-      { path: "/compare", element: wrap(Compare) },
-      { path: "/correlation", element: wrap(Correlation) },
-      { path: "/alpha-zoo", element: wrap(AlphaZoo) },
-      { path: "/alpha-zoo/bench", element: wrap(AlphaZoo) },
-      { path: "/alpha-zoo/compare", element: wrap(AlphaZoo) },
-      { path: "/alpha-zoo/:alphaId", element: wrap(AlphaZoo) },
+      { path: "/agent", element: requireRole(Agent) },
+      { path: "/runtime", element: requireRole(Runtime, ["owner", "admin"]) },
+      { path: "/reports", element: requireRole(Reports) },
+      { path: "/knowledge", element: requireRole(Knowledge, ["owner", "admin", "member", "viewer"]) },
+      {
+        path: "/admin",
+        element: requireRole(AdminShell, ["owner", "admin"]),
+        children: [
+          { index: true, element: wrap(Admin) },
+          { path: "users", element: wrap(AdminUsers) },
+          { path: "models", element: wrap(AdminModels) },
+          { path: "agents", element: wrap(AdminAgents) },
+          { path: "knowledge", element: wrap(AdminKnowledge) },
+          { path: "runtime", element: wrap(AdminRuntime) },
+          { path: "audit", element: wrap(AdminAudit) },
+          { path: "usage", element: wrap(AdminUsage) },
+        ],
+      },
+      { path: "/settings", element: requireRole(Settings) },
+      { path: "/runs/:runId", element: requireRole(RunDetail) },
+      { path: "/compare", element: requireRole(Compare) },
+      { path: "/correlation", element: requireRole(Correlation) },
+      { path: "/alpha-zoo", element: requireRole(AlphaZoo) },
+      { path: "/alpha-zoo/bench", element: requireRole(AlphaZoo) },
+      { path: "/alpha-zoo/compare", element: requireRole(AlphaZoo) },
+      { path: "/alpha-zoo/:alphaId", element: requireRole(AlphaZoo) },
     ],
   },
 ]);

@@ -188,7 +188,7 @@ export function WelcomeScreen({ onExample }: Props) {
     <div className="flex min-h-[58vh] flex-col items-center justify-center space-y-6 text-center">
       {/* Header */}
       <div className="space-y-3">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/45 hover:bg-primary/15">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-base ease-standard hover:-translate-y-0.5 hover:border-primary/45 hover:bg-primary/15">
           <Bot className="h-7 w-7" />
         </div>
         <div>
@@ -227,7 +227,7 @@ export function WelcomeScreen({ onExample }: Props) {
                 type="button"
                 onClick={() => setActiveCategory(cat.labelKey)}
                 className={[
-                  "inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-all duration-200 active:translate-y-px",
+                  "inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-[color,background-color,box-shadow,transform] duration-fast ease-standard active:translate-y-px",
                   selected ? "bg-background text-primary shadow-sm ring-1 ring-border/50" : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
                 ].join(" ")}
               >
@@ -242,7 +242,7 @@ export function WelcomeScreen({ onExample }: Props) {
             <button
               key={ex.titleKey}
               onClick={() => onExample(t(ex.promptKey as any))}
-              className={`group block w-full rounded-lg border bg-card/90 px-4 py-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-card hover:shadow-md active:translate-y-px ${activeTone}`}
+              className={`group block w-full rounded-lg border bg-card/90 px-4 py-3 text-left shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-base ease-standard hover:-translate-y-0.5 hover:bg-card hover:shadow-md active:translate-y-px ${activeTone}`}
             >
               <span className="text-sm font-semibold leading-snug text-foreground transition-colors group-hover:text-primary">
                 {t(ex.titleKey as any)}

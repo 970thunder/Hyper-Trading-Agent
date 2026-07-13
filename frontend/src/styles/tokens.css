@@ -1,0 +1,160 @@
+:root {
+  color-scheme: light;
+
+  /* Supplied light palette. Keep these values exact. */
+  --primary-100: #de283b;
+  --primary-200: #ff6366;
+  --primary-300: #ffccc4;
+  --accent-100: #25b1bf;
+  --accent-200: #005461;
+  --text-100: #1a1a1a;
+  --text-200: #404040;
+  --bg-100: #ffffff;
+  --bg-200: #f5f5f5;
+  --bg-300: #cccccc;
+
+  /* Semantic surfaces and content. Values are HSL channels for alpha use. */
+  --canvas: 0 0% 100%;
+  --surface-1: 0 0% 100%;
+  --surface-2: 0 0% 96%;
+  --surface-3: 0 0% 92%;
+  --surface-elevated: 0 0% 100%;
+  --overlay: 0 0% 10%;
+  --text-strong: 0 0% 10%;
+  --text-default: 0 0% 25%;
+  --text-muted: 0 0% 42%;
+  --text-disabled: 0 0% 60%;
+  --border-subtle: 0 0% 90%;
+  --border-default: 0 0% 80%;
+  --border-strong: 0 0% 68%;
+  --interactive-primary: 354 73% 51%;
+  --interactive-primary-hover: 354 79% 45%;
+  --interactive-accent: 186 68% 45%;
+  --focus-ring: 354 73% 51%;
+
+  /* Compatibility mappings used by existing Tailwind classes. */
+  --background: var(--canvas);
+  --foreground: var(--text-strong);
+  --card: var(--surface-1);
+  --card-foreground: var(--text-strong);
+  --popover: var(--surface-elevated);
+  --popover-foreground: var(--text-strong);
+  --primary: var(--interactive-primary);
+  --primary-foreground: 0 0% 100%;
+  --accent: var(--interactive-accent);
+  --accent-foreground: 187 100% 19%;
+  --muted: var(--surface-2);
+  --muted-foreground: var(--text-muted);
+  --border: var(--border-default);
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+
+  /* State colors remain semantic and are not used as decoration. */
+  --success: 145 63% 36%;
+  --danger: 0 72% 51%;
+  --warning: 38 88% 42%;
+  --info: 186 68% 40%;
+
+  /* Geometry and density. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --radius-compact: 0.25rem;
+  --radius-control: 0.375rem;
+  --radius-panel: 0.5rem;
+  --radius: var(--radius-panel);
+  --control-height-sm: 2rem;
+  --control-height: 2.25rem;
+  --control-height-lg: 2.75rem;
+  --sidebar-width: 16rem;
+  --sidebar-width-collapsed: 3.25rem;
+  --page-gutter: 1.5rem;
+  --content-max: 90rem;
+
+  /* Elevation. */
+  --shadow-xs: 0 1px 2px rgb(26 26 26 / 0.05);
+  --shadow-sm: 0 1px 2px rgb(26 26 26 / 0.05), 0 4px 12px rgb(26 26 26 / 0.06);
+  --shadow-md: 0 2px 5px rgb(26 26 26 / 0.06), 0 10px 28px rgb(26 26 26 / 0.09);
+  --shadow-lg: 0 4px 12px rgb(26 26 26 / 0.08), 0 20px 48px rgb(26 26 26 / 0.13);
+  --shadow-overlay: 0 8px 24px rgb(26 26 26 / 0.12), 0 32px 72px rgb(26 26 26 / 0.16);
+
+  /* Layer contract. */
+  --layer-base: 0;
+  --layer-sticky: 10;
+  --layer-navigation: 20;
+  --layer-menu: 40;
+  --layer-drawer: 50;
+  --layer-dialog: 60;
+  --layer-toast: 70;
+
+  /* Typography. */
+  --font-ui: "Geist", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-data: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+
+  /* Chart palette. */
+  --chart-grid: 0 0% 88%;
+  --chart-text: var(--text-default);
+  --chart-axis: 0 0% 75%;
+  --chart-compare-a: #25b1bf;
+  --chart-compare-b: #de283b;
+}
+
+.dark {
+  color-scheme: dark;
+
+  /* Supplied dark palette. Keep these values exact. */
+  --primary-100: #FF6600;
+  --primary-200: #ff983f;
+  --primary-300: #ffffa1;
+  --accent-100: #F5F5F5;
+  --accent-200: #929292;
+  --text-100: #FFFFFF;
+  --text-200: #e0e0e0;
+  --bg-100: #1D1F21;
+  --bg-200: #2c2e30;
+  --bg-300: #444648;
+
+  --canvas: 210 6% 12%;
+  --surface-1: 210 4% 18%;
+  --surface-2: 210 4% 21%;
+  --surface-3: 210 3% 27%;
+  --surface-elevated: 210 4% 20%;
+  --overlay: 0 0% 0%;
+  --text-strong: 0 0% 100%;
+  --text-default: 0 0% 88%;
+  --text-muted: 0 0% 68%;
+  --text-disabled: 0 0% 48%;
+  --border-subtle: 210 3% 24%;
+  --border-default: 210 3% 27%;
+  --border-strong: 210 3% 38%;
+  --interactive-primary: 24 100% 50%;
+  --interactive-primary-hover: 28 100% 62%;
+  --interactive-accent: 0 0% 96%;
+  --focus-ring: 24 100% 50%;
+
+  --primary-foreground: 0 0% 100%;
+  --accent-foreground: 0 0% 18%;
+  --destructive: 0 67% 54%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 145 59% 48%;
+  --danger: 0 67% 54%;
+  --warning: 38 92% 55%;
+  --info: 186 56% 56%;
+
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.22), inset 0 1px rgb(255 255 255 / 0.025);
+  --shadow-sm: 0 3px 12px rgb(0 0 0 / 0.28), inset 0 1px rgb(255 255 255 / 0.03);
+  --shadow-md: 0 10px 30px rgb(0 0 0 / 0.36), inset 0 1px rgb(255 255 255 / 0.035);
+  --shadow-lg: 0 20px 52px rgb(0 0 0 / 0.44), inset 0 1px rgb(255 255 255 / 0.04);
+  --shadow-overlay: 0 30px 80px rgb(0 0 0 / 0.56), inset 0 1px rgb(255 255 255 / 0.045);
+
+  --chart-grid: 210 3% 27%;
+  --chart-text: var(--text-default);
+  --chart-axis: 210 3% 38%;
+  --chart-compare-a: #ff983f;
+  --chart-compare-b: #25b1bf;
+}

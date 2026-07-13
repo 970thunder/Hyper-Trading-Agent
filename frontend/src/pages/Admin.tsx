@@ -182,9 +182,9 @@ export function Admin() {
                   <HealthCard label={t("admin.disabledModels")} value={String(analytics.disabledProviders)} tone={analytics.disabledProviders > 0 ? "warning" : "success"} />
                 </div>
                 <div className="mt-4 grid gap-2 md:grid-cols-3">
-                  <AdminLink to="/settings?section=models" label={t("admin.manageModels")} />
-                  <AdminLink to="/settings?section=knowledge" label={t("admin.manageKnowledge")} />
-                  <AdminLink to="/settings?section=audit" label={t("admin.viewAudit")} />
+                  <AdminLink to="/admin/models" label={t("admin.manageModels")} />
+                  <AdminLink to="/knowledge" label={t("admin.manageKnowledge")} />
+                  <AdminLink to="/admin/audit" label={t("admin.viewAudit")} />
                 </div>
               </div>
 
@@ -395,7 +395,7 @@ function buildGovernanceRecords(snapshot: AdminSnapshot, t: TFunction): Governan
     subtitle: member.display_name || member.user_id,
     detail: formatDate(member.created_at),
     status: member.role,
-    href: "/settings?section=security",
+    href: "/admin/users",
     actionLabel: t("admin.reviewMember"),
   }));
 
@@ -406,7 +406,7 @@ function buildGovernanceRecords(snapshot: AdminSnapshot, t: TFunction): Governan
     subtitle: provider.provider,
     detail: provider.base_url,
     status: provider.is_default ? "default" : provider.enabled ? "enabled" : "disabled",
-    href: "/settings?section=models",
+    href: "/admin/models",
     actionLabel: t("admin.reviewModel"),
   }));
 
@@ -417,7 +417,7 @@ function buildGovernanceRecords(snapshot: AdminSnapshot, t: TFunction): Governan
     subtitle: knowledgeBase.description || knowledgeBase.id,
     detail: formatDate(knowledgeBase.updated_at || knowledgeBase.created_at),
     status: "active",
-    href: "/settings?section=knowledge",
+    href: "/knowledge",
     actionLabel: t("admin.reviewKnowledge"),
   }));
 
@@ -428,7 +428,7 @@ function buildGovernanceRecords(snapshot: AdminSnapshot, t: TFunction): Governan
     subtitle: job.kind,
     detail: job.error || `${Math.round(Number(job.progress || 0))}%`,
     status: String(job.status),
-    href: "/runtime",
+    href: "/admin/runtime",
     actionLabel: t("admin.openRuntime"),
   }));
 
@@ -439,7 +439,7 @@ function buildGovernanceRecords(snapshot: AdminSnapshot, t: TFunction): Governan
     subtitle: `${row.target_type || "-"} / ${row.target_id || "-"}`,
     detail: row.user_id || formatDate(row.created_at),
     status: "audit",
-    href: "/settings?section=audit",
+    href: "/admin/audit",
     actionLabel: t("admin.openAudit"),
   }));
 
@@ -450,7 +450,7 @@ function buildGovernanceRecords(snapshot: AdminSnapshot, t: TFunction): Governan
     subtitle: row.provider,
     detail: `${row.total_tokens || 0} tokens / ${row.latency_ms || 0}ms`,
     status: "active",
-    href: "/settings?section=audit",
+    href: "/admin/usage",
     actionLabel: t("admin.openUsage"),
   }));
 

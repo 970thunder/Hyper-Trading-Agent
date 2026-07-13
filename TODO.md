@@ -1,97 +1,96 @@
 # Hyper Trading Agent TODO
 
-## P0 当前必须完成
-- [x] 主题 token 重构
-- [x] 设置页导航化重构
-- [x] 中英文 i18n 完整性约束
-- [x] Agent 专业提示词重写
-- [x] emoji 后处理清洗
-- [x] RAG 引用输出规范
-- [x] 商业登录态可管理模型与数据源设置
-- [x] IM 通道配置说明与控制面增强
-- [x] 审计与用量面板从占位改为真实数据视图
-- [x] 组织级多模型配置 CRUD
-- [x] Agent 对话页模型切换入口
-- [x] Agent 欢迎页示例标签页化
-- [x] Agent 对话页专业化 composer
-- [x] 前端可见品牌统一为 Hyper Trading Agent
-- [x] Swarm 多 Agent 创建、更新、删除与参数编辑
-- [x] Swarm Agent 绑定组织模型配置并透传到运行时
-- [x] UI / Interaction Beautification 第一轮：主题色、圆角、Agent 工作台、设置卡片、图表色板、AlphaZoo 顶部卡片统一
+## P0 UI System Redesign
 
-## P0 UI / Interaction Beautification
-- [x] 主题 token 与 Tailwind accent 映射补齐
-- [x] 欢迎页移除蓝青渐变与旧色示例卡
-- [x] Agent 头像改为 Hyper Trading token 化样式
-- [x] Agent composer 改为更紧凑的专业工具栏
-- [x] 模型与连接器菜单保持悬浮，不撑开底部栏
-- [x] 工具调用与执行 trace 使用语义 token 状态色
-- [x] 会话标题生成规则修正，并对过长标题使用省略号
-- [x] 设置页模型 provider 卡片和状态徽标视觉统一
-- [x] 首页改为工作台入口，不再是营销式居中 hero
-- [x] K 线、验证面板、对比图 fallback 色板迁移到红/青/中性灰体系
-- [x] AlphaZoo 因子库卡片移除渐变并统一选中态
-- [x] 报告、运行时、RunDetail 警告态改用 warning token
-- [x] 新增 UI 审计文档与验收截图清单
-- [x] Settings 全部 section 进一步拆分为复用组件，降低单文件复杂度：已抽取安全、组织成员、审计与用量、运行时任务、模型配置、Agent 策略与工具治理、Swarm Agent、知识库主面板与文档表/检索结果/ingestion job、概览、本地模型兼容设置、数据源和 IM 通道组件
-- [x] AlphaZoo 详情、bench、compare 全量表格和筛选区二次美化：详情页新增研究摘要卡，bench 结果升级为类别可筛选排名表，compare 结果增加领先者/落后项筛选控制
-- [x] Reports / Runtime 增加更完整的数据图表和任务操作态：Reports 已补摘要指标、状态分布和收益区间图；Runtime 已补 Alpha bench / compare 后台任务队列、进度、失败、取消与重试操作态
-- [x] Runtime 持久化任务视图二期：统一运维视图支持 Agent run、RAG ingestion、网页抓取与长回测来源归一、来源/状态筛选、摘要卡与重试/取消动作；后端已将商业 RAG ingestion job 聚合进 `/runtime/jobs`
-- [x] Runtime 本地 durable job adapter：新增 SQLite 持久化任务表，统一 `agent/rag/web/backtest/other` 来源、状态、进度、metadata、取消与重试生命周期
-- [x] Alpha 长回测任务接入 durable job adapter：bench / compare 创建、运行、进度、完成、失败、取消与重试状态同步到 `/runtime/jobs`，并避免内存任务和持久化任务重复展示
-- [x] Runtime Redis/Postgres worker 契约第一步：新增后端选择、Redis 队列 payload、生产环境变量与 worker 单步消费/状态回写能力
-- [x] 网页抓取 / URL 知识库入库接入 Runtime worker：生产 Redis/Postgres backend 下 `/knowledge-bases/{id}/urls` 返回 pending ingestion job，由 worker 消费 `knowledge_url_ingest` 完成抓取、解析、向量化与状态回写
-- [x] Alpha 长回测接入 Runtime worker：生产 Redis/Postgres backend 下 `/alpha/bench` 与 `/alpha/compare` 投递 worker 队列，由 worker 执行 bench / compare 并回写 durable runtime 状态
-- [x] Runtime Redis/Postgres durable worker adapter：将 Agent run 从进程内/分散存储迁移到统一 Redis/Postgres durable job 后端，并接入真实 worker 执行与恢复
-- [x] 移动端 Agent composer 与设置页截图验收：新增 Playwright CLI 截图脚本，覆盖移动视口 Agent 与 Settings 模型/知识库页面
-- [x] 核心页面 Playwright light/dark 截图回归：新增截图回归脚本与验收文档，覆盖核心页面、浅色/深色主题、桌面/移动视口
+Design specification: `docs/superpowers/specs/2026-07-13-ui-system-redesign-design.md`
 
-## P1 Agent 核心能力
-- [x] Plan-Execute 执行模式
-- [x] HITL 审批节点
-- [x] 中断、恢复、取消
-- [x] 工具权限与风险等级
-- [x] 工具调用审计
-- [x] 高风险交易能力默认关闭并要求确认
-- [x] Agent 工作区状态快照与恢复
+Implementation plan: `docs/superpowers/plans/2026-07-13-ui-system-redesign.md`
 
-## P2 RAG 与记忆
-- [x] pgvector runtime adapter：运行时选择、fallback 原因、bootstrap SQL 与维度配置
-- [x] hybrid retrieval
-- [x] ingestion job
-- [x] citation UI
-- [x] persistent memory 策略：敏感内容拦截、召回类型过滤、自动召回开关
-- [x] 会话历史检索
-- [x] 文件上传导入入口
-- [x] URL 抓取入库入口
-- [x] PDF / Word / Excel / Markdown / TXT / HTML / CSV 解析入口
-- [x] 本地 embedding fallback 向量化
-- [x] OpenAI-compatible embedding provider 优先向量化
-- [x] 知识库向量化状态与 fallback 原因可观测
-- [x] 文档重建索引、失败重试、删除后清理 chunk
-- [x] 知识库 ACL 与跨组织隔离测试：搜索、文档、job、重建、删除均拒绝跨组织访问
+- [x] Audit desktop/mobile layouts in light and dark themes.
+- [x] Define semantic light/dark theme, shadow, motion, interaction, and responsive tokens.
+- [x] Add shared Button, Field, Panel, Status, Progress, and async-state components.
+- [x] Add shared FloatingLayer, Select, Tabs, Dialog, Drawer, and presence transitions.
+- [x] Replace the fixed mobile sidebar with a responsive application shell.
+- [x] Move model, execution-mode, connector, and action menus to outside-click/Escape-aware floating layers.
+- [x] Remove production `transition-all` usage and constrain transitions to intentional properties.
+- [x] Productize Knowledge / RAG as a standalone list-detail workspace.
+- [x] Split enterprise administration into dedicated management routes.
+- [x] Refocus Settings on overview, personal API access, data sources, and IM channels.
+- [x] Move model and Swarm Agent create/edit workflows into animated drawers with stable list layouts.
+- [ ] Complete the second visual pass for Runtime, Reports, Run Detail, AlphaZoo, Compare, and Correlation.
+- [ ] Replace remaining native selects on Runtime, Reports, Run Detail, Compare, and AlphaZoo.
+- [ ] Complete desktop/mobile light/dark screenshot regression and Arabic RTL verification.
 
-## P3 输出与展示
-- [x] 结构化投研报告模板：中英文 Markdown 模板、关键指标、引用、风险提示与免责声明
-- [x] 回测结果压缩展示：关键指标、风险标记、验证状态、净值/交易样本压缩摘要
-- [x] 流式输出状态分层：执行 trace 增加规划、工具、输出三层活跃状态与数量提示
-- [x] 工具编排可视化：执行 trace 增加多工具调用顺序图，展示节点状态与调用顺序
-- [x] 用户反馈闭环：反馈事件存储/API/审计/metrics 与 Agent 回答点赞点踩入口
-- [x] 欢迎页示例分类标签页
-- [x] 关键控件 hover / active / transition 状态
-- [x] 引用来源可展开查看原文片段：Agent 回答挂载 knowledge_search 片段，消息卡片可展开查看来源、相似度与原文
-- [x] 长回答自动摘要并保留详细运行记录：最终答案压缩展示，完整原文写入 run artifact，trace 记录压缩元数据
+## P0 Permissions And Enterprise Boundaries
 
-## P4 商业化治理
-- [x] RBAC 完整接入：已补组织成员列表、创建、角色更新、移除 API、设置页成员管理 UI、Owner/Viewer 越权测试，以及模型、知识库、工具策略、审计、用量的角色访问矩阵验收
-- [x] 成本统计视图
-- [x] 安全审计视图
-- [x] Agent LLM 用量写入商业用量表
-- [x] 模型用量关联 session / attempt / run
-- [x] 模型用量关联组织模型 provider
-- [x] Prometheus 指标
-- [x] 管理后台 MVP：新增 Admin Console，聚合组织成员、模型库存、知识库、运行时任务、审计事件和模型用量摘要，并提供治理快捷入口
-- [x] 管理后台二期：在 Admin Console 内补齐成员、模型、知识库、任务、审计和用量的统一筛选台账、批量复核入口与细粒度运维直达动作
-- [x] 交叉测试与评测集：新增商业 Agent 交叉评测 JSON，覆盖 RAG、回测、RBAC、HITL、多模型、审计与输出质量，并用测试校验结构和覆盖面
-- [x] API key 轮换与密钥加密迁移说明：新增密钥轮换、模型 provider key 迁移、加密迁移与泄露响应 runbook
-- [x] 私有化部署备份与恢复演练：新增 PostgreSQL、文件/对象存储、Docker Compose 恢复演练与验收 runbook
+- [x] Require an authenticated commercial session for generic workspace APIs, including sessions and settings.
+- [x] Preserve loopback-only compatibility when commercial mode is disabled.
+- [x] Protect `/admin/*` with Owner/Admin frontend route guards.
+- [x] Protect Agent, Reports, Settings, Knowledge, research, and run-detail routes with a commercial/local-aware workspace guard.
+- [x] Restrict global Runtime governance and Swarm Agent mutation APIs to Owner/Admin.
+- [x] Hide Runtime governance navigation from Member/Viewer roles.
+- [x] Hide or disable Knowledge and member-management actions by role.
+- [x] Add frontend and backend role-matrix regression tests.
+- [x] Audit Swarm Agent create/update/delete actions.
+- [ ] Bind sessions, runs, reports, uploads, and generated artifacts to `organization_id`.
+- [ ] Add repository-level cross-organization isolation tests for sessions, runs, reports, and artifacts.
+- [ ] Add an organization switcher for users with multiple memberships.
+- [ ] Add dedicated localized Unauthorized and Forbidden routes.
+
+## P1 Knowledge / RAG Productization
+
+- [x] Add standalone knowledge-base list/detail navigation.
+- [x] Support PDF, Word, Excel, Markdown, TXT, HTML, CSV, and URL ingestion entry points.
+- [x] Queue file and URL parsing through the Redis worker in production mode.
+- [x] Keep one ingestion job through queued, parsing/fetching, chunking, embedding, indexing, completed, failed, and cancelled stages.
+- [x] Show vectorization progress, chunk count, parser, embedding source/dimensions, fallback reason, and failure reason.
+- [x] Add document detail drawer with chunk text, metadata, embedding status, and ingestion history.
+- [x] Add knowledge-base defaults for chunk size, overlap, retrieval mode, and top-k.
+- [x] Make `hybrid`, `vector`, and `keyword` retrieval modes affect the actual search path.
+- [x] Use knowledge-base top-k when a request does not provide an explicit limit.
+- [x] Support retry before a failed URL/file job has created a document.
+- [x] Support reindex, cancel, document deletion, and chunk/FTS/job cleanup.
+- [x] Add per-knowledge-base read/write role ACL controls.
+- [x] Add search evaluation with stable source citations and scores.
+- [ ] Implement pgvector runtime write/search methods; the current production data path still stores chunks and embeddings in SQLite.
+- [ ] Migrate knowledge metadata, documents, jobs, chunks, and retrieval logs to PostgreSQL repositories.
+- [ ] Add configurable reranking and RAG evaluation datasets.
+- [ ] Add object-storage lifecycle for original documents.
+
+## P2 Model, Agent, Audit, And Usage Governance
+
+- [x] Add standalone organization model management with create, update, test, enable, default, and delete actions.
+- [x] Use provider/model dropdowns instead of handwritten model identifiers where presets are available.
+- [x] Default SiliconFlow fallback to `deepseek-ai/DeepSeek-V3.2`.
+- [x] Add standalone Swarm Agent management with localized preset/role names and per-Agent model configuration.
+- [x] Add model and Agent deletion confirmation without shifting list-row controls.
+- [x] Add standalone users, knowledge governance, runtime, audit, and usage routes.
+- [x] Remove organization model, Agent, Knowledge, Runtime, Audit, and Usage API loading from Settings.
+- [ ] Add complete audit links for Runtime retry/cancel and every remaining management action.
+- [ ] Add provider price tables, organization budgets, soft/hard quotas, and alerting.
+- [ ] Add time-series usage and latency charts backed by aggregated usage endpoints.
+- [ ] Add secret-manager integration and key rotation workflows.
+
+## P3 Agent Execution And Output
+
+- [x] ReAct and Plan-Execute execution modes.
+- [x] HITL approval lifecycle.
+- [x] Pause, resume, cancel, and execution snapshots.
+- [x] Tool audit and risk levels.
+- [x] Separate step trace rows for tools, RAG, skills, and multi-Agent actions.
+- [x] Professional output policy, emoji filtering, citation checks, and investment risk disclosure.
+- [ ] Add richer step cards with retry count, artifacts, approval links, and persisted refresh recovery for every attempt.
+- [ ] Add structured quantitative research report templates and downloadable result bundles.
+- [ ] Add persistent memory controls, history retrieval, and memory deletion/retention UI.
+- [ ] Add user feedback analytics and cross-evaluation datasets.
+
+## P4 Deployment And Operations
+
+- [x] Docker Compose stack for API, worker, frontend, PostgreSQL/pgvector, and Redis.
+- [x] Redis durable worker queue for Agent and RAG jobs.
+- [x] Health endpoint and commercial metrics.
+- [ ] Make PostgreSQL the primary commercial repository instead of an initialized but partially unused service.
+- [ ] Add Alembic migration execution and rollback documentation.
+- [ ] Add backup/restore drills for PostgreSQL, uploads/object storage, and encrypted secrets.
+- [ ] Add Prometheus/Grafana dashboard examples for jobs, model calls, RAG, audit, and failures.
+- [ ] Add production SSO, TLS reverse-proxy, rate limiting, and deployment hardening checks.

@@ -29,7 +29,7 @@ export function KnowledgeIngestionJobs({
               <div className="mt-1 truncate text-xs text-muted-foreground" title={job.error || job.updated_at}>{job.error || job.updated_at}</div>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-muted">
-              <div className="h-full bg-primary transition-all" style={{ width: `${Math.max(0, Math.min(100, Number(job.progress || 0)))}%` }} />
+              <div className="h-full bg-primary transition-[width] duration-slow ease-standard" style={{ width: `${Math.max(0, Math.min(100, Number(job.progress || 0)))}%` }} />
             </div>
             <div className="text-xs text-muted-foreground">{job.status} · {Number(job.progress || 0)}%</div>
             <div className="flex justify-end gap-2">

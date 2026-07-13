@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState, useMemo, useCallback, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Send, Loader2, ArrowDown, Square, Download, Plus, Paperclip, X, Users, Target, ChevronDown, Pencil, Check, Play, OctagonX, Activity, Ban, CheckCircle2, Landmark, Cpu, Workflow } from "lucide-react";
+import { Send, Loader2, ArrowDown, Square, Download, Plus, Paperclip, X, Users, Target, ChevronDown, Pencil, Check, Play, OctagonX, Activity, Ban, CheckCircle2, Landmark } from "lucide-react";
 import { toast } from "sonner";
 import { useAgentStore } from "@/stores/agent";
 import { useSSE } from "@/hooks/useSSE";
@@ -18,6 +18,8 @@ import { AgentExecutionTrace } from "@/components/chat/AgentExecutionTrace";
 import { MandateProposalCard } from "@/components/chat/MandateProposalCard";
 import { RunnerStatus } from "@/components/chat/RunnerStatus";
 import { SwarmStatusCard } from "@/components/chat/SwarmStatusCard";
+import { AgentContextControls } from "@/pages/agent/AgentContextControls";
+import { FloatingLayer } from "@/components/ui/FloatingLayer";
 import {
   applySwarmEvent,
   buildSwarmStatusFromStarted,
@@ -285,7 +287,6 @@ export function Agent() {
   const [attachment, setAttachment] = useState<{ filename: string; filePath: string } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showUploadMenu, setShowUploadMenu] = useState(false);
-  const uploadMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [swarmPreset, setSwarmPreset] = useState<{ name: string; title: string } | null>(null);
   const [goalComposerActive, setGoalComposerActive] = useState(false);
@@ -330,7 +331,6 @@ export function Agent() {
   const setSelectedModelProviderId = useAgentStore(s => s.setSelectedModelProviderId);
   const [modelProviders, setModelProviders] = useState<CommercialModelProvider[]>([]);
   const [modelProviderOrgId, setModelProviderOrgId] = useState<string | null>(null);
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
 
   const { connect, disconnect, onStatusChange } = useSSE();
 
@@ -1078,6 +1078,15 @@ export function Agent() {
     [enabledModelProviders, selectedModelProviderId],
   );
   const selectedModelProviderIdForRequest = selectedModelProvider?.id;
+  const executionModeOptions = useMemo(
+    () => [
+      { value: "auto" as ExecutionMode, label: t("executionTrace.modeAuto") },
+      { value: "react" as ExecutionMode, label: t("executionTrace.modeReact") },
+      { value: "plan_execute" as ExecutionMode, label: t("executionTrace.modePlan") },
+    ],
+    [t],
+  );
+  const controlsLocked = status === "streaming" || attemptStatus === "waiting_approval";
 
   const runPrompt = async (prompt: string) => {
     if (!prompt.trim() || status === "streaming") return;
@@ -1398,18 +1407,6 @@ export function Agent() {
     }
   }, []);
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (uploadMenuRef.current && !uploadMenuRef.current.contains(e.target as Node)) {
-        setShowUploadMenu(false);
-      }
-    };
-    if (showUploadMenu) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [showUploadMenu]);
-
   const groups = useMemo(() => groupMessages(messages), [messages]);
   const goalProgress = useMemo(() => getGoalProgress(goalSnapshot), [goalSnapshot]);
 
@@ -1575,73 +1572,15 @@ export function Agent() {
       <form onSubmit={handleSubmit} className="border-t bg-background/90 px-4 py-2.5 backdrop-blur-sm">
         <div className="mx-auto max-w-5xl space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <label className="inline-flex items-center gap-2 rounded-md border bg-card/90 px-2.5 py-1 text-xs text-muted-foreground shadow-sm transition-colors hover:border-primary/40">
-              <Workflow className="h-3.5 w-3.5 text-accent" />
-              <span className="sr-only">{t("executionTrace.mode")}</span>
-              <select
-                value={executionMode}
-                onChange={(event) => setExecutionMode(event.target.value as ExecutionMode)}
-                disabled={status === "streaming" || attemptStatus === "waiting_approval"}
-                className="cursor-pointer bg-transparent font-medium text-foreground outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                title={t("executionTrace.mode")}
-              >
-                <option value="auto">{t("executionTrace.modeAuto")}</option>
-                <option value="react">{t("executionTrace.modeReact")}</option>
-                <option value="plan_execute">{t("executionTrace.modePlan")}</option>
-              </select>
-            </label>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setModelMenuOpen((open) => !open)}
-                disabled={status === "streaming" || enabledModelProviders.length === 0}
-                className="inline-flex max-w-full items-center gap-2 rounded-md border bg-card/90 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:text-foreground hover:shadow-md disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
-                title={t("agent.modelPicker.title")}
-              >
-                <Cpu className="h-3.5 w-3.5 text-primary" />
-                <span className="shrink-0">{t("agent.modelPicker.label")}</span>
-                {selectedModelProvider && <span className="max-w-[14rem] truncate text-foreground">{selectedModelProvider.model}</span>}
-                <ChevronDown className={["h-3.5 w-3.5 transition-transform", modelMenuOpen ? "rotate-180" : ""].join(" ")} />
-              </button>
-              {modelMenuOpen && enabledModelProviders.length > 0 && (
-                <div className="absolute bottom-full left-0 z-50 mb-2 w-[22rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border bg-popover shadow-xl">
-                  <div className="border-b px-3 py-2">
-                    <div className="text-xs font-semibold text-foreground">{t("agent.modelPicker.title")}</div>
-                  </div>
-                  <div className="max-h-64 overflow-auto p-1">
-                    {enabledModelProviders.map((provider) => {
-                      const active = provider.id === selectedModelProvider?.id;
-                      return (
-                        <button
-                          key={provider.id}
-                          type="button"
-                          onClick={() => {
-                            selectModelProvider(provider.id);
-                            setModelMenuOpen(false);
-                          }}
-                          className={[
-                            "group grid w-full gap-1 rounded-lg px-3 py-2 text-left transition-all duration-200",
-                            active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                          ].join(" ")}
-                        >
-                          <span className="flex items-center justify-between gap-3">
-                            <span className="truncate text-sm font-medium">{provider.model}</span>
-                            {Boolean(provider.is_default) && (
-                              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                                {t("agent.modelPicker.default")}
-                              </span>
-                            )}
-                          </span>
-                          <span className="truncate text-[11px] opacity-80">
-                            {provider.provider} · {provider.base_url}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
+            <AgentContextControls
+              executionMode={executionMode}
+              executionOptions={executionModeOptions}
+              onExecutionModeChange={setExecutionMode}
+              providers={enabledModelProviders}
+              selectedProviderId={selectedModelProvider?.id || null}
+              onProviderChange={selectModelProvider}
+              controlsLocked={controlsLocked}
+            />
             <RunnerStatus
               status={liveStatus}
               unavailable={liveStatusUnavailable}
@@ -1876,79 +1815,91 @@ export function Agent() {
           )}
           <div className="flex gap-2 items-end">
             {/* "+" menu: PDF upload + Swarm presets */}
-            <div className="relative" ref={uploadMenuRef}>
+            <FloatingLayer
+              open={showUploadMenu}
+              onOpenChange={setShowUploadMenu}
+              trigger={(
+                <button
+                  type="button"
+                  disabled={status === "streaming" || uploading}
+                  className="icon-button shrink-0"
+                  aria-label={t("agent.moreOptions")}
+                  title={t("agent.moreOptions")}
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              )}
+              contentLabel={t("agent.moreOptions")}
+              role="menu"
+              side="top"
+              align="start"
+              autoFocus="first"
+              className="w-56"
+            >
               <button
                 type="button"
-                onClick={() => setShowUploadMenu(prev => !prev)}
-                disabled={status === "streaming" || uploading}
-                className="icon-button shrink-0"
-                title={t("agent.moreOptions")}
+                role="menuitem"
+                onClick={() => { fileInputRef.current?.click(); setShowUploadMenu(false); }}
+                className="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-ink transition-colors duration-fast hover:bg-surface-2 hover:text-ink-strong"
               >
-                <Plus className="h-4 w-4" />
+                <Paperclip className="h-4 w-4" />
+                {t("agent.uploadPdf")}
               </button>
-              {showUploadMenu && (
-                <div className="absolute bottom-full left-0 z-50 mb-2 w-56 rounded-lg border bg-popover py-1 shadow-xl">
-                  <button
-                    type="button"
-                    onClick={() => { fileInputRef.current?.click(); setShowUploadMenu(false); }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
-                  >
-                    <Paperclip className="h-4 w-4" />
-                    {t("agent.uploadPdf")}
-                  </button>
-                  <div className="border-t my-1" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowUploadMenu(false);
-                      setSwarmPreset(null);
-                      setGoalComposerActive(true);
-                      inputRef.current?.focus();
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
-                  >
-                    <Target className="h-4 w-4" />
-                    {t("agent.researchGoal")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowUploadMenu(false);
-                      setGoalComposerActive(false);
-                      setSwarmPreset({ name: "auto", title: "Agent Swarm" });
-                      inputRef.current?.focus();
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
-                  >
-                    <Users className="h-4 w-4" />
-                    {t("agent.agentSwarm")}
-                  </button>
-                  <div className="border-t my-1" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowUploadMenu(false);
-                      void runPrompt(CONNECTOR_CHECK_PROMPT);
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
-                  >
-                    <Landmark className="h-4 w-4" />
-                    {t("agent.checkConnector")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowUploadMenu(false);
-                      void runPrompt(CONNECTOR_PORTFOLIO_PROMPT);
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
-                  >
-                    <Landmark className="h-4 w-4" />
-                    {t("agent.analyzePortfolio")}
-                  </button>
-                </div>
-              )}
-            </div>
+              <div className="my-1 border-t border-[hsl(var(--border-subtle))]" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setShowUploadMenu(false);
+                  setSwarmPreset(null);
+                  setGoalComposerActive(true);
+                  inputRef.current?.focus();
+                }}
+                className="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-ink transition-colors duration-fast hover:bg-surface-2 hover:text-ink-strong"
+              >
+                <Target className="h-4 w-4" />
+                {t("agent.researchGoal")}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setShowUploadMenu(false);
+                  setGoalComposerActive(false);
+                  setSwarmPreset({ name: "auto", title: t("agent.agentSwarm") });
+                  inputRef.current?.focus();
+                }}
+                className="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-ink transition-colors duration-fast hover:bg-surface-2 hover:text-ink-strong"
+              >
+                <Users className="h-4 w-4" />
+                {t("agent.agentSwarm")}
+              </button>
+              <div className="my-1 border-t border-[hsl(var(--border-subtle))]" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setShowUploadMenu(false);
+                  void runPrompt(CONNECTOR_CHECK_PROMPT);
+                }}
+                className="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-ink transition-colors duration-fast hover:bg-surface-2 hover:text-ink-strong"
+              >
+                <Landmark className="h-4 w-4" />
+                {t("agent.checkConnector")}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setShowUploadMenu(false);
+                  void runPrompt(CONNECTOR_PORTFOLIO_PROMPT);
+                }}
+                className="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-ink transition-colors duration-fast hover:bg-surface-2 hover:text-ink-strong"
+              >
+                <Landmark className="h-4 w-4" />
+                {t("agent.analyzePortfolio")}
+              </button>
+            </FloatingLayer>
             <input
               ref={fileInputRef}
               type="file"

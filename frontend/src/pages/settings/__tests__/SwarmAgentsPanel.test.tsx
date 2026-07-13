@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { FormEvent } from "react";
 import { SwarmAgentsPanel, type SwarmAgentFormState } from "../SwarmAgentsPanel";
 import type { CommercialModelProvider, SwarmPreset, SwarmPresetAgentList } from "@/lib/api";
@@ -65,7 +65,7 @@ const providers: CommercialModelProvider[] = [
 ];
 
 describe("SwarmAgentsPanel", () => {
-  it("renders swarm agents and exposes edit/new interactions", () => {
+  it("renders swarm agents and exposes edit/new interactions", async () => {
     const onRefresh = vi.fn();
     const onPresetChange = vi.fn();
     const onResetForm = vi.fn();
@@ -75,7 +75,8 @@ describe("SwarmAgentsPanel", () => {
     const onFormChange = vi.fn();
     const onModelChange = vi.fn();
 
-    render(
+    const onFormOpenChange = vi.fn();
+    const { container } = render(
       <SwarmAgentsPanel
         presets={presets}
         selectedPreset="quant_strategy_desk"
@@ -87,6 +88,8 @@ describe("SwarmAgentsPanel", () => {
         commercialModelProviders={providers}
         modelOptions={["deepseek-ai/DeepSeek-V3.2"]}
         selectedModelValue=""
+        formOpen
+        onFormOpenChange={onFormOpenChange}
         onRefresh={onRefresh}
         onPresetChange={onPresetChange}
         onResetForm={onResetForm}
@@ -101,10 +104,16 @@ describe("SwarmAgentsPanel", () => {
     expect(screen.getByText("Swarm Agent Management")).toBeInTheDocument();
     expect(screen.getByText("Stock Screener")).toBeInTheDocument();
     expect(screen.getAllByText(/siliconflow \/ deepseek-ai\/DeepSeek-V3.2/).length).toBeGreaterThan(0);
+    expect(container.querySelector("select")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Model:/i }));
     expect(screen.getByRole("option", { name: /siliconflow \/ deepseek-ai\/DeepSeek-V3.2/ })).toBeInTheDocument();
+    fireEvent.pointerDown(document.body);
+    await waitFor(() => expect(screen.queryByRole("listbox", { name: "Model" })).not.toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: /New agent/i }));
     expect(onResetForm).toHaveBeenCalled();
+    expect(onFormOpenChange).toHaveBeenCalledWith(true);
 
     fireEvent.click(screen.getByRole("button", { name: "Edit screener" }));
     expect(onEditAgent).toHaveBeenCalledWith(agentList.agents[0]);

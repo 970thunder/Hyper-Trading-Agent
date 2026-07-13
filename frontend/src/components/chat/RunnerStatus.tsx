@@ -20,6 +20,7 @@ import {
   type LiveMandateLimits,
   type LiveAuthorizeResponse,
 } from "@/lib/api";
+import { FloatingLayer } from "@/components/ui/FloatingLayer";
 
 interface Props {
   /** Shared `GET /live/status` snapshot, polled once by the parent (Agent.tsx).
@@ -286,41 +287,45 @@ export const RunnerStatus = memo(function RunnerStatus({ status, unavailable, ha
   const authorizedCount = status.brokers.filter((b) => b.auth.oauth_token_present).length;
 
   return (
-    <div className="relative inline-flex">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-primary/20 bg-primary/10 px-2.5 py-1 text-left text-xs font-medium text-primary shadow-sm transition-colors hover:bg-primary/15"
-        aria-label={i18n.t("runnerStatus.connectorRuntime")}
-        aria-expanded={open}
-      >
-        <Activity className="h-3 w-3 shrink-0" />
-        <span className="shrink-0">{i18n.t("runnerStatus.connectorRuntime")}</span>
-        <span className="truncate text-muted-foreground">
-          {authorizedCount > 0 ? i18n.t("runnerStatus.connected", { count: authorizedCount }) : i18n.t("runnerStatus.noConnector")}
-        </span>
-        {anyRunning && !isHalted && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">
-            <CircleDot className="h-2.5 w-2.5" />
-            {i18n.t("runnerStatus.running")}
+    <FloatingLayer
+      open={open}
+      onOpenChange={setOpen}
+      trigger={(
+        <button
+          type="button"
+          className="inline-flex h-9 max-w-full items-center gap-1.5 rounded-md border border-primary/25 bg-primary/10 px-2.5 text-left text-xs font-medium text-primary shadow-xs transition-[color,background-color,border-color,box-shadow] duration-fast ease-standard hover:border-primary/40 hover:bg-primary/15 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
+          aria-label={i18n.t("runnerStatus.connectorRuntime")}
+        >
+          <Activity className="h-3 w-3 shrink-0" />
+          <span className="shrink-0">{i18n.t("runnerStatus.connectorRuntime")}</span>
+          <span className="truncate text-ink-muted">
+            {authorizedCount > 0 ? i18n.t("runnerStatus.connected", { count: authorizedCount }) : i18n.t("runnerStatus.noConnector")}
           </span>
-        )}
-        {isHalted && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-            <OctagonX className="h-2.5 w-2.5" />
-            {i18n.t("runnerStatus.halted")}
-          </span>
-        )}
-        <ChevronDown className={["h-3 w-3 shrink-0 transition-transform", open ? "rotate-180" : ""].join(" ")} aria-hidden="true" />
-      </button>
-
-      {open && (
-        <div className="absolute bottom-full left-0 z-50 mb-2 grid max-h-[55vh] w-[min(46rem,calc(100vw-2rem))] gap-2 overflow-auto rounded-lg border border-primary/20 bg-popover p-3 shadow-xl">
-          {status.brokers.map((broker) => (
-            <BrokerRow key={broker.auth.broker} broker={broker} halted={isHalted || broker.halted} onRefresh={onRefresh} />
-          ))}
-        </div>
+          {anyRunning && !isHalted ? (
+            <span className="status-success">
+              <CircleDot className="h-2.5 w-2.5" />
+              {i18n.t("runnerStatus.running")}
+            </span>
+          ) : null}
+          {isHalted ? (
+            <span className="status-danger">
+              <OctagonX className="h-2.5 w-2.5" />
+              {i18n.t("runnerStatus.halted")}
+            </span>
+          ) : null}
+          <ChevronDown className={["h-3 w-3 shrink-0 transition-transform duration-fast", open ? "rotate-180" : ""].join(" ")} aria-hidden="true" />
+        </button>
       )}
-    </div>
+      contentLabel={i18n.t("runnerStatus.connectorRuntime")}
+      role="dialog"
+      side="top"
+      align="start"
+      autoFocus="first"
+      className="grid max-h-[55vh] w-[min(46rem,calc(100vw-1rem))] gap-2 p-3"
+    >
+      {status.brokers.map((broker) => (
+        <BrokerRow key={broker.auth.broker} broker={broker} halted={isHalted || broker.halted} onRefresh={onRefresh} />
+      ))}
+    </FloatingLayer>
   );
 });

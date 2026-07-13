@@ -71,7 +71,7 @@ function FeedbackButtons({ msg }: { msg: AgentMessage }) {
 
   const buttonClass = (rating: -1 | 1) =>
     [
-      "inline-flex h-7 w-7 items-center justify-center rounded-md border text-muted-foreground transition-all",
+      "inline-flex h-7 w-7 items-center justify-center rounded-md border text-muted-foreground transition-[color,background-color,border-color,box-shadow,transform] duration-fast ease-standard",
       "hover:border-primary/40 hover:bg-primary/10 hover:text-primary active:scale-95",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       selected === rating ? "border-primary/50 bg-primary/10 text-primary" : "border-transparent",
@@ -213,7 +213,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props
           {onRetry && (
             <button
               onClick={() => onRetry(msg)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted/80 border border-transparent hover:border-border transition-all"
+              className="flex items-center gap-1.5 rounded-lg border border-transparent px-3 py-1.5 text-xs text-muted-foreground transition-[color,background-color,border-color] duration-fast ease-standard hover:border-border hover:bg-muted/80 hover:text-foreground"
               title={hint}
             >
               <RefreshCw className="h-3 w-3" />

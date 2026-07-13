@@ -583,7 +583,7 @@ function ChartTab({
                 <span>{bulkProgress.done}/{bulkProgress.total}</span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-muted">
-                <div className="h-full bg-primary transition-all" style={{ width: `${progressPercent}%` }} />
+                <div className="h-full bg-primary transition-[width] duration-slow ease-standard" style={{ width: `${progressPercent}%` }} />
               </div>
             </div>
           )}

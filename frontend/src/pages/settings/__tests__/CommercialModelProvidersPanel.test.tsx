@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { FormEvent } from "react";
 import { CommercialModelProvidersPanel, type ModelProviderFormState } from "../CommercialModelProvidersPanel";
 import type { CommercialModelProvider, LLMProviderOption } from "@/lib/api";
@@ -10,6 +10,13 @@ const providerOptions: LLMProviderOption[] = [
     default_model: "deepseek-ai/DeepSeek-V3.2",
     default_base_url: "https://api.siliconflow.cn/v1",
     model_options: ["deepseek-ai/DeepSeek-V3.2", "Qwen/Qwen3-Coder"],
+  },
+  {
+    name: "openai",
+    label: "OpenAI",
+    default_model: "gpt-5.1",
+    default_base_url: "https://api.openai.com/v1",
+    model_options: ["gpt-5.1"],
   },
 ];
 
@@ -44,7 +51,7 @@ const form: ModelProviderFormState = {
 };
 
 describe("CommercialModelProvidersPanel", () => {
-  it("renders organization model providers and exposes provider actions", () => {
+  it("renders organization model providers and exposes provider actions", async () => {
     const onRefresh = vi.fn();
     const onEditProvider = vi.fn();
     const onTestProvider = vi.fn();
@@ -56,7 +63,8 @@ describe("CommercialModelProvidersPanel", () => {
     const onProviderChange = vi.fn();
     const onSubmit = vi.fn((event: FormEvent<HTMLFormElement>) => event.preventDefault());
 
-    render(
+    const onFormOpenChange = vi.fn();
+    const { container } = render(
       <CommercialModelProvidersPanel
         providers={providers}
         providerOptions={providerOptions}
@@ -64,6 +72,8 @@ describe("CommercialModelProvidersPanel", () => {
         editingProviderId={null}
         saving={false}
         testingProviderId={null}
+        formOpen
+        onFormOpenChange={onFormOpenChange}
         onRefresh={onRefresh}
         onEditProvider={onEditProvider}
         onTestProvider={onTestProvider}
@@ -80,10 +90,20 @@ describe("CommercialModelProvidersPanel", () => {
     expect(screen.getByText("Organization model providers")).toBeInTheDocument();
     expect(screen.getAllByText("deepseek-ai/DeepSeek-V3.2").length).toBeGreaterThan(0);
     expect(screen.getByText("Default")).toBeInTheDocument();
+    expect(container.querySelector("select")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Provider: SiliconFlow/i }));
+    fireEvent.click(screen.getByRole("option", { name: /^OpenAI/ }));
+    expect(onProviderChange).toHaveBeenCalledWith("openai");
+
+    fireEvent.click(screen.getByRole("button", { name: /Model: deepseek-ai\/DeepSeek-V3.2/i }));
     expect(screen.getByRole("option", { name: "Qwen/Qwen3-Coder" })).toBeInTheDocument();
+    fireEvent.pointerDown(document.body);
+    await waitFor(() => expect(screen.queryByRole("listbox", { name: "Model" })).not.toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: "Edit provider-1" }));
     expect(onEditProvider).toHaveBeenCalledWith(providers[0]);
+    expect(onFormOpenChange).toHaveBeenCalledWith(true);
 
     fireEvent.click(screen.getByRole("button", { name: "Test provider-1" }));
     expect(onTestProvider).toHaveBeenCalledWith("provider-1");

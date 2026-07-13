@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { Settings } from "../Settings";
 
@@ -116,38 +116,25 @@ describe("Settings organization member management", () => {
     vi.clearAllMocks();
   });
 
-  it("shows organization members and owner management controls", async () => {
+  it("routes organization member management to the dedicated administration page", async () => {
     renderSettings("owner");
 
-    expect(await screen.findByText("Organization members")).toBeInTheDocument();
-    expect(screen.getByText("viewer@example.com")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add member" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Remove member" })).toBeInTheDocument();
+    expect(await screen.findByText("Organization administration")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open user management" })).toHaveAttribute("href", "/admin/users");
+    expect(screen.queryByRole("button", { name: "Add member" })).not.toBeInTheDocument();
   });
 
-  it("creates a member from the owner form", async () => {
-    apiMock.createOrganizationMember.mockResolvedValue({
-      user_id: "usr_new",
-      email: "new@example.com",
-      display_name: "New Analyst",
-      role: "member",
-      created_at: "2026-07-12T01:00:00Z",
-    });
-
+  it("does not duplicate organization mutation controls inside personal settings", async () => {
     renderSettings("owner");
 
-    fireEvent.change(await screen.findByLabelText("Email"), { target: { value: "new@example.com" } });
-    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "New Analyst" } });
-    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "123456" } });
-    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "member" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add member" }));
-
-    await waitFor(() => expect(apiMock.createOrganizationMember).toHaveBeenCalledWith({
-      email: "new@example.com",
-      display_name: "New Analyst",
-      password: "123456",
-      role: "member",
-    }));
+    expect(await screen.findByRole("link", { name: "Open user management" })).toBeInTheDocument();
+    expect(apiMock.createOrganizationMember).not.toHaveBeenCalled();
+    expect(apiMock.listCommercialModelProviders).not.toHaveBeenCalled();
+    expect(apiMock.listKnowledgeBases).not.toHaveBeenCalled();
+    expect(apiMock.listAuditLogs).not.toHaveBeenCalled();
+    expect(apiMock.listModelUsage).not.toHaveBeenCalled();
+    expect(apiMock.listSwarmPresets).not.toHaveBeenCalled();
+    expect(apiMock.listToolPolicies).not.toHaveBeenCalled();
   });
 
   it("lets viewers see their permission boundary without management controls", async () => {

@@ -1,14 +1,15 @@
-import type { FormEvent } from "react";
-import { Loader2, RefreshCw, RotateCcw, Save, Server, SlidersHorizontal } from "lucide-react";
+import { useId, useState, type FormEvent } from "react";
+import { KeyRound, Pencil, Plus, RefreshCw, RotateCcw, Server, Star, Trash2, Wifi } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import type { CommercialModelProvider, LLMProviderOption } from "@/lib/api";
-
-const fieldClass =
-  "w-full rounded-md border border-border/75 bg-background px-3 py-2 text-sm outline-none transition focus:border-primary/70 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60";
-const labelClass = "text-sm font-medium";
-const hintClass = "text-xs text-muted-foreground";
-const sectionCardClass = "rounded-lg border border-border/70 bg-card p-5 shadow-sm";
+import { Button, IconButton } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
+import { Drawer } from "@/components/ui/Drawer";
+import { Field, Input, NumberInput } from "@/components/ui/Field";
+import { Panel, SectionHeader } from "@/components/ui/Panel";
+import { Select } from "@/components/ui/Select";
+import { StatusIndicator } from "@/components/ui/Status";
 
 export interface ModelProviderFormState {
   provider: string;
@@ -30,6 +31,8 @@ interface CommercialModelProvidersPanelProps {
   editingProviderId: string | null;
   saving: boolean;
   testingProviderId: string | null;
+  formOpen: boolean;
+  onFormOpenChange: (open: boolean) => void;
   onRefresh: () => Promise<void> | void;
   onEditProvider: (provider: CommercialModelProvider) => void;
   onTestProvider: (id: string) => Promise<void> | void;
@@ -49,6 +52,8 @@ export function CommercialModelProvidersPanel({
   editingProviderId,
   saving,
   testingProviderId,
+  formOpen,
+  onFormOpenChange,
   onRefresh,
   onEditProvider,
   onTestProvider,
@@ -61,167 +66,265 @@ export function CommercialModelProvidersPanel({
   onSubmit,
 }: CommercialModelProvidersPanelProps) {
   const { t } = useTranslation();
+  const formId = `model-provider-${useId().replace(/:/g, "")}`;
+  const [deleteTarget, setDeleteTarget] = useState<CommercialModelProvider | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const selectedProvider = providerOptions.find((item) => item.name === form.provider);
+  const providerSelectOptions = providerOptions.map((provider) => ({
+    value: provider.name,
+    label: provider.label,
+    description: provider.default_base_url,
+  }));
+  const modelSelectOptions = modelOptionsFor(selectedProvider, form.model).map((model) => ({ value: model, label: model }));
 
-  const handleRefresh = () => {
+  const refresh = () => {
     Promise.resolve(onRefresh()).catch((error) => {
       toast.error(error instanceof Error ? error.message : t("settings.unknownError"));
     });
   };
 
-  const useProviderDefaults = () => {
-    onFormChange({
-      model: selectedProvider?.default_model ?? form.model,
-      base_url: selectedProvider?.default_base_url ?? form.base_url,
-    });
+  const openCreate = () => {
+    onResetForm();
+    onFormOpenChange(true);
+  };
+
+  const openEdit = (provider: CommercialModelProvider) => {
+    onEditProvider(provider);
+    onFormOpenChange(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await onDeleteProvider(deleteTarget);
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.65fr)]">
-      <section className={sectionCardClass}>
-        <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <Server className="h-4 w-4 text-primary" />
-              <h2 className="text-base font-semibold">{t("settings.modelProviders.title")}</h2>
-            </div>
-            <p className="text-sm text-muted-foreground">{t("settings.modelProviders.description")}</p>
-          </div>
-          <button type="button" onClick={handleRefresh} className="inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground">
-            <RefreshCw className="h-4 w-4" />
-            {t("settings.refresh")}
-          </button>
-        </div>
+    <>
+      <Panel padding="none" className="overflow-hidden">
+        <SectionHeader
+          className="border-b border-[hsl(var(--border-subtle))] p-4"
+          title={t("settings.modelProviders.title")}
+          description={t("settings.modelProviders.description")}
+          actions={(
+            <>
+              <Button variant="ghost" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={refresh}>
+                {t("settings.refresh")}
+              </Button>
+              <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={openCreate}>
+                {t("settings.modelProviderActions.create")}
+              </Button>
+            </>
+          )}
+        />
 
         {providers.length === 0 ? (
-          <div className="rounded-lg border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
-            {t("settings.modelProviders.empty")}
+          <div className="grid min-h-52 place-items-center px-6 py-10 text-center">
+            <div>
+              <Server className="mx-auto h-7 w-7 text-ink-disabled" />
+              <p className="mt-3 text-sm text-ink-muted">{t("settings.modelProviders.empty")}</p>
+              <Button className="mt-4" variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={openCreate}>
+                {t("settings.modelProviderActions.create")}
+              </Button>
+            </div>
           </div>
         ) : (
-          <div className="grid gap-3">
+          <div className="divide-y divide-[hsl(var(--border-subtle))]">
             {providers.map((provider) => (
-              <div key={provider.id} className="rounded-lg border border-border/70 bg-background p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md">
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate text-sm font-semibold">{provider.model}</span>
-                      <StatusPill active={Boolean(provider.enabled)} on={t("settings.modelProviders.enabled")} off={t("settings.modelProviders.disabled")} />
-                      {Boolean(provider.is_default) ? (
-                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                          {t("settings.modelProviders.default")}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="truncate text-xs text-muted-foreground">
-                      {provider.provider} · {provider.base_url}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {t("settings.modelProviders.params", {
-                        temperature: provider.temperature,
-                        timeout: provider.timeout_seconds,
-                        retries: provider.max_retries,
-                      })}
-                    </div>
+              <div
+                key={provider.id}
+                className="grid gap-3 px-4 py-3 transition-[background-color] duration-fast ease-standard hover:bg-surface-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+              >
+                <div className="min-w-0">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="truncate text-sm font-semibold text-ink-strong">{provider.model}</span>
+                    <StatusIndicator
+                      label={provider.enabled ? t("settings.modelProviders.enabled") : t("settings.modelProviders.disabled")}
+                      tone={provider.enabled ? "success" : "neutral"}
+                      dot
+                    />
+                    {provider.is_default ? <StatusIndicator label={t("settings.modelProviders.default")} tone="primary" /> : null}
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" aria-label={`Edit ${provider.id}`} onClick={() => onEditProvider(provider)} className="rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground">
-                      {t("settings.modelProviderActions.edit")}
-                    </button>
-                    <button type="button" aria-label={`Test ${provider.id}`} onClick={() => onTestProvider(provider.id)} disabled={testingProviderId === provider.id} className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50">
-                      {testingProviderId === provider.id ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                      {t("settings.modelProviderActions.test")}
-                    </button>
-                    <button type="button" onClick={() => onToggleProvider(provider)} disabled={Boolean(provider.is_default) && Boolean(provider.enabled)} className="rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50">
-                      {Boolean(provider.enabled) ? t("settings.modelProviderActions.disable") : t("settings.modelProviderActions.enable")}
-                    </button>
-                    <button type="button" onClick={() => onSetDefaultProvider(provider.id)} disabled={Boolean(provider.is_default) || !Boolean(provider.enabled)} className="rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50">
-                      {t("settings.modelProviderActions.setDefault")}
-                    </button>
-                    <button type="button" onClick={() => onDeleteProvider(provider)} disabled={Boolean(provider.is_default)} className="rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-destructive/40 hover:text-destructive disabled:opacity-50">
-                      {t("settings.modelProviderActions.delete")}
-                    </button>
-                  </div>
+                  <p className="mt-1 truncate text-xs text-ink-muted" title={`${provider.provider} / ${provider.base_url}`}>
+                    {provider.provider} / {provider.base_url}
+                  </p>
+                  <p className="mt-0.5 text-xs tabular-nums text-ink-muted">
+                    {t("settings.modelProviders.params", {
+                      temperature: provider.temperature,
+                      timeout: provider.timeout_seconds,
+                      retries: provider.max_retries,
+                    })}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 md:justify-end">
+                  <IconButton label={`Edit ${provider.id}`} variant="ghost" onClick={() => openEdit(provider)}>
+                    <Pencil className="h-4 w-4" />
+                  </IconButton>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    loading={testingProviderId === provider.id}
+                    aria-label={`Test ${provider.id}`}
+                    leftIcon={<Wifi className="h-3.5 w-3.5" />}
+                    onClick={() => onTestProvider(provider.id)}
+                  >
+                    {t("settings.modelProviderActions.test")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={Boolean(provider.is_default) || !Boolean(provider.enabled)}
+                    leftIcon={<Star className="h-3.5 w-3.5" />}
+                    onClick={() => onSetDefaultProvider(provider.id)}
+                  >
+                    {t("settings.modelProviderActions.setDefault")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={Boolean(provider.is_default) && Boolean(provider.enabled)}
+                    onClick={() => onToggleProvider(provider)}
+                  >
+                    {provider.enabled ? t("settings.modelProviderActions.disable") : t("settings.modelProviderActions.enable")}
+                  </Button>
+                  <IconButton
+                    label={`${t("settings.modelProviderActions.delete")} ${provider.model}`}
+                    variant="ghost"
+                    disabled={Boolean(provider.is_default)}
+                    className="text-danger hover:bg-danger/10 hover:text-danger"
+                    onClick={() => setDeleteTarget(provider)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </IconButton>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </section>
+      </Panel>
 
-      <form onSubmit={onSubmit} className={sectionCardClass}>
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <SlidersHorizontal className="h-4 w-4 text-primary" />
-              <h2 className="text-base font-semibold">
-                {editingProviderId ? t("settings.modelProviderForm.editTitle") : t("settings.modelProviderForm.createTitle")}
-              </h2>
-            </div>
-            <p className="text-sm text-muted-foreground">{t("settings.modelProviderForm.description")}</p>
+      <Drawer
+        open={formOpen}
+        onOpenChange={onFormOpenChange}
+        title={editingProviderId ? t("settings.modelProviderForm.editTitle") : t("settings.modelProviderForm.createTitle")}
+        description={t("settings.modelProviderForm.description")}
+        closeLabel={t("settings.modelProviderActions.cancelEdit")}
+        className="w-[min(38rem,calc(100vw-0.75rem))]"
+        footer={(
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => onFormOpenChange(false)}>{t("settings.cancel")}</Button>
+            <Button type="submit" form={formId} variant="primary" loading={saving} leftIcon={<KeyRound className="h-4 w-4" />}>
+              {editingProviderId ? t("settings.modelProviderActions.update") : t("settings.modelProviderActions.create")}
+            </Button>
           </div>
-          {editingProviderId ? (
-            <button type="button" onClick={onResetForm} className="rounded-md border px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground">
-              {t("settings.modelProviderActions.cancelEdit")}
-            </button>
-          ) : null}
-        </div>
+        )}
+      >
+        <form id={formId} onSubmit={onSubmit} className="grid gap-5 p-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label={t("settings.provider")}>
+              <Select
+                value={form.provider}
+                onValueChange={onProviderChange}
+                options={providerSelectOptions}
+                label={t("settings.provider")}
+                searchable
+                contentClassName="max-h-80"
+                className="w-full"
+              />
+            </Field>
+            <Field label={t("settings.model")} hint={t("settings.modelIdHint")}>
+              <Select
+                value={form.model}
+                onValueChange={(model) => onFormChange({ model })}
+                options={modelSelectOptions}
+                label={t("settings.model")}
+                searchable
+                className="w-full"
+              />
+            </Field>
+          </div>
 
-        <div className="grid gap-4">
-          <label className="grid gap-2">
-            <span className={labelClass}>{t("settings.provider")}</span>
-            <select value={form.provider} onChange={(event) => onProviderChange(event.target.value)} className={fieldClass}>
-              {providerOptions.map((provider) => (
-                <option key={provider.name} value={provider.name}>{provider.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="grid gap-2">
-            <span className={labelClass}>{t("settings.model")}</span>
-            <select value={form.model} onChange={(event) => onFormChange({ model: event.target.value })} className={fieldClass} required>
-              {modelOptionsFor(selectedProvider, form.model).map((model) => (
-                <option key={model} value={model}>{model}</option>
-              ))}
-            </select>
-            <span className={hintClass}>{t("settings.modelIdHint")}</span>
-          </label>
-          <label className="grid gap-2">
-            <span className={labelClass}>{t("settings.baseUrl")}</span>
+          <Field label={t("settings.baseUrl")}>
             <div className="flex gap-2">
-              <input value={form.base_url} onChange={(event) => onFormChange({ base_url: event.target.value })} className={fieldClass} placeholder={selectedProvider?.default_base_url} />
-              <button type="button" onClick={useProviderDefaults} className="inline-flex shrink-0 items-center rounded-md border px-3 text-muted-foreground transition hover:bg-muted hover:text-foreground" title={t("settings.useProviderDefaults")}>
+              <Input
+                value={form.base_url}
+                onChange={(event) => onFormChange({ base_url: event.target.value })}
+                placeholder={selectedProvider?.default_base_url}
+                required
+              />
+              <IconButton
+                label={t("settings.useProviderDefaults")}
+                variant="outline"
+                onClick={() => onFormChange({
+                  model: selectedProvider?.default_model ?? form.model,
+                  base_url: selectedProvider?.default_base_url ?? form.base_url,
+                })}
+              >
                 <RotateCcw className="h-4 w-4" />
-              </button>
+              </IconButton>
             </div>
-          </label>
-          <TextField label="API key" value={form.api_key} onChange={(value) => onFormChange({ api_key: value, clear_api_key: false })} type="password" placeholder={editingProviderId ? t("settings.modelProviderForm.keepExistingKey") : ""} />
+          </Field>
+
+          <Field label={t("settings.modelProviderForm.apiKey")} hint={editingProviderId ? t("settings.modelProviderForm.keepExistingKey") : undefined}>
+            <Input
+              type="password"
+              autoComplete="new-password"
+              value={form.api_key}
+              onChange={(event) => onFormChange({ api_key: event.target.value, clear_api_key: false })}
+            />
+          </Field>
+
           {editingProviderId ? (
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <input type="checkbox" checked={form.clear_api_key} onChange={(event) => onFormChange({ clear_api_key: event.target.checked, api_key: event.target.checked ? "" : form.api_key })} className="h-3.5 w-3.5 accent-primary" />
-              {t("settings.clearApiKey")}
-            </label>
+            <CheckControl
+              checked={form.clear_api_key}
+              label={t("settings.clearApiKey")}
+              onChange={(checked) => onFormChange({ clear_api_key: checked, api_key: checked ? "" : form.api_key })}
+            />
           ) : null}
-          <div className="grid grid-cols-3 gap-3">
-            <NumberField label={t("settings.temperature")} value={form.temperature} min={0} max={2} step={0.1} onChange={(value) => onFormChange({ temperature: value })} />
-            <NumberField label={t("settings.timeoutSeconds")} value={form.timeout_seconds} min={1} max={3600} step={1} onChange={(value) => onFormChange({ timeout_seconds: value })} />
-            <NumberField label={t("settings.maxRetries")} value={form.max_retries} min={0} max={20} step={1} onChange={(value) => onFormChange({ max_retries: value })} />
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label={t("settings.temperature")}>
+              <NumberInput min={0} max={2} step={0.1} value={form.temperature} onChange={(event) => onFormChange({ temperature: Number(event.target.value) })} />
+            </Field>
+            <Field label={t("settings.timeoutSeconds")}>
+              <NumberInput min={1} max={3600} step={1} value={form.timeout_seconds} onChange={(event) => onFormChange({ timeout_seconds: Number(event.target.value) })} />
+            </Field>
+            <Field label={t("settings.maxRetries")}>
+              <NumberInput min={0} max={20} step={1} value={form.max_retries} onChange={(event) => onFormChange({ max_retries: Number(event.target.value) })} />
+            </Field>
           </div>
-          <div className="grid gap-2 rounded-md border bg-muted/20 p-3">
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={form.enabled} onChange={(event) => onFormChange({ enabled: event.target.checked })} className="h-4 w-4 accent-primary" />
-              {t("settings.modelProviders.enabled")}
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={form.is_default} onChange={(event) => onFormChange({ is_default: event.target.checked })} className="h-4 w-4 accent-primary" />
-              {t("settings.modelProviderForm.makeDefault")}
-            </label>
+
+          <div className="grid gap-2 border-t border-[hsl(var(--border-subtle))] pt-4 sm:grid-cols-2">
+            <CheckControl checked={form.enabled} label={t("settings.modelProviders.enabled")} onChange={(enabled) => onFormChange({ enabled })} />
+            <CheckControl checked={form.is_default} label={t("settings.modelProviderForm.makeDefault")} onChange={(is_default) => onFormChange({ is_default })} />
           </div>
-          <button type="submit" disabled={saving || !form.model.trim() || !form.base_url.trim()} className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {editingProviderId ? t("settings.modelProviderActions.update") : t("settings.modelProviderActions.create")}
-          </button>
-        </div>
-      </form>
-    </div>
+        </form>
+      </Drawer>
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title={t("settings.modelProviderForm.deleteTitle")}
+        description={t("settings.modelProviderForm.deleteDescription", { model: deleteTarget?.model || "" })}
+        closeLabel={t("settings.cancel")}
+        className="w-[min(30rem,calc(100vw-2rem))]"
+        footer={(
+          <>
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>{t("settings.cancel")}</Button>
+            <Button variant="destructive" loading={deleting} leftIcon={<Trash2 className="h-4 w-4" />} onClick={() => void confirmDelete()}>
+              {t("settings.modelProviderActions.delete")}
+            </Button>
+          </>
+        )}
+      >
+        <p className="text-sm leading-6 text-ink">{t("settings.modelProviderForm.deleteWarning")}</p>
+      </Dialog>
+    </>
   );
 }
 
@@ -235,54 +338,11 @@ function modelOptionsFor(provider?: LLMProviderOption, currentModel?: string) {
   return Array.from(new Set(merged.filter(Boolean)));
 }
 
-function StatusPill({ active, on, off }: { active: boolean; on: string; off: string }) {
+function CheckControl({ checked, label, onChange }: { checked: boolean; label: string; onChange: (checked: boolean) => void }) {
   return (
-    <span className={active ? "status-primary" : "status-soft"}>
-      {active ? on : off}
-    </span>
-  );
-}
-
-function TextField({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  type?: string;
-}) {
-  return (
-    <label className="grid gap-2">
-      <span className={labelClass}>{label}</span>
-      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className={fieldClass} placeholder={placeholder} autoComplete={type === "password" ? "current-password" : undefined} />
-    </label>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="grid gap-2">
-      <span className={labelClass}>{label}</span>
-      <input type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} className={fieldClass} />
+    <label className="flex min-h-10 cursor-pointer items-center gap-3 rounded-md border border-[hsl(var(--border-subtle))] bg-surface-2 px-3 text-sm text-ink transition-[border-color,background-color] duration-fast hover:border-border">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="h-4 w-4 accent-primary" />
+      <span>{label}</span>
     </label>
   );
 }

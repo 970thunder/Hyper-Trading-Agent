@@ -223,6 +223,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
   logoutCommercial: () => request<{ status: string }>("/auth/logout", { method: "POST" }),
+  getAuthStatus: () => request<CommercialAuthStatus>("/auth/status"),
   getCommercialMe: () => request<CommercialPrincipal>("/auth/me"),
   getCurrentOrganization: () => request<CommercialOrganization>("/organizations/current"),
   listOrganizationMembers: () => request<CommercialOrganizationMember[]>("/organizations/current/members"),
@@ -270,10 +271,23 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  updateKnowledgeBase: (knowledgeBaseId: string, body: CommercialKnowledgeBaseUpdateRequest) =>
+    request<CommercialKnowledgeBase>(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   listCommercialKnowledgeDocuments: (knowledgeBaseId: string) =>
     request<CommercialKnowledgeDocument[]>(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents`),
+  getCommercialKnowledgeDocumentDetail: (knowledgeBaseId: string, documentId: string) =>
+    request<CommercialKnowledgeDocumentDetail>(
+      `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(documentId)}`,
+    ),
+  listCommercialKnowledgeDocumentChunks: (knowledgeBaseId: string, documentId: string) =>
+    request<CommercialKnowledgeChunkList>(
+      `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(documentId)}/chunks`,
+    ),
   addCommercialKnowledgeDocument: (knowledgeBaseId: string, body: CommercialKnowledgeDocumentCreateRequest) =>
-    request<CommercialKnowledgeDocument>(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents`, {
+    request<CommercialKnowledgeDocument | CommercialIngestionJob>(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents`, {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -545,6 +559,10 @@ export interface CommercialLoginRequest {
   password: string;
 }
 
+export interface CommercialAuthStatus {
+  commercial_mode: boolean;
+}
+
 export interface CommercialPrincipal {
   user_id: string;
   organization_id: string;
@@ -624,8 +642,24 @@ export interface CommercialKnowledgeBase {
   id: string;
   name: string;
   description: string;
+  config: CommercialKnowledgeBaseConfig;
+  access: CommercialKnowledgeBaseAccess;
   created_at: string;
   updated_at: string;
+}
+
+export type CommercialKnowledgeRetrievalMode = "hybrid" | "vector" | "keyword";
+
+export interface CommercialKnowledgeBaseConfig {
+  chunk_size: number;
+  chunk_overlap: number;
+  retrieval_mode: CommercialKnowledgeRetrievalMode;
+  top_k: number;
+}
+
+export interface CommercialKnowledgeBaseAccess {
+  read_roles: CommercialRole[];
+  write_roles: CommercialRole[];
 }
 
 export interface CommercialKnowledgeBackendStatus {
@@ -658,6 +692,13 @@ export interface CommercialKnowledgeBaseCreateRequest {
   description?: string;
 }
 
+export interface CommercialKnowledgeBaseUpdateRequest {
+  name?: string;
+  description?: string;
+  config?: Partial<CommercialKnowledgeBaseConfig>;
+  access?: Partial<CommercialKnowledgeBaseAccess>;
+}
+
 export interface CommercialKnowledgeDocument {
   id: string;
   title: string;
@@ -665,6 +706,7 @@ export interface CommercialKnowledgeDocument {
   source_type: string;
   status: string;
   chunk_count: number;
+  metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   ingestion_job_id?: string;
@@ -675,14 +717,49 @@ export interface CommercialKnowledgeDocument {
   ingestion_completed_at?: string | null;
 }
 
+export interface CommercialKnowledgeDocumentVectorization {
+  status: string;
+  progress: number;
+  embedded_chunks: number;
+  total_chunks: number;
+}
+
+export interface CommercialKnowledgeDocumentDetail extends CommercialKnowledgeDocument {
+  vectorization: CommercialKnowledgeDocumentVectorization;
+  ingestion_history: CommercialIngestionJob[];
+}
+
+export interface CommercialKnowledgeChunk {
+  id: string;
+  chunk_index: number;
+  text: string;
+  character_count: number;
+  embedding_dimensions: number;
+  embedding_source: string;
+  embedding_fallback: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface CommercialKnowledgeChunkList {
+  items: CommercialKnowledgeChunk[];
+  count: number;
+  limit: number;
+  offset: number;
+}
+
 export interface CommercialKnowledgeDocumentCreateRequest {
   path: string;
   title?: string;
+  chunk_size?: number;
+  chunk_overlap?: number;
 }
 
 export interface CommercialKnowledgeUrlCreateRequest {
   url: string;
   title?: string;
+  chunk_size?: number;
+  chunk_overlap?: number;
 }
 
 export interface CommercialKnowledgeSearchRequest {

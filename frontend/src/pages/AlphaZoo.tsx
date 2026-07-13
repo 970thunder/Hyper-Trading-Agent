@@ -229,7 +229,7 @@ function BrowseView() {
               type="button"
               onClick={() => setZooFilter(active ? "" : z.id)}
               className={cn(
-                "space-y-2 rounded-lg border border-border/70 bg-card p-4 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/45 hover:bg-muted/20 hover:shadow-md",
+                "space-y-2 rounded-lg border border-border/70 bg-card p-4 text-left shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-base ease-standard hover:-translate-y-0.5 hover:border-primary/45 hover:bg-muted/20 hover:shadow-md",
                 active && "border-primary bg-primary/5 ring-1 ring-primary/25",
               )}
             >
@@ -928,7 +928,7 @@ function ProgressPanel({
       </div>
       <div className="h-2 rounded-full bg-muted overflow-hidden">
         <div
-          className="h-full bg-primary transition-all duration-300"
+          className="h-full bg-primary transition-[width] duration-slow ease-standard"
           style={{ width: `${pct}%` }}
         />
       </div>

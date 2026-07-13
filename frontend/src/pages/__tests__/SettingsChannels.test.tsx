@@ -165,7 +165,7 @@ describe("Settings IM channels panel", () => {
     renderSettings();
 
     expect((await screen.findAllByText("IM Channels")).length).toBeGreaterThan(0);
-    expect(screen.getByText("Model Configuration")).toBeInTheDocument();
+    expect(screen.queryByText("Model Configuration")).not.toBeInTheDocument();
     expect(screen.getByText("Data Sources")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start channels" })).toBeDisabled();

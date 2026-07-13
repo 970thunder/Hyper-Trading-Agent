@@ -13,6 +13,8 @@ node_modules/
 
 # Backtest output artifacts
 results/
+output/
+.playwright-cli/
 
 .env
 agent/.env
