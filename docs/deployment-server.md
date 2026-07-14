@@ -105,6 +105,16 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec api py
 
 Then sign in through the public domain, create an organization knowledge base, and verify that platform access appears only for the configured bootstrap account.
 
+Run the repeatable pre-release check after every image rebuild:
+
+```powershell
+./scripts/verify-production.ps1 -EnvFile .env.production -ApiBaseUrl http://127.0.0.1:8899
+```
+
+It checks service state, API health, the anonymous workspace boundary, pgvector
+runtime status, and the `rag_vector_chunks` migration without creating or
+changing business data.
+
 ## Operations
 
 - Use [backup and restore](operations-backup-restore.md) before upgrades and at least quarterly for restore drills.

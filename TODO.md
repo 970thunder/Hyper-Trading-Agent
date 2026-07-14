@@ -116,4 +116,5 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [ ] Add backup/restore drills for PostgreSQL, uploads/object storage, and encrypted secrets.
 - [x] Add Prometheus/Grafana dashboard examples for jobs, model calls, RAG, audit, and failures.
 - [x] Add repeatable PowerShell backup and guarded restore scripts for PostgreSQL and application volumes.
+- [x] Add a non-destructive production readiness verification script for Docker health, auth, pgvector, and migrations.
 - [ ] Add production SSO, TLS reverse-proxy, rate limiting, and deployment hardening checks.
