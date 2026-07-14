@@ -341,9 +341,9 @@ def embedding_backend_status() -> dict[str, Any]:
             "model": f"hashing-{EMBEDDING_DIMENSIONS}",
             "available": True,
         },
-        "storage": "sqlite-fts-local",
+        "storage": vector_status["active"],
         "target_storage": "postgres-pgvector",
-        "vector_storage": vector_status | {"pgvector_available": vector_status["active"] == "postgres-pgvector"},
+        "vector_storage": vector_status | {"pgvector_available": bool(vector_status.get("available"))},
     }
 
 
@@ -1996,6 +1996,7 @@ class CommercialStore:
                         kb_id,
                     ),
                 )
+        vector_chunks: list[dict[str, Any]] = []
         try:
             normalized = _normalize_text(text)
             if not normalized:
@@ -2049,7 +2050,17 @@ class CommercialStore:
                     "UPDATE knowledge_ingestion_jobs SET progress = 25, metadata_json = ?, updated_at = ? WHERE id = ?",
                     (json.dumps({**job_metadata, "stage": "embedding"}, ensure_ascii=False), utcnow(), job_id),
                 )
-                self._replace_document_chunks(conn, principal, kb_id, doc_id, title, source_type, chunks, job_id=job_id)
+                vector_chunks = self._replace_document_chunks(
+                    conn,
+                    principal,
+                    kb_id,
+                    doc_id,
+                    title,
+                    source_uri,
+                    source_type,
+                    chunks,
+                    job_id=job_id,
+                )
                 conn.execute(
                     "UPDATE knowledge_ingestion_jobs SET progress = 96, metadata_json = ?, updated_at = ? WHERE id = ?",
                     (json.dumps({**job_metadata, "stage": "indexing"}, ensure_ascii=False), utcnow(), job_id),
@@ -2085,7 +2096,14 @@ class CommercialStore:
                     (failed_at, doc_id, principal.organization_id),
                 )
             raise
-        self.audit(principal, "knowledge_document.ingest", "knowledge_document", doc_id, {"knowledge_base_id": kb_id, "source_type": source_type, "job_id": job_id})
+        vector_storage = self._sync_pgvector_document(principal, kb_id, doc_id, vector_chunks)
+        self.audit(
+            principal,
+            "knowledge_document.ingest",
+            "knowledge_document",
+            doc_id,
+            {"knowledge_base_id": kb_id, "source_type": source_type, "job_id": job_id, "vector_storage": vector_storage},
+        )
         return self.get_knowledge_document(principal, kb_id, doc_id) | {"ingestion_job_id": job_id}
 
     def create_pending_url_ingestion_job(
@@ -2266,13 +2284,15 @@ class CommercialStore:
         kb_id: str,
         doc_id: str,
         title: str,
+        source_uri: str,
         source_type: str,
         chunks: list[str],
         *,
         job_id: str = "",
-    ) -> None:
+    ) -> list[dict[str, Any]]:
         conn.execute("DELETE FROM knowledge_chunks_fts WHERE document_id = ?", (doc_id,))
         conn.execute("DELETE FROM knowledge_chunks WHERE document_id = ?", (doc_id,))
+        vector_chunks: list[dict[str, Any]] = []
         total = max(1, len(chunks))
         for index, chunk in enumerate(chunks):
             chunk_id = _new_id("chk")
@@ -2300,12 +2320,50 @@ class CommercialStore:
                 "INSERT INTO knowledge_chunks_fts(chunk_id, organization_id, knowledge_base_id, document_id, title, text) VALUES (?, ?, ?, ?, ?, ?)",
                 (chunk_id, principal.organization_id, kb_id, doc_id, title, chunk),
             )
+            vector_chunks.append(
+                {
+                    "chunk_id": chunk_id,
+                    "title": title,
+                    "source_uri": source_uri,
+                    "text": chunk,
+                    "embedding": embedding,
+                    "embedding_source": str(embedding_metadata.get("embedding_source") or ""),
+                    "metadata": chunk_metadata,
+                }
+            )
             if job_id and (index == len(chunks) - 1 or index % 4 == 0):
                 progress = 10 + int(((index + 1) / total) * 85)
                 conn.execute(
                     "UPDATE knowledge_ingestion_jobs SET progress = ?, updated_at = ? WHERE id = ?",
                     (_clamp_progress(progress), utcnow(), job_id),
                 )
+        return vector_chunks
+
+    def _sync_pgvector_document(
+        self,
+        principal: Principal,
+        kb_id: str,
+        doc_id: str,
+        chunks: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Best-effort pgvector synchronization; SQLite stays usable on failure."""
+        from src.commercial.vector_store import build_vector_store_adapter
+
+        return build_vector_store_adapter().replace_document_chunks(
+            organization_id=principal.organization_id,
+            knowledge_base_id=kb_id,
+            document_id=doc_id,
+            chunks=chunks,
+        )
+
+    def _delete_pgvector_document(self, principal: Principal, kb_id: str, doc_id: str) -> dict[str, Any]:
+        from src.commercial.vector_store import build_vector_store_adapter
+
+        return build_vector_store_adapter().delete_document(
+            organization_id=principal.organization_id,
+            knowledge_base_id=kb_id,
+            document_id=doc_id,
+        )
 
     def reindex_knowledge_document(self, principal: Principal, kb_id: str, doc_id: str) -> dict[str, Any]:
         from src.knowledge.store import _chunk_text, _normalize_text
@@ -2317,7 +2375,7 @@ class CommercialStore:
         with self._connect() as conn:
             doc = conn.execute(
                 """
-                SELECT id, title, source_type, metadata_json
+                SELECT id, title, source_uri, source_type, metadata_json
                 FROM knowledge_documents
                 WHERE id = ? AND organization_id = ? AND knowledge_base_id = ?
                 """,
@@ -2359,6 +2417,7 @@ class CommercialStore:
                     now,
                 ),
             )
+        vector_chunks: list[dict[str, Any]] = []
         try:
             normalized = _normalize_text(original_text)
             if not normalized:
@@ -2374,7 +2433,17 @@ class CommercialStore:
                     "UPDATE knowledge_ingestion_jobs SET status = 'running', progress = 5, started_at = ?, updated_at = ? WHERE id = ?",
                     (started_at, started_at, job_id),
                 )
-                self._replace_document_chunks(conn, principal, kb_id, doc_id, str(doc["title"]), str(doc["source_type"]), chunks, job_id=job_id)
+                vector_chunks = self._replace_document_chunks(
+                    conn,
+                    principal,
+                    kb_id,
+                    doc_id,
+                    str(doc["title"]),
+                    str(doc["source_uri"]),
+                    str(doc["source_type"]),
+                    chunks,
+                    job_id=job_id,
+                )
                 completed_at = utcnow()
                 conn.execute(
                     "UPDATE knowledge_documents SET status = 'ready', chunk_count = ?, source_hash = ?, updated_at = ? WHERE id = ?",
@@ -2409,7 +2478,14 @@ class CommercialStore:
                     (str(exc), failed_at, failed_at, job_id),
                 )
             raise
-        self.audit(principal, "knowledge_document.reindex", "knowledge_document", doc_id, {"knowledge_base_id": kb_id, "job_id": job_id})
+        vector_storage = self._sync_pgvector_document(principal, kb_id, doc_id, vector_chunks)
+        self.audit(
+            principal,
+            "knowledge_document.reindex",
+            "knowledge_document",
+            doc_id,
+            {"knowledge_base_id": kb_id, "job_id": job_id, "vector_storage": vector_storage},
+        )
         return self.get_knowledge_document(principal, kb_id, doc_id) | {"ingestion_job_id": job_id}
 
     def list_knowledge_documents(self, principal: Principal, kb_id: str) -> list[dict[str, Any]]:
@@ -2546,10 +2622,18 @@ class CommercialStore:
             conn.execute("DELETE FROM knowledge_chunks WHERE document_id = ?", (doc_id,))
             conn.execute("DELETE FROM knowledge_ingestion_jobs WHERE document_id = ? AND organization_id = ?", (doc_id, principal.organization_id))
             conn.execute("DELETE FROM knowledge_documents WHERE id = ?", (doc_id,))
-        self.audit(principal, "knowledge_document.delete", "knowledge_document", doc_id, {"knowledge_base_id": kb_id})
+        vector_storage = self._delete_pgvector_document(principal, kb_id, doc_id)
+        self.audit(
+            principal,
+            "knowledge_document.delete",
+            "knowledge_document",
+            doc_id,
+            {"knowledge_base_id": kb_id, "vector_storage": vector_storage},
+        )
 
     def search_knowledge(self, principal: Principal, kb_id: str, query: str, limit: int | None = None) -> list[dict[str, Any]]:
         from src.knowledge.store import _fts_query
+        from src.commercial.vector_store import build_vector_store_adapter
 
         knowledge_base = self._ensure_kb(principal, kb_id)
         retrieval_mode = str(knowledge_base["config"].get("retrieval_mode") or "hybrid")
@@ -2557,9 +2641,17 @@ class CommercialStore:
         capped = max(1, min(int(limit if limit is not None else configured_limit), 20))
         query_embedding: list[float] = []
         query_embedding_source = ""
+        pgvector_rows: list[dict[str, Any]] = []
         if retrieval_mode != "keyword":
             query_embedding, query_embedding_metadata = _embedding_for_text(query)
             query_embedding_source = str(query_embedding_metadata.get("embedding_source") or "")
+            pgvector_rows = build_vector_store_adapter().search(
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                embedding=query_embedding,
+                embedding_source=query_embedding_source,
+                limit=capped * 2,
+            )
         with self._connect() as conn:
             fts_rows: list[Any] = []
             if retrieval_mode != "vector":
@@ -2579,7 +2671,7 @@ class CommercialStore:
                 except sqlite3.Error:
                     fts_rows = []
             vector_rows: list[Any] = []
-            if retrieval_mode != "keyword":
+            if retrieval_mode != "keyword" and not pgvector_rows:
                 vector_rows = conn.execute(
                     """
                     SELECT c.id AS chunk_id, c.document_id, d.title, d.source_uri, c.text, c.embedding_json, c.metadata_json
@@ -2636,6 +2728,24 @@ class CommercialStore:
                     },
                 )
                 item["score"] = float(item["score"]) + vector_score * (0.35 if retrieval_mode == "hybrid" else 1.0)
+            for row in pgvector_rows:
+                chunk_id = str(row.get("chunk_id") or "")
+                if not chunk_id:
+                    continue
+                item = scored.setdefault(
+                    chunk_id,
+                    {
+                        "document_id": str(row.get("document_id") or ""),
+                        "chunk_id": chunk_id,
+                        "title": str(row.get("title") or ""),
+                        "source_uri": str(row.get("source_uri") or ""),
+                        "score": 0.0,
+                        "text": str(row.get("text") or ""),
+                    },
+                )
+                item["score"] = float(item["score"]) + max(0.0, float(row.get("score") or 0.0)) * (
+                    0.35 if retrieval_mode == "hybrid" else 1.0
+                )
             rows = sorted(scored.values(), key=lambda item: float(item["score"]), reverse=True)[:capped]
             conn.execute(
                 "INSERT INTO knowledge_retrieval_logs(id, organization_id, user_id, knowledge_base_id, query, result_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",

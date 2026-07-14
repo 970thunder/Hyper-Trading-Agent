@@ -51,4 +51,28 @@ def test_pgvector_adapter_exposes_runtime_contract(monkeypatch):
     assert status["pgvector_configured"] is True
     assert status["dimensions"] == 768
     assert "CREATE EXTENSION IF NOT EXISTS vector" in adapter.bootstrap_sql()
-    assert "embedding vector(768)" in adapter.bootstrap_sql()
+    assert "rag_vector_chunks" in adapter.bootstrap_sql()
+
+
+def test_sqlite_vector_adapter_returns_a_safe_runtime_fallback(monkeypatch):
+    monkeypatch.delenv("HYPER_TRADING_VECTOR_STORAGE", raising=False)
+    monkeypatch.delenv("VIBE_TRADING_VECTOR_STORAGE", raising=False)
+
+    from src.commercial.vector_store import build_vector_store_adapter
+
+    adapter = build_vector_store_adapter()
+    written = adapter.replace_document_chunks(
+        organization_id="org_1",
+        knowledge_base_id="kb_1",
+        document_id="doc_1",
+        chunks=[],
+    )
+
+    assert written["status"] == "skipped"
+    assert adapter.search(
+        organization_id="org_1",
+        knowledge_base_id="kb_1",
+        embedding=[],
+        embedding_source="local",
+        limit=5,
+    ) == []

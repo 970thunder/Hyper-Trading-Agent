@@ -92,6 +92,21 @@ HYPER_TRADING_RUNTIME_JOB_BACKEND=redis-postgres
 HYPER_TRADING_RUNTIME_JOB_QUEUE=hyper:runtime:jobs
 ```
 
+Production RAG uses pgvector by default. Its vector dimension must match the
+configured embedding model. The default SiliconFlow `BAAI/bge-m3` embedding
+model uses 1024 dimensions:
+
+```env
+HYPER_TRADING_VECTOR_STORAGE=postgres-pgvector
+HYPER_TRADING_PGVECTOR_DIMENSIONS=1024
+```
+
+Knowledge chunks remain in the local compatibility repository during the
+metadata migration, while vectors are written to and retrieved from the
+tenant-scoped `rag_vector_chunks` pgvector table. If PostgreSQL, `psycopg`, or
+the configured embedding dimension is unavailable, retrieval falls back to the
+SQLite path without exposing the database error to users.
+
 For a single-machine deployment without Redis/Postgres workers, set `HYPER_TRADING_RUNTIME_JOB_BACKEND=sqlite-local`.
 
 Start:

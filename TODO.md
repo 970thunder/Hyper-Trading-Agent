@@ -68,7 +68,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Support reindex, cancel, document deletion, and chunk/FTS/job cleanup.
 - [x] Add per-knowledge-base read/write role ACL controls.
 - [x] Add search evaluation with stable source citations and scores.
-- [ ] Implement pgvector runtime write/search methods; the current production data path still stores chunks and embeddings in SQLite.
+- [x] Implement pgvector runtime write/search methods with tenant-scoped dual writes and SQLite fallback.
 - [ ] Migrate knowledge metadata, documents, jobs, chunks, and retrieval logs to PostgreSQL repositories.
 - [ ] Add configurable reranking and RAG evaluation datasets.
 - [ ] Add object-storage lifecycle for original documents.
