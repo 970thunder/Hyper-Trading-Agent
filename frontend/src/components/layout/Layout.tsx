@@ -216,15 +216,15 @@ export function Layout() {
         collapsed ? "w-[var(--sidebar-width-collapsed)]" : "w-[var(--sidebar-width)]",
       )}
     >
-      <div className={cn("flex h-14 shrink-0 items-center gap-1 border-b border-[hsl(var(--border-subtle))]", collapsed ? "justify-center px-1" : "px-3")}>
-        <Link to="/" aria-label="Hyper Trading Agent" className={cn("flex min-w-0 items-center gap-2 font-semibold text-ink-strong", collapsed && "justify-center")}>
+      <div className={cn("h-14 shrink-0 items-center border-b border-[hsl(var(--border-subtle))]", collapsed ? "grid grid-cols-2" : "flex gap-1 px-3")}>
+        <Link to="/" aria-label="Hyper Trading Agent" className={cn("flex min-w-0 items-center gap-2 font-semibold text-ink-strong", collapsed && "h-full w-full justify-center")}>
           <BarChart3 className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
           {!collapsed ? <span className="truncate text-sm">Hyper Trading Agent</span> : null}
         </Link>
         <IconButton
           label={collapsed ? t("layout.expand") : t("layout.collapse")}
           onClick={() => setCollapsed((value) => !value)}
-          className={cn("h-8 shrink-0", collapsed ? "w-8" : "ms-auto w-8")}
+          className={cn("h-8 shrink-0", collapsed ? "w-8 justify-self-center" : "ms-auto w-8")}
         >
           {collapsed ? <ChevronsRight className="h-3.5 w-3.5 rtl:flip-x" /> : <ChevronsLeft className="h-3.5 w-3.5 rtl:flip-x" />}
         </IconButton>
