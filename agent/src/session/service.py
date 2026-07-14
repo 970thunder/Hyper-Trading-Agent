@@ -476,6 +476,31 @@ class SessionService:
             return
 
     @staticmethod
+    def _bind_commercial_run(session: Session, attempt: Attempt) -> None:
+        if not attempt.run_dir:
+            return
+        principal_payload = session.config.get("commercial_principal") if isinstance(session.config, dict) else None
+        if not isinstance(principal_payload, dict):
+            return
+        try:
+            from src.commercial.store import CommercialStore, Principal
+
+            principal = Principal(
+                user_id=str(principal_payload["user_id"]),
+                organization_id=str(principal_payload["organization_id"]),
+                email=str(principal_payload.get("email") or ""),
+                role=str(principal_payload.get("role") or "member"),
+            )
+            CommercialStore().bind_workspace_run(
+                principal,
+                Path(attempt.run_dir).name,
+                session_id=session.session_id,
+                attempt_id=attempt.attempt_id,
+            )
+        except Exception:
+            logger.warning("Failed to bind commercial run ownership", exc_info=True)
+
+    @staticmethod
     def _resolve_resume_model_provider(session: Session) -> Dict[str, Any] | None:
         principal_payload = session.config.get("commercial_principal")
         provider_payload = session.config.get("commercial_model_provider")
@@ -533,6 +558,7 @@ class SessionService:
             if result.get("status") == "waiting_approval":
                 attempt.status = AttemptStatus.WAITING_APPROVAL
                 attempt.run_dir = result.get("run_dir")
+                self._bind_commercial_run(session, attempt)
                 self._save_snapshot(attempt)
                 return
             if result.get("status") == "success":
@@ -550,6 +576,7 @@ class SessionService:
                 if attempt.execution_mode != "direct":
                     self._mark_plan_step(attempt, attempt.current_step_id or "execute", "failed", error=attempt.error or "")
             attempt.run_dir = result.get("run_dir")
+            self._bind_commercial_run(session, attempt)
 
             self.store.update_attempt(attempt)
             reply_metadata = {}

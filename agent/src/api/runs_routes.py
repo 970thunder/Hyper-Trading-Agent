@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 
 
@@ -246,13 +246,32 @@ def register_runs_routes(
         h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
         return h.RUNS_DIR
 
+    def _commercial_run_context(request: Request):
+        h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
+        if h is None or not h._env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
+            return None
+        principal = h._commercial_principal_from_request(request)
+        if principal is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Organization session required")
+        from src.commercial.store import CommercialStore
+
+        return CommercialStore(), principal
+
+    def _require_workspace_run_access(request: Request) -> None:
+        context = _commercial_run_context(request)
+        if context is None:
+            return
+        run_id = str(request.path_params.get("run_id") or "")
+        if run_id and not context[0].run_belongs_to_organization(context[1], run_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+
     # Pydantic models for response_model (resolved at registration time)
     RunResponse = host.RunResponse
     RunInfo = host.RunInfo
 
     # --- Routes ---
 
-    @app.get("/runs/{run_id}/code", dependencies=[Depends(require_auth)])
+    @app.get("/runs/{run_id}/code", dependencies=[Depends(require_auth), Depends(_require_workspace_run_access)])
     async def get_run_code(run_id: str):
         """Return strategy source files for a run.
 
@@ -273,7 +292,7 @@ def register_runs_routes(
                 result[f] = p.read_text(encoding="utf-8")
         return result
 
-    @app.get("/runs/{run_id}/pine", dependencies=[Depends(require_auth)])
+    @app.get("/runs/{run_id}/pine", dependencies=[Depends(require_auth), Depends(_require_workspace_run_access)])
     async def get_run_pine(run_id: str):
         """Return Pine Script file for a run.
 
@@ -292,7 +311,7 @@ def register_runs_routes(
             "content": pine_path.read_text(encoding="utf-8"),
         }
 
-    @app.get("/runs/{run_id}", response_model=RunResponse, dependencies=[Depends(require_auth)])
+    @app.get("/runs/{run_id}", response_model=RunResponse, dependencies=[Depends(require_auth), Depends(_require_workspace_run_access)])
     async def get_run_result(
         run_id: str,
         chart_symbol: Optional[str] = Query(None, description="Opt in to chart payloads for a single symbol"),
@@ -336,7 +355,7 @@ def register_runs_routes(
         return response
 
     @app.get("/runs", response_model=List[RunInfo], dependencies=[Depends(require_auth)])
-    async def list_runs(limit: int = 20):
+    async def list_runs(request: Request, limit: int = 20):
         """List recent runs with summary fields."""
         from src.ui_services import load_run_context
 
@@ -346,6 +365,8 @@ def register_runs_routes(
         if not runs_dir.exists():
             return []
 
+        context = _commercial_run_context(request)
+        owned_ids = context[0].list_workspace_run_ids(context[1], limit=1000) if context else None
         run_dirs = sorted(
             [d for d in runs_dir.iterdir() if d.is_dir()],
             key=lambda x: x.name,
@@ -353,8 +374,10 @@ def register_runs_routes(
         )
 
         results = []
-        for d in run_dirs[:limit]:
+        for d in run_dirs:
             run_id = d.name
+            if owned_ids is not None and run_id not in owned_ids:
+                continue
 
             # Status from state.json or artifacts
             status_val = "unknown"
@@ -433,5 +456,7 @@ def register_runs_routes(
                 start_date=run_context.get("start_date"),
                 end_date=run_context.get("end_date"),
             ))
+            if len(results) >= limit:
+                break
 
         return results

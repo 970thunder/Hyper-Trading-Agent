@@ -46,7 +46,8 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Keep platform administration distinct from organization Owner/Admin roles; allow global user/org suspension and knowledge-base governance.
 - [x] Bind commercial sessions to `organization_id` and deny cross-organization list/read/message/SSE access.
 - [x] Bind commercial browser uploads to `organization_id` and reject cross-organization knowledge imports.
-- [ ] Bind runs, reports, and generated artifacts to `organization_id`.
+- [x] Bind Agent session runs to `organization_id` and deny cross-organization Run list/detail/code access.
+- [ ] Bind reports and remaining generated artifacts to `organization_id`.
 - [ ] Add repository-level cross-organization isolation tests for sessions, runs, reports, and artifacts.
 - [ ] Add an organization switcher for users with multiple memberships.
 - [ ] Add dedicated localized Unauthorized and Forbidden routes.

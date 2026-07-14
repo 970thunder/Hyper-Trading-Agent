@@ -474,6 +474,16 @@ class CommercialStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_workspace_sessions_organization
                     ON workspace_sessions(organization_id, created_at DESC);
+                CREATE TABLE IF NOT EXISTS workspace_runs (
+                    run_id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    session_id TEXT NOT NULL DEFAULT '',
+                    attempt_id TEXT NOT NULL DEFAULT '',
+                    created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_workspace_runs_organization
+                    ON workspace_runs(organization_id, created_at DESC);
                 CREATE TABLE IF NOT EXISTS uploaded_files (
                     storage_key TEXT PRIMARY KEY,
                     organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -851,6 +861,42 @@ class CommercialStore:
                 (session_id, principal.organization_id),
             )
         self.audit(principal, "workspace.session.delete", "session", session_id, {})
+
+    def bind_workspace_run(
+        self,
+        principal: Principal,
+        run_id: str,
+        *,
+        session_id: str = "",
+        attempt_id: str = "",
+    ) -> None:
+        if not run_id:
+            raise ValueError("run id is required")
+        with self._connect() as conn:
+            existing = conn.execute("SELECT organization_id FROM workspace_runs WHERE run_id = ?", (run_id,)).fetchone()
+            if existing is not None and str(existing["organization_id"]) != principal.organization_id:
+                raise ValueError("run is already bound to another organization")
+            conn.execute(
+                "INSERT OR IGNORE INTO workspace_runs(run_id, organization_id, session_id, attempt_id, created_by_user_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (run_id, principal.organization_id, session_id, attempt_id, principal.user_id, utcnow()),
+            )
+        self.audit(principal, "workspace.run.create", "run", run_id, {"session_id": session_id, "attempt_id": attempt_id})
+
+    def run_belongs_to_organization(self, principal: Principal, run_id: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM workspace_runs WHERE run_id = ? AND organization_id = ?",
+                (run_id, principal.organization_id),
+            ).fetchone()
+        return row is not None
+
+    def list_workspace_run_ids(self, principal: Principal, limit: int = 200) -> set[str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT run_id FROM workspace_runs WHERE organization_id = ? ORDER BY created_at DESC LIMIT ?",
+                (principal.organization_id, max(1, min(limit, 1000))),
+            ).fetchall()
+        return {str(row["run_id"]) for row in rows}
 
     def register_uploaded_file(
         self,
