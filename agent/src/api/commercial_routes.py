@@ -122,6 +122,10 @@ class OrganizationMemberUpdateRequest(BaseModel):
     role: str
 
 
+class OrganizationSwitchRequest(BaseModel):
+    organization_id: str
+
+
 class PlatformUserUpdateRequest(BaseModel):
     display_name: str | None = Field(None, max_length=200)
     is_active: bool | None = None
@@ -429,6 +433,27 @@ def register_commercial_routes(app: FastAPI) -> None:
     @app.get("/organizations/current")
     async def current_organization(principal: Principal = Depends(_principal_from_cookie)):
         return _store().current_organization(principal)
+
+    @app.get("/organizations")
+    async def available_organizations(principal: Principal = Depends(_principal_from_cookie)):
+        return _store().list_user_organizations(principal)
+
+    @app.post("/organizations/switch", response_model=PrincipalResponse)
+    async def switch_organization(
+        payload: OrganizationSwitchRequest,
+        response: Response,
+        vibe_session: str | None = Cookie(default=None),
+        principal: Principal = Depends(_principal_from_cookie),
+    ):
+        try:
+            next_principal = _store().switch_organization(principal, payload.organization_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        _store().logout(vibe_session or "")
+        _set_cookie(response, _store().create_session(next_principal))
+        return _principal_payload(next_principal)
 
     @app.get("/organizations/current/members")
     async def list_organization_members(principal: Principal = Depends(_require_role("owner", "admin"))):

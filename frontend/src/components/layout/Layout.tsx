@@ -14,7 +14,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api, type CommercialPrincipal, type SessionItem } from "@/lib/api";
+import { api, type CommercialOrganizationMembership, type CommercialPrincipal, type SessionItem } from "@/lib/api";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { useAgentStore } from "@/stores/agent";
 import { cn } from "@/lib/utils";
@@ -44,7 +44,9 @@ export function Layout() {
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [principal, setPrincipal] = useState<CommercialPrincipal | null>(null);
+  const [organizations, setOrganizations] = useState<CommercialOrganizationMembership[]>([]);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [switchingOrganizationId, setSwitchingOrganizationId] = useState("");
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("qa-sidebar") === "collapsed");
@@ -84,10 +86,21 @@ export function Layout() {
     let cancelled = false;
     api.getCommercialMe()
       .then((me) => {
-        if (!cancelled) setPrincipal(me);
+        if (cancelled) return;
+        setPrincipal(me);
+        void api.listAvailableOrganizations()
+          .then((items) => {
+            if (!cancelled) setOrganizations(items);
+          })
+          .catch(() => {
+            if (!cancelled) setOrganizations([]);
+          });
       })
       .catch(() => {
-        if (!cancelled) setPrincipal(null);
+        if (!cancelled) {
+          setPrincipal(null);
+          setOrganizations([]);
+        }
       });
     return () => {
       cancelled = true;
@@ -100,10 +113,23 @@ export function Layout() {
     try {
       await api.logoutCommercial();
       setPrincipal(null);
+      setOrganizations([]);
       window.location.reload();
     } catch {
       toast.error(t("layout.logoutFailed"));
       setLoggingOut(false);
+    }
+  };
+
+  const switchOrganization = async (organizationId: string) => {
+    if (!principal || switchingOrganizationId || organizationId === principal.organization_id) return;
+    setSwitchingOrganizationId(organizationId);
+    try {
+      await api.switchOrganization(organizationId);
+      window.location.assign("/agent");
+    } catch {
+      toast.error(t("settings.platformAdmin.actionError"));
+      setSwitchingOrganizationId("");
     }
   };
 
@@ -191,6 +217,9 @@ export function Layout() {
       onToggleTheme={toggle}
       onLanguageChange={(language) => { void i18n.changeLanguage(language); }}
       onLogout={() => { void logout(); }}
+      organizations={organizations}
+      switchingOrganizationId={switchingOrganizationId}
+      onOrganizationSwitch={(organizationId) => { void switchOrganization(organizationId); }}
       version={t("app.version")}
       collapsed={compact}
       side={side}

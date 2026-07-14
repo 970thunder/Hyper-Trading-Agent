@@ -226,6 +226,12 @@ export const api = {
   getAuthStatus: () => request<CommercialAuthStatus>("/auth/status"),
   getCommercialMe: () => request<CommercialPrincipal>("/auth/me"),
   getCurrentOrganization: () => request<CommercialOrganization>("/organizations/current"),
+  listAvailableOrganizations: () => request<CommercialOrganizationMembership[]>("/organizations"),
+  switchOrganization: (organizationId: string) =>
+    request<CommercialPrincipal>("/organizations/switch", {
+      method: "POST",
+      body: JSON.stringify({ organization_id: organizationId }),
+    }),
   listOrganizationMembers: () => request<CommercialOrganizationMember[]>("/organizations/current/members"),
   createOrganizationMember: (body: CommercialOrganizationMemberCreateRequest) =>
     request<CommercialOrganizationMember>("/organizations/current/members", {
@@ -616,6 +622,12 @@ export interface CommercialOrganization {
   id: string;
   name: string;
   created_at: string;
+}
+
+export interface CommercialOrganizationMembership extends CommercialOrganization {
+  is_active: number | boolean;
+  role: CommercialRole;
+  membership_created_at: string;
 }
 
 export type CommercialRole = "owner" | "admin" | "member" | "viewer";

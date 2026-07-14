@@ -50,8 +50,8 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Bind Agent session runs to `organization_id` and deny cross-organization Run list/detail/code access.
 - [x] Bind Shadow Account reports, Swarm runs, Alpha background jobs, and Agent run artifacts to `organization_id`.
 - [x] Add repository-level cross-organization isolation tests for sessions, runs, reports, Swarm, and Runtime jobs.
-- [ ] Add an organization switcher for users with multiple memberships.
-- [ ] Add dedicated localized Unauthorized and Forbidden routes.
+- [x] Add an organization switcher for users with multiple memberships.
+- [x] Add dedicated localized Unauthorized and Forbidden routes.
 
 ## P1 Knowledge / RAG Productization
 

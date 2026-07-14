@@ -26,6 +26,7 @@ const Reports = lazy(() => import("@/pages/Reports").then((module) => ({ default
 const Correlation = lazy(() => import("@/pages/Correlation").then((module) => ({ default: module.Correlation })));
 const AlphaZoo = lazy(() => import("@/pages/AlphaZoo").then((module) => ({ default: module.AlphaZoo })));
 const PlatformAdmin = lazy(() => import("@/pages/PlatformAdmin").then((module) => ({ default: module.PlatformAdmin })));
+const Forbidden = lazy(() => import("@/pages/Forbidden").then((module) => ({ default: module.Forbidden })));
 
 function PageLoader() {
   const { t } = useTranslation();
@@ -72,6 +73,7 @@ export const router = createBrowserRouter([
         ],
       },
       { path: "/platform", element: <RequirePlatformAdmin>{wrap(PlatformAdmin)}</RequirePlatformAdmin> },
+      { path: "/forbidden", element: requireRole(Forbidden) },
       { path: "/settings", element: requireRole(Settings) },
       { path: "/runs/:runId", element: requireRole(RunDetail) },
       { path: "/compare", element: requireRole(Compare) },

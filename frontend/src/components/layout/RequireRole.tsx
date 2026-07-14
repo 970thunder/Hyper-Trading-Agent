@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Navigate, useLocation } from "react-router-dom";
-import { Loader2, ShieldCheck } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { api, type CommercialPrincipal, type CommercialRole } from "@/lib/api";
 
 interface RequireRoleProps {
@@ -47,17 +47,7 @@ export function RequireRole({ children, roles }: RequireRoleProps) {
   }
 
   if (roles?.length && !roles.includes(principal.role)) {
-    return (
-      <div className="mx-auto flex min-h-[60vh] max-w-2xl items-center justify-center p-6">
-        <section className="surface-panel w-full p-6 text-center">
-          <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-md bg-primary/10 text-primary">
-            <ShieldCheck className="h-5 w-5" />
-          </div>
-          <h1 className="text-lg font-semibold">{t("settings.agentPolicy.forbidden")}</h1>
-          <p className="mt-2 text-sm text-muted-foreground">{t("admin.unavailable")}</p>
-        </section>
-      </div>
-    );
+    return <Navigate to="/forbidden" replace state={{ from: location.pathname + location.search }} />;
   }
 
   return <>{children}</>;

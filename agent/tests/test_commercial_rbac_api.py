@@ -226,6 +226,33 @@ def test_commercial_mode_blocks_anonymous_self_registration(tmp_path: Path, monk
     assert response.json()["detail"] == "Authentication required"
 
 
+def test_user_can_switch_only_between_their_active_organization_memberships(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_DB", str(tmp_path / "commercial.db"))
+    first_client = TestClient(api_server.app, client=("127.0.0.1", 50320))
+    second_client = TestClient(api_server.app, client=("127.0.0.1", 50321))
+    first = _register_owner(first_client, email="multi-org@example.com")
+    second = _register_owner(second_client, email="second-owner@example.com")
+
+    added = second_client.post(
+        "/organizations/current/members",
+        json={"email": "multi-org@example.com", "password": PASSWORD, "role": "member"},
+    )
+    assert added.status_code == 200
+
+    organizations = first_client.get("/organizations")
+    assert organizations.status_code == 200
+    assert {item["id"] for item in organizations.json()} == {first["organization_id"], second["organization_id"]}
+
+    switched = first_client.post("/organizations/switch", json={"organization_id": second["organization_id"]})
+    assert switched.status_code == 200
+    assert switched.json()["organization_id"] == second["organization_id"]
+    assert switched.json()["role"] == "member"
+    assert first_client.get("/auth/me").json()["organization_id"] == second["organization_id"]
+
+    denied = first_client.post("/organizations/switch", json={"organization_id": "org_not_a_membership"})
+    assert denied.status_code == 404
+
+
 def test_knowledge_file_ingestion_queues_parsing_and_vectorization_job(tmp_path: Path, monkeypatch) -> None:
     pushed: list[tuple[str, str]] = []
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, ChevronDown, Languages, Loader2, LogIn, LogOut, Moon, Settings, Sun, UserRound } from "lucide-react";
-import type { CommercialPrincipal } from "@/lib/api";
+import { Building2, Check, ChevronDown, Languages, Loader2, LogIn, LogOut, Moon, Settings, Sun, UserRound } from "lucide-react";
+import type { CommercialOrganizationMembership, CommercialPrincipal } from "@/lib/api";
 import { SUPPORTED_LANGUAGES, type SupportedLanguageCode } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { FloatingLayer, type FloatingSide } from "@/components/ui/FloatingLayer";
@@ -25,6 +25,9 @@ export interface AccountMenuProps {
   onToggleTheme: () => void;
   onLanguageChange: (language: SupportedLanguageCode) => void;
   onLogout: () => void;
+  organizations?: CommercialOrganizationMembership[];
+  switchingOrganizationId?: string;
+  onOrganizationSwitch?: (organizationId: string) => void;
   version: string;
   collapsed?: boolean;
   side?: FloatingSide;
@@ -40,6 +43,9 @@ export function AccountMenu({
   onToggleTheme,
   onLanguageChange,
   onLogout,
+  organizations = [],
+  switchingOrganizationId = "",
+  onOrganizationSwitch,
   version,
   collapsed = false,
   side = "top",
@@ -50,6 +56,7 @@ export function AccountMenu({
     || SUPPORTED_LANGUAGES.find((language) => currentLanguage.startsWith(language.code))
     || SUPPORTED_LANGUAGES[0];
   const identity = principal?.email || labels.login;
+  const activeOrganization = organizations.find((organization) => organization.id === principal?.organization_id);
 
   return (
     <FloatingLayer
@@ -90,7 +97,7 @@ export function AccountMenu({
         {principal ? (
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium text-ink-strong" title={principal.email}>{principal.email}</div>
-            <div className="mt-0.5 text-xs capitalize text-ink-muted">{principal.role}</div>
+            <div className="mt-0.5 truncate text-xs text-ink-muted">{activeOrganization?.name || principal.role}</div>
           </div>
         ) : <span className="flex-1" />}
         <Link
@@ -104,6 +111,38 @@ export function AccountMenu({
           <Settings className="h-3.5 w-3.5" aria-hidden="true" />
         </Link>
       </div>
+
+      {principal && organizations.length > 1 ? (
+        <div className="mb-1 border-b border-[hsl(var(--border-subtle))] pb-1">
+          {organizations.map((organization) => {
+            const active = organization.id === principal.organization_id;
+            const switching = switchingOrganizationId === organization.id;
+            return (
+              <button
+                key={organization.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={active}
+                disabled={active || switching}
+                onClick={() => {
+                  if (active || !onOrganizationSwitch) return;
+                  onOrganizationSwitch(organization.id);
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-start text-sm transition-colors duration-fast",
+                  active ? "bg-primary/10 text-primary" : "text-ink hover:bg-surface-2 hover:text-ink-strong",
+                  switching && "opacity-55",
+                )}
+              >
+                {switching ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" /> : <Building2 className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                <span className="min-w-0 flex-1"><span className="block truncate">{organization.name}</span><span className="block truncate text-[11px] opacity-70">{organization.role}</span></span>
+                {active ? <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       <button
         type="button"

@@ -17,6 +17,7 @@ function renderGuard(roles: Array<"owner" | "admin" | "member" | "viewer"> = ["o
     <MemoryRouter initialEntries={["/secure"]}>
       <Routes>
         <Route path="/login" element={<div>login page</div>} />
+        <Route path="/forbidden" element={<div>forbidden page</div>} />
         <Route path="/secure" element={<RequireRole roles={roles}><div>secure page</div></RequireRole>} />
       </Routes>
     </MemoryRouter>,
@@ -51,7 +52,7 @@ describe("RequireRole", () => {
       role: "viewer",
     });
     renderGuard(["owner", "admin"]);
-    expect(await screen.findByText("Admin console unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("forbidden page")).toBeInTheDocument();
     expect(screen.queryByText("secure page")).not.toBeInTheDocument();
   });
 });

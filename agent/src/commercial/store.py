@@ -850,6 +850,53 @@ class CommercialStore:
             row = conn.execute("SELECT id, name, created_at FROM organizations WHERE id = ?", (principal.organization_id,)).fetchone()
         return dict(row) if row else {}
 
+    def list_user_organizations(self, principal: Principal) -> list[dict[str, Any]]:
+        """List active organization memberships available to the signed-in user."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT o.id, o.name, o.is_active, o.created_at, m.role, m.created_at AS membership_created_at
+                FROM memberships m
+                JOIN organizations o ON o.id = m.organization_id
+                WHERE m.user_id = ? AND o.is_active = 1
+                ORDER BY CASE m.organization_id WHEN ? THEN 0 ELSE 1 END, o.name COLLATE NOCASE ASC
+                """,
+                (principal.user_id, principal.organization_id),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def switch_organization(self, principal: Principal, organization_id: str) -> Principal:
+        """Create a new principal for an active membership in another organization."""
+        target = str(organization_id or "").strip()
+        if not target:
+            raise ValueError("organization_id is required")
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT m.organization_id, m.role, o.is_active AS organization_active, u.is_active AS user_active
+                FROM memberships m
+                JOIN organizations o ON o.id = m.organization_id
+                JOIN users u ON u.id = m.user_id
+                WHERE m.user_id = ? AND m.organization_id = ?
+                """,
+                (principal.user_id, target),
+            ).fetchone()
+        if row is None:
+            raise KeyError(target)
+        if not bool(row["organization_active"]):
+            raise ValueError("organization is inactive")
+        if not bool(row["user_active"]):
+            raise ValueError("account is inactive")
+        next_principal = Principal(
+            user_id=principal.user_id,
+            organization_id=str(row["organization_id"]),
+            email=principal.email,
+            role=str(row["role"]),
+            is_platform_admin=self._is_platform_admin(principal.user_id, principal.email),
+        )
+        self.audit(next_principal, "organization.switch", "organization", target, {"from_organization_id": principal.organization_id})
+        return next_principal
+
     # --- workspace resource ownership ---
 
     def bind_workspace_session(self, principal: Principal, session_id: str) -> None:
