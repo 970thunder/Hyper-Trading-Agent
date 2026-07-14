@@ -133,4 +133,38 @@ describe("Reports page", () => {
     expect(screen.getByText("positive")).toBeInTheDocument();
     expect(screen.getByText("negative")).toBeInTheDocument();
   });
+
+  it("uses floating filters and restores the full report list when filters are cleared", async () => {
+    apiMock.listRuns.mockResolvedValue([
+      {
+        run_id: "completed-report",
+        status: "success",
+        created_at: "2026-06-04T00:00:00Z",
+        prompt: "Completed strategy",
+        codes: ["AAPL"],
+        total_return: 0.12,
+      },
+      {
+        run_id: "failed-report",
+        status: "failed",
+        created_at: "2026-06-03T00:00:00Z",
+        prompt: "Failed strategy",
+        codes: ["MSFT"],
+        total_return: -0.08,
+      },
+    ]);
+
+    const { container } = render(<Reports />, { wrapper: MemoryRouter });
+    await screen.findByText("completed-report");
+
+    expect(container.querySelector("select")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Report status: All statuses" }));
+    fireEvent.click(screen.getByRole("option", { name: "Failed" }));
+
+    expect(screen.queryByText("completed-report")).not.toBeInTheDocument();
+    expect(screen.getByText("failed-report")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByText("completed-report")).toBeInTheDocument();
+  });
 });

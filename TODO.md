@@ -18,9 +18,10 @@ Implementation plan: `docs/superpowers/plans/2026-07-13-ui-system-redesign.md`
 - [x] Refocus Settings on overview, personal API access, data sources, and IM channels.
 - [x] Move model and Swarm Agent create/edit workflows into animated drawers with stable list layouts.
 - [x] Complete the Runtime second visual pass with queue metrics, search, floating filters, task details, cancellation confirmation, and inline action errors.
-- [ ] Complete the second visual pass for Reports, Run Detail, AlphaZoo, Compare, and Correlation.
-- [x] Replace Runtime native selects with shared floating Select controls.
-- [ ] Replace remaining native selects on Reports, Run Detail, Compare, and AlphaZoo.
+- [x] Complete the Reports second visual pass with performance metrics, responsive report rows, richer filters, semantic statuses, and compact actions.
+- [ ] Complete the second visual pass for Run Detail, AlphaZoo, Compare, and Correlation.
+- [x] Replace Runtime and Reports native selects with shared floating Select controls.
+- [ ] Replace remaining native selects on Run Detail, Compare, and AlphaZoo.
 - [ ] Complete desktop/mobile light/dark screenshot regression and Arabic RTL verification.
 
 ## P0 Permissions And Enterprise Boundaries
