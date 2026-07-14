@@ -1,6 +1,6 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Runtime } from "../Runtime";
-import type { LiveStatus } from "@/lib/api";
+import type { LiveStatus, RuntimeJob } from "@/lib/api";
 
 const apiMock = vi.hoisted(() => ({
   getLiveStatus: vi.fn(),
@@ -92,7 +92,7 @@ describe("Runtime page", () => {
     render(<Runtime />);
 
     expect(await screen.findByText("Live / Paper Runtime Status")).toBeInTheDocument();
-    expect(screen.getByText("Clear")).toBeInTheDocument();
+    expect(screen.getAllByText("Clear").length).toBeGreaterThan(0);
     expect(screen.getByText("paper")).toBeInTheDocument();
     expect(screen.getByText("auth present")).toBeInTheDocument();
     expect(screen.getByText("runner alive")).toBeInTheDocument();
@@ -139,15 +139,57 @@ describe("Runtime page", () => {
       second.resolve(makeStatus({ global_halted: true, brokers: [] }));
       await second.promise;
     });
-    expect(await screen.findByText("Halted")).toBeInTheDocument();
+    expect((await screen.findAllByText("Halted")).length).toBeGreaterThan(0);
 
     await act(async () => {
       first.resolve(makeStatus());
       await first.promise;
     });
 
-    expect(screen.getByText("Halted")).toBeInTheDocument();
+    expect(screen.getAllByText("Halted").length).toBeGreaterThan(0);
     expect(screen.queryByText("paper")).not.toBeInTheDocument();
+  });
+
+  it("keeps the newest job list when an older request resolves later", async () => {
+    const firstJobs = deferred<RuntimeJob[]>();
+    const secondJobs = deferred<RuntimeJob[]>();
+    apiMock.getLiveStatus.mockResolvedValue(makeStatus());
+    apiMock.listRuntimeJobs
+      .mockReturnValueOnce(firstJobs.promise)
+      .mockReturnValueOnce(secondJobs.promise);
+
+    render(<Runtime />);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await act(async () => {
+      secondJobs.resolve([{
+        job_id: "new-job",
+        kind: "agent_run",
+        title: "Newest job snapshot",
+        status: "running",
+        progress: 60,
+        created_at: "2026-07-12T00:00:00Z",
+        updated_at: "2026-07-12T00:02:00Z",
+      }]);
+      await secondJobs.promise;
+    });
+    expect(await screen.findByText("Newest job snapshot")).toBeInTheDocument();
+
+    await act(async () => {
+      firstJobs.resolve([{
+        job_id: "old-job",
+        kind: "agent_run",
+        title: "Stale job snapshot",
+        status: "queued",
+        progress: 10,
+        created_at: "2026-07-12T00:00:00Z",
+        updated_at: "2026-07-12T00:01:00Z",
+      }]);
+      await firstJobs.promise;
+    });
+
+    expect(screen.getByText("Newest job snapshot")).toBeInTheDocument();
+    expect(screen.queryByText("Stale job snapshot")).not.toBeInTheDocument();
   });
 
   it("aborts an in-flight status request on unmount", () => {
@@ -222,7 +264,8 @@ describe("Runtime page", () => {
     expect(screen.getByText("factor load failed")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel job" }));
-    expect(apiMock.cancelRuntimeJob).toHaveBeenCalledWith("bench-1");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
+    await waitFor(() => expect(apiMock.cancelRuntimeJob).toHaveBeenCalledWith("bench-1"));
 
     fireEvent.click(screen.getByRole("button", { name: "Retry job" }));
     expect(apiMock.retryRuntimeJob).toHaveBeenCalledWith("compare-1");
@@ -272,22 +315,119 @@ describe("Runtime page", () => {
 
     render(<Runtime />);
 
-    expect(await screen.findByText("Durable job operations")).toBeInTheDocument();
-    expect(screen.getAllByText("Agent runs").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("RAG ingestion").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Web crawling").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Backtests").length).toBeGreaterThan(0);
+    expect(await screen.findByText("Portfolio research agent run")).toBeInTheDocument();
+    expect(screen.getByText("Index annual report PDF")).toBeInTheDocument();
+    expect(screen.getByText("Crawl macro policy URL")).toBeInTheDocument();
+    expect(screen.getByText("CSI 300 long backtest")).toBeInTheDocument();
     expect(screen.getByText("4 of 4 durable jobs")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Source filter"), { target: { value: "rag" } });
+    fireEvent.click(screen.getByRole("button", { name: "Source filter: All sources" }));
+    fireEvent.click(screen.getByRole("option", { name: "RAG ingestion" }));
 
     expect(screen.getByText("Index annual report PDF")).toBeInTheDocument();
     expect(screen.getByText("embedding provider unavailable")).toBeInTheDocument();
     expect(screen.queryByText("Portfolio research agent run")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Status filter"), { target: { value: "failed" } });
+    fireEvent.click(screen.getByRole("button", { name: "Status filter: All statuses" }));
+    fireEvent.click(screen.getByRole("option", { name: "Failed" }));
 
     expect(screen.getByText("1 of 4 durable jobs")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry job" })).toBeInTheDocument();
+  });
+
+  it("uses floating filters, searches jobs, and opens a job detail drawer", async () => {
+    apiMock.getLiveStatus.mockResolvedValue(makeStatus());
+    apiMock.listRuntimeJobs.mockResolvedValue([
+      {
+        job_id: "agent-portfolio-1",
+        kind: "agent_run",
+        title: "Portfolio research agent run",
+        status: "running",
+        progress: 35,
+        created_at: "2026-07-12T00:00:00Z",
+        updated_at: "2026-07-12T00:02:00Z",
+      },
+      {
+        job_id: "rag-annual-report-1",
+        kind: "rag_ingestion",
+        title: "Index annual report PDF",
+        status: "failed",
+        progress: 72,
+        error: "embedding provider unavailable",
+        created_at: "2026-07-12T00:00:00Z",
+        updated_at: "2026-07-12T00:03:00Z",
+      },
+    ]);
+
+    render(<Runtime />);
+
+    await screen.findByText("Portfolio research agent run");
+    expect(screen.queryAllByRole("combobox")).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Source filter: All sources" }));
+    fireEvent.click(screen.getByRole("option", { name: "RAG ingestion" }));
+
+    expect(screen.getByText("Index annual report PDF")).toBeInTheDocument();
+    expect(screen.queryByText("Portfolio research agent run")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search jobs" }), {
+      target: { value: "annual-report" },
+    });
+    expect(screen.getByText("Index annual report PDF")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "View details for Index annual report PDF" }));
+
+    expect(screen.getByRole("dialog", { name: "Index annual report PDF" })).toBeInTheDocument();
+    expect(screen.getByText("rag-annual-report-1")).toBeInTheDocument();
+    expect(screen.getAllByText("embedding provider unavailable").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("72%").length).toBeGreaterThan(0);
+  });
+
+  it("requires confirmation before cancellation and surfaces action failures", async () => {
+    apiMock.getLiveStatus.mockResolvedValue(makeStatus());
+    apiMock.listRuntimeJobs.mockResolvedValue([
+      {
+        job_id: "agent-1",
+        kind: "agent_run",
+        title: "Portfolio research agent run",
+        status: "running",
+        progress: 35,
+        created_at: "2026-07-12T00:00:00Z",
+        updated_at: "2026-07-12T00:02:00Z",
+      },
+    ]);
+    apiMock.cancelRuntimeJob.mockRejectedValue(new Error("queue unavailable"));
+
+    render(<Runtime />);
+    await screen.findByText("Portfolio research agent run");
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel job" }));
+    expect(apiMock.cancelRuntimeJob).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Cancel background job?" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }));
+
+    await waitFor(() => expect(apiMock.cancelRuntimeJob).toHaveBeenCalledWith("agent-1"));
+    expect(await screen.findByText("queue unavailable")).toBeInTheDocument();
+  });
+
+  it("shows completed jobs as a first-class queue metric", async () => {
+    apiMock.getLiveStatus.mockResolvedValue(makeStatus());
+    apiMock.listRuntimeJobs.mockResolvedValue([
+      {
+        job_id: "backtest-1",
+        kind: "long_backtest",
+        title: "CSI 300 long backtest",
+        status: "completed",
+        progress: 100,
+        created_at: "2026-07-12T00:00:00Z",
+        updated_at: "2026-07-12T00:04:00Z",
+      },
+    ]);
+
+    render(<Runtime />);
+
+    expect(await screen.findByText("Completed")).toBeInTheDocument();
+    expect(screen.getByText("1 completed")).toBeInTheDocument();
   });
 });
