@@ -20,10 +20,12 @@ Implementation plan: `docs/superpowers/plans/2026-07-13-ui-system-redesign.md`
 - [x] Complete the Runtime second visual pass with queue metrics, search, floating filters, task details, cancellation confirmation, and inline action errors.
 - [x] Complete the Reports second visual pass with performance metrics, responsive report rows, richer filters, semantic statuses, and compact actions.
 - [x] Complete the Run Detail second visual pass with structured tabs, chart controls, trade ledger, artifacts, collapsible logs, and code inspection.
-- [ ] Complete the second visual pass for AlphaZoo, Compare, and Correlation.
+- [x] Complete the Compare second visual pass with floating run selection, request-race protection, score summary, themed equity overlay, and metric table.
+- [ ] Complete the second visual pass for AlphaZoo and Correlation.
 - [x] Replace Runtime and Reports native selects with shared floating Select controls.
 - [x] Replace the Run Detail symbol selector with the shared floating Select control.
-- [ ] Replace remaining native selects on Compare and AlphaZoo.
+- [x] Replace Compare run selectors with searchable shared floating Select controls.
+- [ ] Replace remaining native selects on AlphaZoo.
 - [ ] Complete desktop/mobile light/dark screenshot regression and Arabic RTL verification.
 
 ## P0 Permissions And Enterprise Boundaries
