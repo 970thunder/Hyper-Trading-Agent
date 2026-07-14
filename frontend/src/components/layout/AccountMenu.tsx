@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, ChevronDown, Languages, Loader2, LogIn, LogOut, Moon, Sun, UserRound } from "lucide-react";
+import { Check, ChevronDown, Languages, Loader2, LogIn, LogOut, Moon, Settings, Sun, UserRound } from "lucide-react";
 import type { CommercialPrincipal } from "@/lib/api";
 import { SUPPORTED_LANGUAGES, type SupportedLanguageCode } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,7 @@ export interface AccountMenuLabels {
   light: string;
   dark: string;
   language: string;
+  settings?: string;
 }
 
 export interface AccountMenuProps {
@@ -85,12 +86,24 @@ export function AccountMenu({
       autoFocus="first"
       className="w-64 p-1.5"
     >
-      {principal ? (
-        <div className="mb-1 border-b border-[hsl(var(--border-subtle))] px-2.5 py-2">
-          <div className="truncate text-sm font-medium text-ink-strong" title={principal.email}>{principal.email}</div>
-          <div className="mt-0.5 text-xs capitalize text-ink-muted">{principal.role}</div>
-        </div>
-      ) : null}
+      <div className="mb-1 flex items-start gap-2 border-b border-[hsl(var(--border-subtle))] px-2.5 py-2">
+        {principal ? (
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium text-ink-strong" title={principal.email}>{principal.email}</div>
+            <div className="mt-0.5 text-xs capitalize text-ink-muted">{principal.role}</div>
+          </div>
+        ) : <span className="flex-1" />}
+        <Link
+          to="/settings"
+          role="menuitem"
+          aria-label={labels.settings || labels.account}
+          title={labels.settings || labels.account}
+          onClick={() => setOpen(false)}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-muted transition-colors duration-fast hover:bg-surface-2 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+        >
+          <Settings className="h-3.5 w-3.5" aria-hidden="true" />
+        </Link>
+      </div>
 
       <button
         type="button"

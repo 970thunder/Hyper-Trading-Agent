@@ -419,6 +419,12 @@ export function Agent() {
     try {
       const snapshot = await api.getGoal(targetSession);
       if (act().sessionId !== targetSession) return;
+      if (!snapshot) {
+        setGoalSnapshot(null);
+        setGoalDetailsOpen(false);
+        setGoalEditActive(false);
+        return;
+      }
       setGoalSnapshot(snapshot);
     } catch (error) {
       if (act().sessionId !== targetSession) return;
@@ -525,6 +531,59 @@ export function Agent() {
     }
     return false;
   }, [refreshSessionMessages]);
+
+  // API and worker run in separate production processes. SSE covers live
+  // progress; this persisted-state check guarantees a terminal UI state.
+  const reconcilePersistedAttempt = useCallback(async (sid: string, attemptId: string) => {
+    try {
+      const execution = await api.getAttemptExecution(sid, attemptId);
+      if (act().sessionId !== sid) return;
+
+      setAttemptStatus(execution.status);
+      setExecutionPlan(execution.plan || []);
+      setPendingApproval(execution.approvals.find((item) => item.status === "pending") || null);
+
+      if (["queued", "planning", "running"].includes(execution.status)) {
+        setAttemptStartedAt((current) => current || Date.now());
+        if (act().status !== "streaming") act().setStatus("streaming");
+        return;
+      }
+
+      if (execution.status === "waiting_approval") {
+        setReasoningActive(false);
+        setAttemptStartedAt(null);
+        act().setStatus("idle");
+        return;
+      }
+
+      if (["completed", "failed", "cancelled", "blocked", "paused"].includes(execution.status)) {
+        setReasoningActive(false);
+        setAttemptStartedAt(null);
+        act().clearStreaming();
+        act().setStatus("idle");
+        useAgentStore.setState({ toolCalls: [] });
+        await refreshSessionMessages(sid);
+      }
+    } catch {
+      // The SSE timeout guard remains available if this snapshot is unavailable.
+    }
+  }, [refreshSessionMessages]);
+
+  useEffect(() => {
+    if (!sessionId || !activeAttemptId) return;
+    if (["completed", "failed", "cancelled", "blocked", "paused"].includes(attemptStatus)) return;
+
+    let disposed = false;
+    const reconcile = () => {
+      if (!disposed) void reconcilePersistedAttempt(sessionId, activeAttemptId);
+    };
+    reconcile();
+    const timer = window.setInterval(reconcile, 2_500);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [activeAttemptId, attemptStatus, reconcilePersistedAttempt, sessionId]);
 
   const setupSSE = useCallback((sid: string) => {
     if (sseSessionRef.current === sid) return;

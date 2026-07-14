@@ -10,7 +10,6 @@ import {
   Database,
   FileText,
   Layers,
-  Settings,
   ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -133,7 +132,6 @@ export function Layout() {
         id: "workspace",
         label: t("layout.workspaceGroup"),
         items: [
-          { to: "/", icon: BarChart3, label: t("layout.home") },
           { to: "/agent", icon: Bot, label: t("layout.agent") },
           { to: "/runtime", icon: Activity, label: t("layout.runtime"), roles: ["owner", "admin"] },
           { to: "/reports", icon: FileText, label: t("layout.reports") },
@@ -153,7 +151,6 @@ export function Layout() {
         label: t("layout.administrationGroup"),
         items: [
           { to: "/admin", icon: ShieldCheck, label: t("layout.admin"), roles: ["owner", "admin"] },
-          { to: "/settings", icon: Settings, label: t("layout.settings") },
         ],
       },
     ];
@@ -179,6 +176,7 @@ export function Layout() {
     light: t("layout.light"),
     dark: t("layout.dark"),
     language: t("layout.language"),
+    settings: t("layout.settings"),
   };
 
   const accountMenu = (compact: boolean, side: "top" | "bottom") => (
@@ -218,14 +216,21 @@ export function Layout() {
         collapsed ? "w-[var(--sidebar-width-collapsed)]" : "w-[var(--sidebar-width)]",
       )}
     >
-      <div className={cn("flex h-14 shrink-0 items-center border-b border-[hsl(var(--border-subtle))]", collapsed ? "justify-center px-2" : "px-4")}>
-        <Link to="/" aria-label="Hyper Trading Agent" className="flex min-w-0 items-center gap-2 font-semibold text-ink-strong">
+      <div className={cn("flex h-14 shrink-0 items-center gap-1 border-b border-[hsl(var(--border-subtle))]", collapsed ? "justify-center px-1" : "px-3")}>
+        <Link to="/" aria-label="Hyper Trading Agent" className={cn("flex min-w-0 items-center gap-2 font-semibold text-ink-strong", collapsed && "justify-center")}>
           <BarChart3 className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
           {!collapsed ? <span className="truncate text-sm">Hyper Trading Agent</span> : null}
         </Link>
+        <IconButton
+          label={collapsed ? t("layout.expand") : t("layout.collapse")}
+          onClick={() => setCollapsed((value) => !value)}
+          className={cn("h-8 shrink-0", collapsed ? "w-8" : "ms-auto w-8")}
+        >
+          {collapsed ? <ChevronsRight className="h-3.5 w-3.5 rtl:flip-x" /> : <ChevronsLeft className="h-3.5 w-3.5 rtl:flip-x" />}
+        </IconButton>
       </div>
 
-      <div className="min-h-0 overflow-y-auto">
+      <div className="max-h-[38%] shrink-0 overflow-y-auto">
         <PrimaryNavigation groups={navigationGroups} pathname={pathname} collapsed={collapsed} ariaLabel={t("layout.primaryNavigation")} />
       </div>
 
@@ -233,13 +238,6 @@ export function Layout() {
 
       <div className={cn("shrink-0 border-t border-[hsl(var(--border-subtle))]", collapsed ? "grid justify-items-center gap-1 p-1.5" : "grid gap-2 p-2.5")}>
         {accountMenu(collapsed, "top")}
-        <IconButton
-          label={collapsed ? t("layout.expand") : t("layout.collapse")}
-          onClick={() => setCollapsed((value) => !value)}
-          className={cn("h-8", collapsed ? "w-8" : "w-full")}
-        >
-          {collapsed ? <ChevronsRight className="h-3.5 w-3.5 rtl:flip-x" /> : <ChevronsLeft className="h-3.5 w-3.5 rtl:flip-x" />}
-        </IconButton>
       </div>
     </div>
   );
