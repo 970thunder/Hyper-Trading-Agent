@@ -3,6 +3,7 @@ import { KeyRound, Loader2, RotateCcw, Save, Server, SlidersHorizontal } from "l
 import { useTranslation } from "react-i18next";
 import type { LLMProviderOption, LLMSettings } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { Select, type SelectOption } from "@/components/ui/Select";
 
 export interface LLMFormState {
   provider: string;
@@ -67,22 +68,27 @@ export function LocalModelSettingsPanel({
         <div className="grid gap-4">
           <label className="grid gap-2">
             <span className={labelClass}>{t("settings.provider")}</span>
-            <select value={form.provider} onChange={(event) => onProviderChange(event.target.value)} className={fieldClass}>
-              {providers.map((provider) => (
-                <option key={provider.name} value={provider.name}>{provider.label}</option>
-              ))}
-            </select>
+            <Select
+              value={form.provider}
+              onValueChange={onProviderChange}
+              options={providers.map((provider) => ({ value: provider.name, label: provider.label })) as SelectOption[]}
+              label={t("settings.provider")}
+              className="w-full"
+            />
             <span className={hintClass}>{t("settings.modelProviderHint")}</span>
           </label>
 
           <label className="grid gap-2">
             <span className={labelClass}>{t("settings.model")}</span>
             <div className="flex gap-2">
-              <select value={form.model_name} onChange={(event) => onFormChange({ model_name: event.target.value })} className={fieldClass} required>
-                {modelOptionsFor(selectedProvider, form.model_name).map((model) => (
-                  <option key={model} value={model}>{model}</option>
-                ))}
-              </select>
+              <Select
+                value={form.model_name}
+                onValueChange={(model_name) => onFormChange({ model_name })}
+                options={modelOptionsFor(selectedProvider, form.model_name).map((model) => ({ value: model, label: model })) as SelectOption[]}
+                label={t("settings.model")}
+                searchable
+                className="w-full"
+              />
               <button type="button" onClick={onApplyProviderDefaults} className="inline-flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground" title={t("settings.useProviderDefaults")}>
                 <RotateCcw className="h-4 w-4" />
                 <span className="hidden sm:inline">{t("settings.useProviderDefaults")}</span>
@@ -132,13 +138,19 @@ export function LocalModelSettingsPanel({
 
           <label className="grid gap-2">
             <span className={labelClass}>{t("settings.reasoningEffort")}</span>
-            <select value={form.reasoning_effort} onChange={(event) => onFormChange({ reasoning_effort: event.target.value })} className={fieldClass}>
-              <option value="">{t("settings.off")}</option>
-              <option value="low">{t("settings.reasoningEffortLow")}</option>
-              <option value="medium">{t("settings.reasoningEffortMedium")}</option>
-              <option value="high">{t("settings.reasoningEffortHigh")}</option>
-              <option value="max">{t("settings.reasoningEffortMax")}</option>
-            </select>
+            <Select
+              value={form.reasoning_effort}
+              onValueChange={(reasoning_effort) => onFormChange({ reasoning_effort })}
+              options={[
+                { value: "", label: t("settings.off") },
+                { value: "low", label: t("settings.reasoningEffortLow") },
+                { value: "medium", label: t("settings.reasoningEffortMedium") },
+                { value: "high", label: t("settings.reasoningEffortHigh") },
+                { value: "max", label: t("settings.reasoningEffortMax") },
+              ]}
+              label={t("settings.reasoningEffort")}
+              className="w-full"
+            />
             <span className={hintClass}>{t("settings.reasoningEffortDesc")}</span>
           </label>
 

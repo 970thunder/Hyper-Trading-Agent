@@ -16,6 +16,7 @@ import type {
 import { cn } from "@/lib/utils";
 import { KnowledgeDocumentTable, KnowledgeSearchResults } from "./KnowledgeFragments";
 import { KnowledgeIngestionJobs } from "./KnowledgeIngestionJobs";
+import { Select, type SelectOption } from "@/components/ui/Select";
 
 const fieldClass =
   "w-full rounded-md border border-border/75 bg-background px-3 py-2 text-sm outline-none transition focus:border-primary/70 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60";
@@ -140,11 +141,13 @@ export function KnowledgeSettingsPanel({
             <div className="mb-5 grid gap-4 lg:grid-cols-[minmax(0,320px)_1fr]">
               <label className="grid gap-2">
                 <span className={labelClass}>{t("settings.knowledge.selectKb")}</span>
-                <select value={selectedKnowledgeBaseId} onChange={(event) => changeKnowledgeBase(event.target.value)} className={fieldClass}>
-                  {knowledgeBases.map((kb) => (
-                    <option key={kb.id} value={kb.id}>{kb.name}</option>
-                  ))}
-                </select>
+                <Select
+                  value={selectedKnowledgeBaseId}
+                  onValueChange={changeKnowledgeBase}
+                  options={knowledgeBases.map((kb) => ({ value: kb.id, label: kb.name })) as SelectOption[]}
+                  label={t("settings.knowledge.selectKb")}
+                  className="w-full"
+                />
               </label>
               <div className="grid gap-2 rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
                 <span>{t("settings.knowledge.pipelineDescription")}</span>
