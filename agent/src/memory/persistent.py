@@ -28,6 +28,18 @@ MAX_RESULTS = 5
 METADATA_WEIGHT = 2.0
 MEMORY_TYPES = ("user", "feedback", "project", "reference")
 
+
+def commercial_memory_directory(organization_id: str, user_id: str) -> Path:
+    """Return a non-enumerable persistent-memory directory for one user.
+
+    Commercial memory is scoped to both organization and user. Hashing the
+    identifiers avoids disclosing tenant identifiers in a shared volume while
+    ensuring no supplied value can influence a filesystem path.
+    """
+    org_digest = hashlib.sha256(organization_id.encode("utf-8")).hexdigest()[:20]
+    user_digest = hashlib.sha256(user_id.encode("utf-8")).hexdigest()[:20]
+    return MEMORY_BASE / "commercial" / f"org-{org_digest}" / f"user-{user_digest}"
+
 # Script ranges tokenized and slugged at char level (no word-boundary
 # whitespace). Arabic/Hebrew narrowed to letter blocks to exclude bidi
 # controls and combining marks from on-disk slugs.

@@ -47,6 +47,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Expand the global platform console with tenant-bound runtime jobs, generated artifacts, repository/storage health, and audited maintenance actions.
 - [x] Reserve legacy process-wide settings, IM channels, scheduled jobs, and metrics for Platform Admin; permit machine-key access only for `/metrics` monitoring.
 - [x] Reserve process-wide live-trading controls and connector status for Platform Admin until broker accounts are tenant-bound.
+- [x] Scope persistent Agent memory to the active organization and user in commercial sessions.
 - [x] Bind commercial sessions to `organization_id` and deny cross-organization list/read/message/SSE access.
 - [x] Bind commercial browser uploads to `organization_id` and reject cross-organization knowledge imports.
 - [x] Bind Agent session runs to `organization_id` and deny cross-organization Run list/detail/code access.

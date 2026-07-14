@@ -14,7 +14,29 @@ from src.memory.persistent import (
     _sanitize_body,
     _tokenize,
     _truncate_body,
+    commercial_memory_directory,
 )
+
+
+def test_commercial_memory_is_scoped_to_each_organization_user_pair(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("src.memory.persistent.MEMORY_BASE", tmp_path)
+
+    first_dir = commercial_memory_directory("org_research", "user_alice")
+    second_dir = commercial_memory_directory("org_research", "user_bob")
+    cross_org_dir = commercial_memory_directory("org_other", "user_alice")
+
+    assert first_dir != second_dir != cross_org_dir
+    assert "org_research" not in str(first_dir)
+    assert "user_alice" not in str(first_dir)
+
+    first = PersistentMemory(memory_dir=first_dir)
+    second = PersistentMemory(memory_dir=second_dir)
+    cross_org = PersistentMemory(memory_dir=cross_org_dir)
+    first.add("Allocation Preference", "Use a defensive allocation for client research.", "user")
+
+    assert [entry.title for entry in first.find_relevant("defensive allocation")] == ["Allocation Preference"]
+    assert second.find_relevant("defensive allocation") == []
+    assert cross_org.find_relevant("defensive allocation") == []
 
 
 class TestCoerceStr:

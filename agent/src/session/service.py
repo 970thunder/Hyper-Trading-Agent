@@ -731,7 +731,7 @@ class SessionService:
         from src.tools import build_registry
         from src.providers.chat import ChatLLM
         from src.agent.loop import AgentLoop
-        from src.memory.persistent import PersistentMemory
+        from src.memory.persistent import PersistentMemory, commercial_memory_directory
         from src.config.loader import load_runtime_agent_config, sanitize_session_overrides
 
         model_provider = commercial_model_provider or (session_config or {}).get("commercial_model_provider")
@@ -744,7 +744,16 @@ class SessionService:
             timeout_seconds=int(model_provider.get("timeout_seconds")) if isinstance(model_provider, dict) else None,
             max_retries=int(model_provider.get("max_retries")) if isinstance(model_provider, dict) else None,
         )
-        pm = PersistentMemory()
+        commercial_principal = (session_config or {}).get("commercial_principal")
+        if isinstance(commercial_principal, dict):
+            organization_id = str(commercial_principal.get("organization_id") or "").strip()
+            user_id = str(commercial_principal.get("user_id") or "").strip()
+            if organization_id and user_id:
+                pm = PersistentMemory(memory_dir=commercial_memory_directory(organization_id, user_id))
+            else:
+                pm = PersistentMemory()
+        else:
+            pm = PersistentMemory()
 
         session_id = attempt.session_id
         attempt_id = attempt.attempt_id
