@@ -42,6 +42,7 @@ import { echarts } from "@/lib/echarts";
 import { getChartTheme } from "@/lib/chart-theme";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { Select, type SelectOption } from "@/components/ui/Select";
+import { Metric, Panel, SectionHeader } from "@/components/ui/Panel";
 
 /* ---------- Constants ---------- */
 
@@ -999,27 +1000,15 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
 
   return (
     <div className="space-y-4">
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <Panel padding="none" className="grid grid-cols-2 overflow-hidden shadow-xs md:grid-cols-4">
         {totals.map(({ label, value, icon: Icon, tone }) => (
-          <div key={label} className="border rounded-lg p-4 bg-card flex items-center gap-3">
-            <Icon className={cn("h-5 w-5 shrink-0", tone)} aria-hidden="true" />
-            <div>
-              <p className="text-xs text-muted-foreground">{label}</p>
-              <p className="text-xl font-bold tabular-nums">{value}</p>
-            </div>
-          </div>
+          <Metric key={label} label={<span className="inline-flex items-center gap-1.5"><Icon className={cn("h-3.5 w-3.5", tone)} aria-hidden="true" />{label}</span>} value={String(value)} className="border-r border-[hsl(var(--border-subtle))] px-4 py-4 last:border-r-0" />
         ))}
-      </div>
+      </Panel>
 
-      <div className="rounded-lg border bg-card">
-        <div className="flex flex-col gap-3 border-b bg-muted/20 px-4 py-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h3 className="text-sm font-semibold">{i18n.t("alphaZoo.benchmarkTableControls")}</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {i18n.t("alphaZoo.benchmarkTableDesc", { shown: visibleRows.length, total: rankingRows.length })}
-            </p>
-          </div>
+      <Panel padding="none" className="overflow-visible shadow-xs">
+        <div className="flex flex-col gap-3 border-b border-[hsl(var(--border-subtle))] bg-surface-2/45 px-4 py-4 md:flex-row md:items-end md:justify-between">
+          <SectionHeader title={i18n.t("alphaZoo.benchmarkTableControls")} description={i18n.t("alphaZoo.benchmarkTableDesc", { shown: visibleRows.length, total: rankingRows.length })} />
           <label className="grid gap-1 text-xs text-muted-foreground md:w-48">
             <span>{i18n.t("alphaZoo.categoryFilter")}</span>
             <Select
@@ -1039,7 +1028,7 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm" aria-label={i18n.t("alphaZoo.benchmarkAlphaRanking")}>
             <thead>
-              <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
+              <tr className="border-b border-[hsl(var(--border-subtle))] bg-surface-2/55 text-xs text-ink-muted">
                 <th className="px-4 py-2 text-left font-medium">{i18n.t("alphaZoo.id")}</th>
                 <th className="px-4 py-2 text-right font-medium">{i18n.t("alphaZoo.meanIc")}</th>
                 <th className="px-4 py-2 text-right font-medium">{i18n.t("alphaZoo.ir")}</th>
@@ -1056,7 +1045,7 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
                 </tr>
               ) : (
                 visibleRows.map((row) => (
-                  <tr key={`${row.id}:${row.category}`} className="border-b last:border-0 transition hover:bg-muted/20">
+                  <tr key={`${row.id}:${row.category}`} className="border-b border-[hsl(var(--border-subtle))] transition-colors duration-fast last:border-0 hover:bg-surface-2/45">
                     <td className="px-4 py-2">
                       <Link
                         to={`/alpha-zoo/${encodeURIComponent(row.id)}`}
@@ -1079,16 +1068,14 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
             </tbody>
           </table>
         </div>
-      </div>
+      </Panel>
 
       {/* By-theme breakdown */}
       {result.by_theme && Object.keys(result.by_theme).length > 0 && (
-        <div className="border rounded-lg p-4 bg-card">
-          <h3 className="text-sm font-medium text-muted-foreground mb-2">
-            {i18n.t("alphaZoo.byTheme")}
-          </h3>
+        <Panel className="shadow-xs">
+          <h3 className="mb-2 text-sm font-semibold text-ink-strong">{i18n.t("alphaZoo.byTheme")}</h3>
           <div ref={chartRef} style={{ height: 240 }} />
-        </div>
+        </Panel>
       )}
     </div>
   );
