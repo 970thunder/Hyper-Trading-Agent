@@ -7,8 +7,8 @@ import { api } from "@/lib/api";
 export function Login() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("1010411661@qq.com");
-  const [password, setPassword] = useState("123456");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -28,10 +28,10 @@ export function Login() {
   };
 
   return (
-    <div className="flex min-h-full items-center justify-center px-4 py-10">
-      <form onSubmit={submit} className="w-full max-w-md rounded-lg border bg-card p-6 shadow-sm">
-        <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
+    <main className="workspace-shell flex min-h-dvh items-center justify-center px-4 py-10 text-ink-strong">
+      <form onSubmit={submit} className="relative z-10 w-full max-w-md rounded-lg border border-[hsl(var(--border-default))] bg-[hsl(var(--surface-1)/0.94)] p-7 shadow-lg backdrop-blur-sm">
+        <div className="mb-7 flex items-center gap-3">
+          <div className="brand-mark h-11 w-11 rounded-lg">
             <ShieldCheck className="h-5 w-5" />
           </div>
           <div>
@@ -48,7 +48,7 @@ export function Login() {
               onChange={(event) => setEmail(event.target.value)}
               type="email"
               autoComplete="email"
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none transition-shadow focus:ring-2 focus:ring-primary/30"
+              className="w-full rounded-md border border-[hsl(var(--border-default))] bg-[hsl(var(--canvas)/0.72)] px-3 py-2.5 text-sm outline-none transition-[border-color,box-shadow] focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
             />
           </label>
           <label className="block space-y-1.5">
@@ -58,7 +58,7 @@ export function Login() {
               onChange={(event) => setPassword(event.target.value)}
               type="password"
               autoComplete="current-password"
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none transition-shadow focus:ring-2 focus:ring-primary/30"
+              className="w-full rounded-md border border-[hsl(var(--border-default))] bg-[hsl(var(--canvas)/0.72)] px-3 py-2.5 text-sm outline-none transition-[border-color,box-shadow] focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
             />
           </label>
         </div>
@@ -72,12 +72,12 @@ export function Login() {
         <button
           type="submit"
           disabled={loading || !email.trim() || !password}
-          className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+          className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-[background-color,transform,box-shadow] hover:-translate-y-px hover:bg-primary/90 hover:shadow-sm disabled:opacity-50"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
           {t("login.submit")}
         </button>
       </form>
-    </div>
+    </main>
   );
 }

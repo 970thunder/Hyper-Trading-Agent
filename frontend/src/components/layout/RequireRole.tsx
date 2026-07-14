@@ -13,19 +13,17 @@ export function RequireRole({ children, roles }: RequireRoleProps) {
   const { t } = useTranslation();
   const location = useLocation();
   const [principal, setPrincipal] = useState<CommercialPrincipal | null>(null);
-  const [commercialMode, setCommercialMode] = useState(true);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
-    Promise.all([
-      api.getAuthStatus().catch(() => ({ commercial_mode: true })),
-      api.getCommercialMe().catch(() => null),
-    ])
-      .then(([status, me]) => {
+    api.getCommercialMe()
+      .then((me) => {
         if (!alive) return;
-        setCommercialMode(Boolean(status.commercial_mode));
         setPrincipal(me);
+      })
+      .catch(() => {
+        if (alive) setPrincipal(null);
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -41,10 +39,6 @@ export function RequireRole({ children, roles }: RequireRoleProps) {
         {t("settings.loading")}
       </div>
     );
-  }
-
-  if (!commercialMode) {
-    return <>{children}</>;
   }
 
   if (!principal) {

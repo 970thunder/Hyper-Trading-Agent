@@ -44,11 +44,14 @@ function requireRole(Component: ComponentType, roles?: Array<"owner" | "admin" |
 
 export const router = createBrowserRouter([
   {
-    element: <Layout />,
+    path: "/login",
+    element: wrap(Login),
+  },
+  {
+    element: <RequireRole><Layout /></RequireRole>,
     children: [
       { path: "/", element: wrap(Home) },
-      { path: "/login", element: wrap(Login) },
-      { path: "/agent", element: requireRole(Agent) },
+      { path: "/agent", element: wrap(Agent) },
       { path: "/runtime", element: requireRole(Runtime, ["owner", "admin"]) },
       { path: "/reports", element: requireRole(Reports) },
       { path: "/knowledge", element: requireRole(Knowledge, ["owner", "admin", "member", "viewer"]) },
