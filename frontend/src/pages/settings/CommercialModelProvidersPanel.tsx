@@ -11,6 +11,9 @@ import { Panel, SectionHeader } from "@/components/ui/Panel";
 import { Select } from "@/components/ui/Select";
 import { StatusIndicator } from "@/components/ui/Status";
 
+const CUSTOM_PROVIDER_VALUE = "__custom_provider__";
+const CUSTOM_MODEL_VALUE = "__custom_model__";
+
 export interface ModelProviderFormState {
   provider: string;
   model: string;
@@ -70,12 +73,21 @@ export function CommercialModelProvidersPanel({
   const [deleteTarget, setDeleteTarget] = useState<CommercialModelProvider | null>(null);
   const [deleting, setDeleting] = useState(false);
   const selectedProvider = providerOptions.find((item) => item.name === form.provider);
-  const providerSelectOptions = providerOptions.map((provider) => ({
-    value: provider.name,
-    label: provider.label,
-    description: provider.default_base_url,
-  }));
-  const modelSelectOptions = modelOptionsFor(selectedProvider, form.model).map((model) => ({ value: model, label: model }));
+  const catalogModels = modelOptionsFor(selectedProvider);
+  const usingCustomProvider = !selectedProvider;
+  const usingCustomModel = !catalogModels.includes(form.model);
+  const providerSelectOptions = [
+    ...providerOptions.map((provider) => ({
+      value: provider.name,
+      label: provider.label,
+      description: provider.default_base_url,
+    })),
+    { value: CUSTOM_PROVIDER_VALUE, label: t("settings.modelProviderForm.customProvider") },
+  ];
+  const modelSelectOptions = [
+    ...catalogModels.map((model) => ({ value: model, label: model })),
+    { value: CUSTOM_MODEL_VALUE, label: t("settings.modelProviderForm.customModel") },
+  ];
 
   const refresh = () => {
     Promise.resolve(onRefresh()).catch((error) => {
@@ -227,25 +239,53 @@ export function CommercialModelProvidersPanel({
         <form id={formId} onSubmit={onSubmit} className="grid gap-5 p-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label={t("settings.provider")}>
-              <Select
-                value={form.provider}
-                onValueChange={onProviderChange}
-                options={providerSelectOptions}
-                label={t("settings.provider")}
-                searchable
-                contentClassName="max-h-80"
-                className="w-full"
-              />
+              <div className="grid gap-2">
+                <Select
+                  value={usingCustomProvider ? CUSTOM_PROVIDER_VALUE : form.provider}
+                  onValueChange={(provider) => {
+                    if (provider === CUSTOM_PROVIDER_VALUE) {
+                      onFormChange({ provider: "" });
+                      return;
+                    }
+                    onProviderChange(provider);
+                  }}
+                  options={providerSelectOptions}
+                  label={t("settings.provider")}
+                  searchable
+                  contentClassName="max-h-80"
+                  className="w-full"
+                />
+                {usingCustomProvider ? (
+                  <Input
+                    value={form.provider}
+                    onChange={(event) => onFormChange({ provider: event.target.value })}
+                    placeholder={t("settings.modelProviderForm.customProviderPlaceholder")}
+                    aria-label={t("settings.modelProviderForm.customProvider")}
+                    required
+                  />
+                ) : null}
+              </div>
             </Field>
             <Field label={t("settings.model")} hint={t("settings.modelIdHint")}>
-              <Select
-                value={form.model}
-                onValueChange={(model) => onFormChange({ model })}
-                options={modelSelectOptions}
-                label={t("settings.model")}
-                searchable
-                className="w-full"
-              />
+              <div className="grid gap-2">
+                <Select
+                  value={usingCustomModel ? CUSTOM_MODEL_VALUE : form.model}
+                  onValueChange={(model) => onFormChange({ model: model === CUSTOM_MODEL_VALUE ? "" : model })}
+                  options={modelSelectOptions}
+                  label={t("settings.model")}
+                  searchable
+                  className="w-full"
+                />
+                {usingCustomModel ? (
+                  <Input
+                    value={form.model}
+                    onChange={(event) => onFormChange({ model: event.target.value })}
+                    placeholder={t("settings.modelProviderForm.customModelPlaceholder")}
+                    aria-label={t("settings.modelProviderForm.customModel")}
+                    required
+                  />
+                ) : null}
+              </div>
             </Field>
           </div>
 
@@ -328,14 +368,13 @@ export function CommercialModelProvidersPanel({
   );
 }
 
-function modelOptionsFor(provider?: LLMProviderOption, currentModel?: string) {
+function modelOptionsFor(provider?: LLMProviderOption) {
   const values = provider?.model_options?.length
     ? provider.model_options
     : provider?.default_model
       ? [provider.default_model]
       : [];
-  const merged = currentModel && !values.includes(currentModel) ? [currentModel, ...values] : values;
-  return Array.from(new Set(merged.filter(Boolean)));
+  return Array.from(new Set(values.filter(Boolean)));
 }
 
 function CheckControl({ checked, label, onChange }: { checked: boolean; label: string; onChange: (checked: boolean) => void }) {

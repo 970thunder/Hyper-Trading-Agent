@@ -101,6 +101,14 @@ describe("CommercialModelProvidersPanel", () => {
     fireEvent.pointerDown(document.body);
     await waitFor(() => expect(screen.queryByRole("listbox", { name: "Model" })).not.toBeInTheDocument());
 
+    fireEvent.click(screen.getByRole("button", { name: /Provider: SiliconFlow/i }));
+    fireEvent.click(screen.getByRole("option", { name: "Custom provider" }));
+    expect(onFormChange).toHaveBeenCalledWith({ provider: "" });
+
+    fireEvent.click(screen.getByRole("button", { name: /Model: deepseek-ai\/DeepSeek-V3.2/i }));
+    fireEvent.click(screen.getByRole("option", { name: "Custom model ID" }));
+    expect(onFormChange).toHaveBeenCalledWith({ model: "" });
+
     fireEvent.click(screen.getByRole("button", { name: "Edit provider-1" }));
     expect(onEditProvider).toHaveBeenCalledWith(providers[0]);
     expect(onFormOpenChange).toHaveBeenCalledWith(true);
