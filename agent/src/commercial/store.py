@@ -466,6 +466,14 @@ class CommercialStore:
                     expires_at TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS workspace_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_workspace_sessions_organization
+                    ON workspace_sessions(organization_id, created_at DESC);
                 CREATE TABLE IF NOT EXISTS platform_admins (
                     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                     created_at TEXT NOT NULL,
@@ -791,6 +799,48 @@ class CommercialStore:
         with self._connect() as conn:
             row = conn.execute("SELECT id, name, created_at FROM organizations WHERE id = ?", (principal.organization_id,)).fetchone()
         return dict(row) if row else {}
+
+    # --- workspace resource ownership ---
+
+    def bind_workspace_session(self, principal: Principal, session_id: str) -> None:
+        if not session_id:
+            raise ValueError("session id is required")
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT organization_id FROM workspace_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if existing is not None and str(existing["organization_id"]) != principal.organization_id:
+                raise ValueError("session is already bound to another organization")
+            conn.execute(
+                "INSERT OR IGNORE INTO workspace_sessions(session_id, organization_id, created_by_user_id, created_at) VALUES (?, ?, ?, ?)",
+                (session_id, principal.organization_id, principal.user_id, utcnow()),
+            )
+        self.audit(principal, "workspace.session.create", "session", session_id, {})
+
+    def session_belongs_to_organization(self, principal: Principal, session_id: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM workspace_sessions WHERE session_id = ? AND organization_id = ?",
+                (session_id, principal.organization_id),
+            ).fetchone()
+        return row is not None
+
+    def list_workspace_session_ids(self, principal: Principal, limit: int = 200) -> set[str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT session_id FROM workspace_sessions WHERE organization_id = ? ORDER BY created_at DESC LIMIT ?",
+                (principal.organization_id, max(1, min(limit, 1000))),
+            ).fetchall()
+        return {str(row["session_id"]) for row in rows}
+
+    def delete_workspace_session(self, principal: Principal, session_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM workspace_sessions WHERE session_id = ? AND organization_id = ?",
+                (session_id, principal.organization_id),
+            )
+        self.audit(principal, "workspace.session.delete", "session", session_id, {})
 
     def list_organization_members(self, principal: Principal) -> list[dict[str, Any]]:
         with self._connect() as conn:
