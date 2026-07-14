@@ -39,7 +39,7 @@ For an upstream TLS load balancer or a private proof-of-deployment environment:
 docker compose --env-file .env.production -f docker-compose.prod.yml -f docker-compose.server.yml up --build -d
 ```
 
-Nginx publishes port `80`, forwards traffic to the API service, rate-limits login requests to 5/minute per client and other API traffic to 20/second per client, and blocks public access to metrics and interactive API documentation.
+Nginx publishes port `80`, forwards traffic to the API service, rate-limits login requests to 5/minute per client and other API traffic to 20/second per client, and blocks public access to metrics and interactive API documentation. The `migrations` service executes every SQL file under `migrations/` before API and worker startup; each migration is idempotent and should complete successfully before traffic is accepted.
 
 ## Enable TLS
 
