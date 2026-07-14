@@ -261,7 +261,7 @@ export const api = {
       method: "DELETE",
     }),
   testCommercialModelProvider: (id: string) =>
-    request<{ status: string; reachable: boolean; provider_id: string }>(`/models/providers/${encodeURIComponent(id)}/test`, {
+    request<CommercialModelProviderTestResult>(`/models/providers/${encodeURIComponent(id)}/test`, {
       method: "POST",
     }),
   listKnowledgeBases: () => request<CommercialKnowledgeBase[]>("/knowledge-bases"),
@@ -611,6 +611,17 @@ export interface CommercialModelProvider {
   is_default: number | boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface CommercialModelProviderTestResult {
+  status: "ok" | "error";
+  reachable: boolean;
+  provider_id: string;
+  prompt: string;
+  response: string;
+  elapsed_ms: number;
+  model: string;
+  error?: string;
 }
 
 export interface CommercialModelProviderCreateRequest {

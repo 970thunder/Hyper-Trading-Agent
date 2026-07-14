@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys as _sys
 import json
 import os
+import time
 from typing import Any
 
 import httpx
@@ -350,18 +351,54 @@ def register_commercial_routes(app: FastAPI) -> None:
     @app.post("/models/providers/{provider_id}/test")
     async def test_model_provider(provider_id: str, principal: Principal = Depends(_require_role("owner", "admin"))):
         try:
-            provider = _store().get_model_provider(principal, provider_id)
-            api_key = _store().get_model_provider_secret(principal, provider_id)
-        except KeyError as exc:
+            runtime = _store().resolve_model_provider_runtime(principal, provider_id)
+        except (KeyError, ValueError) as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="model provider not found") from exc
-        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+        if runtime is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="model provider not found")
+
+        started_at = time.perf_counter()
+        endpoint = str(runtime["base_url"]).rstrip("/") + "/chat/completions"
+        headers = {"Authorization": f"Bearer {runtime['api_key']}"} if runtime["api_key"] else {}
+        payload = {
+            "model": runtime["model"],
+            "messages": [{"role": "user", "content": "Hello"}],
+            "temperature": 0,
+            "max_tokens": 64,
+        }
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(str(provider["base_url"]).rstrip("/") + "/models", headers=headers)
-            reachable = resp.status_code in {200, 401, 403}
-        except Exception:
-            reachable = False
-        return {"status": "ok" if reachable else "error", "reachable": reachable, "provider_id": provider_id}
+            timeout_seconds = max(5, min(int(runtime["timeout_seconds"]), 30))
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                response = await client.post(endpoint, headers=headers, json=payload)
+            elapsed_ms = round((time.perf_counter() - started_at) * 1000)
+            response.raise_for_status()
+            body = response.json()
+            choices = body.get("choices") if isinstance(body, dict) else []
+            message = choices[0].get("message") if isinstance(choices, list) and choices else {}
+            content = message.get("content") if isinstance(message, dict) else ""
+            text = str(content or "").strip()
+            return {
+                "status": "ok",
+                "reachable": True,
+                "provider_id": provider_id,
+                "prompt": "Hello",
+                "response": text[:2000],
+                "elapsed_ms": elapsed_ms,
+                "model": runtime["model"],
+            }
+        except Exception as exc:
+            elapsed_ms = round((time.perf_counter() - started_at) * 1000)
+            return {
+                "status": "error",
+                "reachable": False,
+                "provider_id": provider_id,
+                "prompt": "Hello",
+                "response": "",
+                "elapsed_ms": elapsed_ms,
+                "model": runtime["model"],
+                "error": str(exc)[:500],
+            }
 
     @app.get("/knowledge-bases")
     async def list_knowledge_bases(principal: Principal = Depends(_principal_from_cookie)):

@@ -101,10 +101,11 @@ export function Models() {
     setTestingId(id);
     try {
       const result = await api.testCommercialModelProvider(id);
-      if (result.reachable) toast.success(t("settings.modelProviderActions.testOk"));
-      else toast.error(t("settings.modelProviderActions.testFailed"));
+      if (!result.reachable) toast.error(result.error || t("settings.modelProviderActions.testFailed"));
+      return result;
     } catch (testError) {
       toast.error(errorMessage(testError));
+      throw testError;
     } finally {
       setTestingId(null);
     }

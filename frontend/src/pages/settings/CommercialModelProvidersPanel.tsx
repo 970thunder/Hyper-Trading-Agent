@@ -2,7 +2,7 @@ import { useId, useState, type FormEvent } from "react";
 import { KeyRound, Pencil, Plus, RefreshCw, RotateCcw, Server, Star, Trash2, Wifi } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import type { CommercialModelProvider, LLMProviderOption } from "@/lib/api";
+import type { CommercialModelProvider, CommercialModelProviderTestResult, LLMProviderOption } from "@/lib/api";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { Drawer } from "@/components/ui/Drawer";
@@ -38,7 +38,7 @@ interface CommercialModelProvidersPanelProps {
   onFormOpenChange: (open: boolean) => void;
   onRefresh: () => Promise<void> | void;
   onEditProvider: (provider: CommercialModelProvider) => void;
-  onTestProvider: (id: string) => Promise<void> | void;
+  onTestProvider: (id: string) => Promise<CommercialModelProviderTestResult | undefined> | CommercialModelProviderTestResult | undefined;
   onToggleProvider: (provider: CommercialModelProvider) => Promise<void> | void;
   onSetDefaultProvider: (id: string) => Promise<void> | void;
   onDeleteProvider: (provider: CommercialModelProvider) => Promise<void> | void;
@@ -72,6 +72,7 @@ export function CommercialModelProvidersPanel({
   const formId = `model-provider-${useId().replace(/:/g, "")}`;
   const [deleteTarget, setDeleteTarget] = useState<CommercialModelProvider | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [testResults, setTestResults] = useState<Record<string, CommercialModelProviderTestResult>>({});
   const selectedProvider = providerOptions.find((item) => item.name === form.provider);
   const catalogModels = modelOptionsFor(selectedProvider);
   const usingCustomProvider = !selectedProvider;
@@ -116,6 +117,27 @@ export function CommercialModelProvidersPanel({
     }
   };
 
+  const testProvider = async (providerId: string) => {
+    try {
+      const result = await onTestProvider(providerId);
+      if (result) setTestResults((current) => ({ ...current, [providerId]: result }));
+    } catch (error) {
+      setTestResults((current) => ({
+        ...current,
+        [providerId]: {
+          status: "error",
+          reachable: false,
+          provider_id: providerId,
+          prompt: "Hello",
+          response: "",
+          elapsed_ms: 0,
+          model: "",
+          error: error instanceof Error ? error.message : t("settings.modelProviderActions.testFailed"),
+        },
+      }));
+    }
+  };
+
   return (
     <>
       <Panel padding="none" className="overflow-hidden">
@@ -147,7 +169,9 @@ export function CommercialModelProvidersPanel({
           </div>
         ) : (
           <div className="divide-y divide-[hsl(var(--border-subtle))]">
-            {providers.map((provider) => (
+            {providers.map((provider) => {
+              const testResult = testResults[provider.id];
+              return (
               <div
                 key={provider.id}
                 className="grid gap-3 px-4 py-3 transition-[background-color] duration-fast ease-standard hover:bg-surface-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
@@ -183,7 +207,7 @@ export function CommercialModelProvidersPanel({
                     loading={testingProviderId === provider.id}
                     aria-label={`Test ${provider.id}`}
                     leftIcon={<Wifi className="h-3.5 w-3.5" />}
-                    onClick={() => onTestProvider(provider.id)}
+                    onClick={() => void testProvider(provider.id)}
                   >
                     {t("settings.modelProviderActions.test")}
                   </Button>
@@ -214,8 +238,26 @@ export function CommercialModelProvidersPanel({
                     <Trash2 className="h-4 w-4" />
                   </IconButton>
                 </div>
+                {testResult ? (
+                  <div className={[
+                    "rounded-md border px-3 py-2 text-xs md:col-span-2",
+                    testResult.reachable ? "border-success/35 bg-success/5" : "border-danger/35 bg-danger/5",
+                  ].join(" ")}>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-ink-muted">
+                      <span>{t("settings.modelProviderActions.testPrompt", { prompt: testResult.prompt })}</span>
+                      <span>{t("settings.modelProviderActions.testLatency", { ms: testResult.elapsed_ms })}</span>
+                      {testResult.model ? <span className="font-mono">{testResult.model}</span> : null}
+                    </div>
+                    <p className="mt-1.5 whitespace-pre-wrap break-words leading-5 text-ink-strong">
+                      {testResult.reachable
+                        ? (testResult.response || t("settings.modelProviderActions.testEmptyResponse"))
+                        : (testResult.error || t("settings.modelProviderActions.testFailed"))}
+                    </p>
+                  </div>
+                ) : null}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Panel>
