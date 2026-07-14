@@ -800,35 +800,25 @@ function BenchView() {
       >
         <div>
           <label htmlFor="bench-zoo" className="text-xs text-muted-foreground block mb-1">{i18n.t("alphaZoo.zoo")}</label>
-          <select
-            id="bench-zoo"
+          <Select
             value={zoo}
-            onChange={(e) => setZoo(e.target.value)}
+            onValueChange={setZoo}
             disabled={busy}
-            className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-          >
-            {ZOO_CARDS.map((z) => (
-              <option key={z.id} value={z.id}>
-                {i18n.t("alphaZoo.zooCardTitle." + z.id as any, { defaultValue: z.title })}
-              </option>
-            ))}
-          </select>
+            options={ZOO_CARDS.map((z) => ({ value: z.id, label: i18n.t("alphaZoo.zooCardTitle." + z.id as any, { defaultValue: z.title }) })) as SelectOption[]}
+            label={i18n.t("alphaZoo.zoo")}
+            className="w-full"
+          />
         </div>
         <div>
           <label htmlFor="bench-universe" className="text-xs text-muted-foreground block mb-1">{i18n.t("alphaZoo.universe")}</label>
-          <select
-            id="bench-universe"
+          <Select
             value={universe}
-            onChange={(e) => setUniverse(e.target.value)}
+            onValueChange={setUniverse}
             disabled={busy}
-            className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-          >
-            {UNIVERSE_OPTIONS.map((u) => (
-              <option key={u.value} value={u.value}>
-                {i18n.t("alphaZoo.universeOption." + u.value as any, { defaultValue: u.label })}
-              </option>
-            ))}
-          </select>
+            options={UNIVERSE_OPTIONS.map((u) => ({ value: u.value, label: i18n.t("alphaZoo.universeOption." + u.value as any, { defaultValue: u.label }) })) as SelectOption[]}
+            label={i18n.t("alphaZoo.universe")}
+            className="w-full"
+          />
         </div>
         <div>
           <label htmlFor="bench-period" className="text-xs text-muted-foreground block mb-1">{i18n.t("alphaZoo.period")}</label>
@@ -1032,17 +1022,18 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
           </div>
           <label className="grid gap-1 text-xs text-muted-foreground md:w-48">
             <span>{i18n.t("alphaZoo.categoryFilter")}</span>
-            <select
-              aria-label={i18n.t("alphaZoo.categoryFilter")}
+            <Select
               value={categoryFilter}
-              onChange={(event) => setCategoryFilter(event.target.value as "all" | AlphaBenchTopRow["category"])}
-              className="h-9 rounded-md border bg-background px-2 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-            >
-              <option value="all">{i18n.t("alphaZoo.allCategories")}</option>
-              <option value="alive">{i18n.t("alphaZoo.alive")}</option>
-              <option value="reversed">{i18n.t("alphaZoo.reversed")}</option>
-              <option value="dead">{i18n.t("alphaZoo.dead")}</option>
-            </select>
+              onValueChange={(value) => setCategoryFilter(value as "all" | AlphaBenchTopRow["category"])}
+              options={[
+                { value: "all", label: i18n.t("alphaZoo.allCategories") },
+                { value: "alive", label: i18n.t("alphaZoo.alive") },
+                { value: "reversed", label: i18n.t("alphaZoo.reversed") },
+                { value: "dead", label: i18n.t("alphaZoo.dead") },
+              ]}
+              label={i18n.t("alphaZoo.categoryFilter")}
+              className="w-full"
+            />
           </label>
         </div>
         <div className="overflow-x-auto">
@@ -1309,19 +1300,14 @@ function CompareView() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label htmlFor="compare-universe" className="text-xs text-muted-foreground block mb-1">{i18n.t("alphaZoo.universe")}</label>
-            <select
-              id="compare-universe"
+            <Select
               value={universe}
-              onChange={(e) => setUniverse(e.target.value)}
+              onValueChange={setUniverse}
               disabled={busy}
-              className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-            >
-              {UNIVERSE_OPTIONS.map((u) => (
-                <option key={u.value} value={u.value}>
-                  {i18n.t("alphaZoo.universeOption." + u.value as any, { defaultValue: u.label })}
-                </option>
-              ))}
-            </select>
+              options={UNIVERSE_OPTIONS.map((u) => ({ value: u.value, label: i18n.t("alphaZoo.universeOption." + u.value as any, { defaultValue: u.label }) })) as SelectOption[]}
+              label={i18n.t("alphaZoo.universe")}
+              className="w-full"
+            />
           </div>
           <div>
             <label htmlFor="compare-period" className="text-xs text-muted-foreground block mb-1">{i18n.t("alphaZoo.period")}</label>
@@ -1336,19 +1322,14 @@ function CompareView() {
           </div>
           <div>
             <label htmlFor="compare-sort" className="text-xs text-muted-foreground block mb-1">{i18n.t("alphaZoo.rankBy")}</label>
-            <select
-              id="compare-sort"
+            <Select
               value={sort}
-              onChange={(e) => setSort(e.target.value)}
+              onValueChange={setSort}
               disabled={busy}
-              className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
-            >
-              {SORT_OPTIONS.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {i18n.t("alphaZoo.sortOption." + (s.value === "ic_mean" ? "icMean" : s.value === "ic_positive_ratio" ? "icPositiveRatio" : s.value === "ic_count" ? "icCount" : s.value) as any, { defaultValue: s.label })}
-                </option>
-              ))}
-            </select>
+              options={SORT_OPTIONS.map((s) => ({ value: s.value, label: i18n.t("alphaZoo.sortOption." + (s.value === "ic_mean" ? "icMean" : s.value === "ic_positive_ratio" ? "icPositiveRatio" : s.value === "ic_count" ? "icCount" : s.value) as any, { defaultValue: s.label }) })) as SelectOption[]}
+              label={i18n.t("alphaZoo.rankBy")}
+              className="w-full"
+            />
           </div>
         </div>
 
@@ -1433,16 +1414,17 @@ function CompareResultPanel({ result }: { result: AlphaCompareResult }) {
           </div>
           <label className="grid gap-1 text-xs text-muted-foreground md:w-48">
             <span>{i18n.t("alphaZoo.rankingFilter")}</span>
-            <select
-              aria-label={i18n.t("alphaZoo.rankingFilter")}
+            <Select
               value={rankingFilter}
-              onChange={(event) => setRankingFilter(event.target.value as "all" | "leader" | "laggards")}
-              className="h-9 rounded-md border bg-background px-2 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-            >
-              <option value="all">{i18n.t("alphaZoo.allRankings")}</option>
-              <option value="leader">{i18n.t("alphaZoo.leaderOnly")}</option>
-              <option value="laggards">{i18n.t("alphaZoo.laggardsOnly")}</option>
-            </select>
+              onValueChange={(value) => setRankingFilter(value as "all" | "leader" | "laggards")}
+              options={[
+                { value: "all", label: i18n.t("alphaZoo.allRankings") },
+                { value: "leader", label: i18n.t("alphaZoo.leaderOnly") },
+                { value: "laggards", label: i18n.t("alphaZoo.laggardsOnly") },
+              ]}
+              label={i18n.t("alphaZoo.rankingFilter")}
+              className="w-full"
+            />
           </label>
         </div>
         <div className="overflow-x-auto">
