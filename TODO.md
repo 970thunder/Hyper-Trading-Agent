@@ -42,6 +42,8 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Hide or disable Knowledge and member-management actions by role.
 - [x] Add frontend and backend role-matrix regression tests.
 - [x] Audit Swarm Agent create/update/delete actions.
+- [x] Add a separate platform-admin identity, bootstrap allowlist, global operations API, and `/platform` console.
+- [x] Keep platform administration distinct from organization Owner/Admin roles; allow global user/org suspension and knowledge-base governance.
 - [ ] Bind sessions, runs, reports, uploads, and generated artifacts to `organization_id`.
 - [ ] Add repository-level cross-organization isolation tests for sessions, runs, reports, and artifacts.
 - [ ] Add an organization switcher for users with multiple memberships.

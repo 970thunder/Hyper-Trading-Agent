@@ -10,6 +10,7 @@ import {
   Database,
   FileText,
   Layers,
+  ServerCog,
   ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -27,12 +28,12 @@ import { Drawer } from "@/components/ui/Drawer";
 import { IconButton } from "@/components/ui/Button";
 
 type Role = CommercialPrincipal["role"];
-type GatedNavigationItem = NavigationItem & { roles?: Role[] };
+type GatedNavigationItem = NavigationItem & { roles?: Role[]; platformOnly?: boolean };
 
 function visibleItems(items: GatedNavigationItem[], principal: CommercialPrincipal | null): NavigationItem[] {
   return items
-    .filter((item) => !item.roles || Boolean(principal && item.roles.includes(principal.role)))
-    .map(({ roles: _roles, ...item }) => item);
+    .filter((item) => (!item.roles || Boolean(principal && item.roles.includes(principal.role))) && (!item.platformOnly || Boolean(principal?.is_platform_admin)))
+    .map(({ roles: _roles, platformOnly: _platformOnly, ...item }) => item);
 }
 
 export function Layout() {
@@ -151,6 +152,7 @@ export function Layout() {
         label: t("layout.administrationGroup"),
         items: [
           { to: "/admin", icon: ShieldCheck, label: t("layout.admin"), roles: ["owner", "admin"] },
+          { to: "/platform", icon: ServerCog, label: t("layout.platform"), platformOnly: true },
         ],
       },
     ];

@@ -9,6 +9,7 @@
     "reports": "리포트",
     "alphaZoo": "Alpha Zoo",
     "admin": "관리",
+    "platform": "플랫폼",
     "settings": "설정",
     "correlation": "상관 행렬",
     "sessions": "세션",
@@ -627,7 +628,13 @@
       "documents": "Knowledge documents",
       "channels": "Channel runtime"
     },
-    "knowledge": {
+  "platformAdmin": {
+    "forbiddenTitle": "Platform access required", "forbiddenDescription": "This workspace is reserved for system administrators.", "eyebrow": "System operations", "title": "Platform administration", "description": "Govern users, organizations, knowledge assets, ingestion operations, and system-wide audit activity.", "refresh": "Refresh", "loadError": "Platform operations could not be loaded.", "actionError": "The platform action could not be completed.", "recentAudit": "Recent system audit activity", "runtime": "Platform runtime", "runtimeActiveJobs": "Active ingestion jobs", "runtimeModelCalls": "Model calls", "runtimeAuditEvents": "Audit events", "runtimeStorage": "Commercial data storage", "usersTitle": "All users", "organizationsTitle": "All organizations", "knowledgeTitle": "All knowledge bases", "jobsTitle": "Ingestion jobs", "auditTitle": "System audit log", "platformAdmin": "Platform admin", "standardUser": "Standard user", "active": "Active", "suspended": "Suspended", "suspend": "Suspend", "activate": "Activate", "grantAdmin": "Grant platform admin", "revokeAdmin": "Revoke platform admin", "failedJobs": "{{count}} failed jobs", "delete": "Delete", "deleteKnowledgeConfirm": "Delete knowledge base {{name}} and its documents? This cannot be undone.",
+    "stats": { "users": "Users", "organizations": "Organizations", "knowledge": "Knowledge bases", "jobs": "Ingestion jobs", "active": "{{count}} active", "chunks": "{{count}} chunks", "failed": "{{count}} failed" },
+    "tabs": { "overview": "Overview", "users": "Users", "organizations": "Organizations", "knowledge": "Knowledge", "jobs": "Jobs", "audit": "Audit" },
+    "columns": { "user": "User", "organizations": "Organizations", "platformRole": "Platform role", "status": "Status", "created": "Created", "actions": "Actions", "organization": "Organization", "members": "Members", "knowledge": "Knowledge", "models": "Models", "knowledgeBase": "Knowledge base", "documents": "Documents", "chunks": "Chunks", "jobs": "Jobs", "job": "Job", "progress": "Progress", "updated": "Updated", "event": "Event", "actor": "Actor" }
+  },
+  "knowledge": {
       "title": "Knowledge / RAG",
       "description": "Index durable research notes and reference material into the local retrieval store. Commercial deployments should migrate this path to PostgreSQL + pgvector.",
       "documents": "Documents",

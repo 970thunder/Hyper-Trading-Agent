@@ -39,6 +39,7 @@ class PrincipalResponse(BaseModel):
     organization_id: str
     email: str
     role: str
+    is_platform_admin: bool = False
 
 
 class ModelProviderCreateRequest(BaseModel):
@@ -120,6 +121,16 @@ class OrganizationMemberUpdateRequest(BaseModel):
     role: str
 
 
+class PlatformUserUpdateRequest(BaseModel):
+    display_name: str | None = Field(None, max_length=200)
+    is_active: bool | None = None
+
+
+class PlatformOrganizationUpdateRequest(BaseModel):
+    name: str | None = Field(None, max_length=200)
+    is_active: bool | None = None
+
+
 class ToolPolicyUpdateRequest(BaseModel):
     risk_level: str | None = None
     permission_scope: str | None = None
@@ -170,12 +181,20 @@ def _require_role(*allowed: str):
     return dependency
 
 
-def _principal_payload(principal: Principal) -> dict[str, str]:
+def _require_platform_admin(principal: Principal = Depends(_principal_from_cookie)) -> Principal:
+    if not _store().is_platform_admin(principal):
+        # Do not expose system metadata to organization administrators.
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform administrator access required")
+    return principal
+
+
+def _principal_payload(principal: Principal) -> dict[str, Any]:
     return {
         "user_id": principal.user_id,
         "organization_id": principal.organization_id,
         "email": principal.email,
         "role": principal.role,
+        "is_platform_admin": principal.is_platform_admin,
     }
 
 
@@ -822,3 +841,104 @@ def register_commercial_routes(app: FastAPI) -> None:
             target_type=target_type,
             target_id=target_id,
         )
+
+    # Platform administration is intentionally separate from organization /admin.
+    # All endpoints return operational metadata only and never provider secrets.
+    @app.get("/platform-admin/summary")
+    async def platform_summary(principal: Principal = Depends(_require_platform_admin)):
+        payload = _store().platform_summary()
+        payload["requested_by"] = principal.user_id
+        return payload
+
+    @app.get("/platform-admin/users")
+    async def platform_users(
+        query: str = "",
+        limit: int = Query(100, ge=1, le=500),
+        principal: Principal = Depends(_require_platform_admin),
+    ):
+        return _store().list_platform_users(query=query, limit=limit)
+
+    @app.patch("/platform-admin/users/{user_id}")
+    async def update_platform_user(
+        user_id: str,
+        payload: PlatformUserUpdateRequest,
+        principal: Principal = Depends(_require_platform_admin),
+    ):
+        try:
+            return _store().update_platform_user(principal, user_id, payload.model_dump(exclude_none=True))
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.post("/platform-admin/users/{user_id}/platform-admin")
+    async def grant_platform_admin(user_id: str, principal: Principal = Depends(_require_platform_admin)):
+        try:
+            return _store().set_platform_admin(principal, user_id, enabled=True)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found") from exc
+
+    @app.delete("/platform-admin/users/{user_id}/platform-admin")
+    async def revoke_platform_admin(user_id: str, principal: Principal = Depends(_require_platform_admin)):
+        try:
+            return _store().set_platform_admin(principal, user_id, enabled=False)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get("/platform-admin/organizations")
+    async def platform_organizations(
+        query: str = "",
+        limit: int = Query(100, ge=1, le=500),
+        principal: Principal = Depends(_require_platform_admin),
+    ):
+        return _store().list_platform_organizations(query=query, limit=limit)
+
+    @app.patch("/platform-admin/organizations/{organization_id}")
+    async def update_platform_organization(
+        organization_id: str,
+        payload: PlatformOrganizationUpdateRequest,
+        principal: Principal = Depends(_require_platform_admin),
+    ):
+        try:
+            return _store().update_platform_organization(principal, organization_id, payload.model_dump(exclude_none=True))
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get("/platform-admin/knowledge-bases")
+    async def platform_knowledge_bases(
+        query: str = "",
+        limit: int = Query(100, ge=1, le=500),
+        principal: Principal = Depends(_require_platform_admin),
+    ):
+        return _store().list_platform_knowledge_bases(query=query, limit=limit)
+
+    @app.delete("/platform-admin/knowledge-bases/{knowledge_base_id}")
+    async def delete_platform_knowledge_base(
+        knowledge_base_id: str,
+        principal: Principal = Depends(_require_platform_admin),
+    ):
+        try:
+            _store().delete_platform_knowledge_base(principal, knowledge_base_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Knowledge base not found") from exc
+        return {"status": "deleted", "knowledge_base_id": knowledge_base_id}
+
+    @app.get("/platform-admin/ingestion-jobs")
+    async def platform_ingestion_jobs(
+        status_filter: str = Query("", alias="status"),
+        limit: int = Query(100, ge=1, le=500),
+        principal: Principal = Depends(_require_platform_admin),
+    ):
+        return _store().list_platform_ingestion_jobs(job_status=status_filter, limit=limit)
+
+    @app.get("/platform-admin/audit-logs")
+    async def platform_audit_logs(
+        query: str = "",
+        limit: int = Query(100, ge=1, le=500),
+        principal: Principal = Depends(_require_platform_admin),
+    ):
+        return _store().list_platform_audit_logs(query=query, limit=limit)

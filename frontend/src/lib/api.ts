@@ -353,6 +353,33 @@ export const api = {
     const qs = q.toString();
     return request<FeedbackEvent[]>(`/feedback${qs ? `?${qs}` : ""}`);
   },
+  getPlatformSummary: () => request<PlatformSummary>("/platform-admin/summary"),
+  listPlatformUsers: (query = "") =>
+    request<PlatformUser[]>(`/platform-admin/users${query ? `?query=${encodeURIComponent(query)}` : ""}`),
+  updatePlatformUser: (userId: string, body: PlatformUserUpdateRequest) =>
+    request<PlatformUser>(`/platform-admin/users/${encodeURIComponent(userId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  grantPlatformAdmin: (userId: string) =>
+    request<PlatformUser>(`/platform-admin/users/${encodeURIComponent(userId)}/platform-admin`, { method: "POST" }),
+  revokePlatformAdmin: (userId: string) =>
+    request<PlatformUser>(`/platform-admin/users/${encodeURIComponent(userId)}/platform-admin`, { method: "DELETE" }),
+  listPlatformOrganizations: (query = "") =>
+    request<PlatformOrganization[]>(`/platform-admin/organizations${query ? `?query=${encodeURIComponent(query)}` : ""}`),
+  updatePlatformOrganization: (organizationId: string, body: PlatformOrganizationUpdateRequest) =>
+    request<PlatformOrganization>(`/platform-admin/organizations/${encodeURIComponent(organizationId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  listPlatformKnowledgeBases: (query = "") =>
+    request<PlatformKnowledgeBase[]>(`/platform-admin/knowledge-bases${query ? `?query=${encodeURIComponent(query)}` : ""}`),
+  deletePlatformKnowledgeBase: (knowledgeBaseId: string) =>
+    request<{ status: string; knowledge_base_id: string }>(`/platform-admin/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}`, { method: "DELETE" }),
+  listPlatformIngestionJobs: (status?: string) =>
+    request<PlatformIngestionJob[]>(`/platform-admin/ingestion-jobs${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  listPlatformAuditLogs: (query = "") =>
+    request<PlatformAuditLog[]>(`/platform-admin/audit-logs${query ? `?query=${encodeURIComponent(query)}` : ""}`),
   getChannelStatus: () => request<ChannelRuntimeStatus>("/channels/status"),
   startChannels: () => request<ChannelRuntimeActionResponse>("/channels/start", { method: "POST" }),
   stopChannels: () => request<ChannelRuntimeActionResponse>("/channels/stop", { method: "POST" }),
@@ -568,6 +595,7 @@ export interface CommercialPrincipal {
   organization_id: string;
   email: string;
   role: "owner" | "admin" | "member" | "viewer";
+  is_platform_admin: boolean;
 }
 
 export interface CommercialOrganization {
@@ -577,6 +605,93 @@ export interface CommercialOrganization {
 }
 
 export type CommercialRole = "owner" | "admin" | "member" | "viewer";
+
+export interface PlatformSummary {
+  users: number;
+  active_users: number;
+  organizations: number;
+  active_organizations: number;
+  platform_admins: number;
+  knowledge_bases: number;
+  knowledge_documents: number;
+  knowledge_chunks: number;
+  ingestion_jobs: number;
+  ingestion_jobs_active: number;
+  ingestion_jobs_failed: number;
+  model_calls: number;
+  audit_events: number;
+  commercial_db_bytes: number;
+  commercial_db_path: string;
+}
+
+export interface PlatformUser {
+  user_id: string;
+  email: string;
+  display_name: string;
+  is_active: number | boolean;
+  is_platform_admin: number | boolean;
+  created_at: string;
+  organization_count: number;
+  organization_names?: string | null;
+}
+
+export interface PlatformUserUpdateRequest {
+  display_name?: string;
+  is_active?: boolean;
+}
+
+export interface PlatformOrganization {
+  id: string;
+  name: string;
+  is_active: number | boolean;
+  created_at: string;
+  member_count: number;
+  knowledge_base_count: number;
+  model_provider_count: number;
+}
+
+export interface PlatformOrganizationUpdateRequest {
+  name?: string;
+  is_active?: boolean;
+}
+
+export interface PlatformKnowledgeBase {
+  id: string;
+  organization_id: string;
+  organization_name: string;
+  organization_active: number | boolean;
+  name: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+  document_count: number;
+  chunk_count: number;
+  ingestion_job_count: number;
+  failed_job_count: number;
+}
+
+export interface PlatformIngestionJob {
+  id: string;
+  organization_id: string;
+  organization_name?: string | null;
+  knowledge_base_id: string;
+  knowledge_base_name?: string | null;
+  document_id?: string | null;
+  document_title?: string | null;
+  status: string;
+  progress: number;
+  error?: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface PlatformAuditLog extends AuditLog {
+  organization_id: string;
+  organization_name?: string | null;
+  actor_email?: string | null;
+}
 
 export interface CommercialOrganizationMember {
   user_id: string;

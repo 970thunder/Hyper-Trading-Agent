@@ -49,6 +49,7 @@ class Principal:
     organization_id: str
     email: str
     role: str
+    is_platform_admin: bool = False
 
 
 def utcnow() -> str:
@@ -58,6 +59,22 @@ def utcnow() -> str:
 def db_path() -> Path:
     raw = os.getenv("VIBE_TRADING_COMMERCIAL_DB", "").strip()
     return Path(raw).expanduser() if raw else DEFAULT_DB_PATH
+
+
+def _platform_admin_bootstrap_emails() -> set[str]:
+    """Return the explicit platform-administrator bootstrap allowlist.
+
+    This intentionally lives outside organization roles.  Deployments can set
+    ``HYPER_TRADING_PLATFORM_ADMIN_EMAILS`` to a comma-separated list during
+    provisioning; the addresses are only granted after a corresponding user
+    account exists.
+    """
+    raw = os.getenv("HYPER_TRADING_PLATFORM_ADMIN_EMAILS", "")
+    return {
+        item.strip().lower()
+        for item in raw.split(",")
+        if item.strip() and "@" in item
+    }
 
 
 def _new_id(prefix: str) -> str:
@@ -424,6 +441,7 @@ class CommercialStore:
                 CREATE TABLE IF NOT EXISTS organizations (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS users (
@@ -431,6 +449,7 @@ class CommercialStore:
                     email TEXT NOT NULL UNIQUE,
                     password_hash TEXT NOT NULL,
                     display_name TEXT NOT NULL DEFAULT '',
+                    is_active INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS memberships (
@@ -446,6 +465,11 @@ class CommercialStore:
                     organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
                     expires_at TEXT NOT NULL,
                     created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS platform_admins (
+                    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    created_by_user_id TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS audit_logs (
                     id TEXT PRIMARY KEY,
@@ -621,8 +645,39 @@ class CommercialStore:
                 conn.execute("ALTER TABLE knowledge_bases ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}'")
             if "access_json" not in existing_knowledge_base_columns:
                 conn.execute("ALTER TABLE knowledge_bases ADD COLUMN access_json TEXT NOT NULL DEFAULT '{}'")
+            existing_user_columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(users)").fetchall()
+            }
+            if "is_active" not in existing_user_columns:
+                conn.execute("ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+            existing_organization_columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(organizations)").fetchall()
+            }
+            if "is_active" not in existing_organization_columns:
+                conn.execute("ALTER TABLE organizations ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
 
     # --- auth / orgs ---
+
+    def _sync_platform_admin_bootstrap(self, user_id: str, email: str) -> None:
+        """Persist a configured bootstrap administrator for an existing user."""
+        if email.strip().lower() not in _platform_admin_bootstrap_emails():
+            return
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO platform_admins(user_id, created_at, created_by_user_id) VALUES (?, ?, ?)",
+                (user_id, utcnow(), "bootstrap"),
+            )
+
+    def _is_platform_admin(self, user_id: str, email: str = "") -> bool:
+        self._sync_platform_admin_bootstrap(user_id, email)
+        with self._connect() as conn:
+            row = conn.execute("SELECT 1 FROM platform_admins WHERE user_id = ?", (user_id,)).fetchone()
+        return row is not None
+
+    def is_platform_admin(self, principal: Principal) -> bool:
+        return bool(principal.is_platform_admin or self._is_platform_admin(principal.user_id, principal.email))
 
     def register_owner(self, *, email: str, password: str, organization_name: str, display_name: str = "") -> tuple[Principal, str]:
         email = email.strip().lower()
@@ -646,7 +701,14 @@ class CommercialStore:
                 "INSERT INTO memberships(organization_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)",
                 (org_id, user_id, now),
             )
-        principal = Principal(user_id=user_id, organization_id=org_id, email=email, role="owner")
+        self._sync_platform_admin_bootstrap(user_id, email)
+        principal = Principal(
+            user_id=user_id,
+            organization_id=org_id,
+            email=email,
+            role="owner",
+            is_platform_admin=self._is_platform_admin(user_id, email),
+        )
         token = self.create_session(principal)
         self.audit(principal, "auth.register", "organization", org_id, {"email": email})
         return principal, token
@@ -656,9 +718,11 @@ class CommercialStore:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT u.id AS user_id, u.email, u.password_hash, m.organization_id, m.role
+                SELECT u.id AS user_id, u.email, u.password_hash, u.is_active AS user_active,
+                       m.organization_id, m.role, o.is_active AS organization_active
                 FROM users u
                 JOIN memberships m ON m.user_id = u.id
+                JOIN organizations o ON o.id = m.organization_id
                 WHERE u.email = ?
                 ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'member' THEN 2 ELSE 3 END
                 LIMIT 1
@@ -667,11 +731,14 @@ class CommercialStore:
             ).fetchone()
         if row is None or not _verify_password(password, str(row["password_hash"])):
             raise ValueError("invalid email or password")
+        if not bool(row["user_active"]) or not bool(row["organization_active"]):
+            raise ValueError("account or organization is inactive")
         principal = Principal(
             user_id=str(row["user_id"]),
             organization_id=str(row["organization_id"]),
             email=str(row["email"]),
             role=str(row["role"]),
+            is_platform_admin=self._is_platform_admin(str(row["user_id"]), str(row["email"])),
         )
         token = self.create_session(principal)
         self.audit(principal, "auth.login", "user", principal.user_id, {})
@@ -695,17 +762,25 @@ class CommercialStore:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT u.id AS user_id, u.email, m.organization_id, m.role, s.expires_at
+                SELECT u.id AS user_id, u.email, u.is_active AS user_active,
+                       m.organization_id, m.role, o.is_active AS organization_active, s.expires_at
                 FROM auth_sessions s
                 JOIN users u ON u.id = s.user_id
                 JOIN memberships m ON m.organization_id = s.organization_id AND m.user_id = s.user_id
+                JOIN organizations o ON o.id = m.organization_id
                 WHERE s.token_hash = ?
                 """,
                 (token_hash,),
             ).fetchone()
-        if row is None or str(row["expires_at"]) < utcnow():
+        if row is None or str(row["expires_at"]) < utcnow() or not bool(row["user_active"]) or not bool(row["organization_active"]):
             return None
-        return Principal(str(row["user_id"]), str(row["organization_id"]), str(row["email"]), str(row["role"]))
+        return Principal(
+            str(row["user_id"]),
+            str(row["organization_id"]),
+            str(row["email"]),
+            str(row["role"]),
+            self._is_platform_admin(str(row["user_id"]), str(row["email"])),
+        )
 
     def logout(self, token: str) -> None:
         if token:
@@ -2389,6 +2464,259 @@ class CommercialStore:
             )
         self.audit(principal, "knowledge_ingestion.cancel", "knowledge_ingestion_job", job_id, {"knowledge_base_id": kb_id})
         return self.get_ingestion_job(principal, kb_id, job_id)
+
+    # --- platform administration ---
+
+    def platform_summary(self) -> dict[str, Any]:
+        """Return non-secret, cross-tenant operational counts for platform admins."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    (SELECT COUNT(*) FROM users) AS users,
+                    (SELECT COUNT(*) FROM users WHERE is_active = 1) AS active_users,
+                    (SELECT COUNT(*) FROM organizations) AS organizations,
+                    (SELECT COUNT(*) FROM organizations WHERE is_active = 1) AS active_organizations,
+                    (SELECT COUNT(*) FROM platform_admins) AS platform_admins,
+                    (SELECT COUNT(*) FROM knowledge_bases) AS knowledge_bases,
+                    (SELECT COUNT(*) FROM knowledge_documents) AS knowledge_documents,
+                    (SELECT COUNT(*) FROM knowledge_chunks) AS knowledge_chunks,
+                    (SELECT COUNT(*) FROM knowledge_ingestion_jobs) AS ingestion_jobs,
+                    (SELECT COUNT(*) FROM knowledge_ingestion_jobs WHERE status IN ('pending', 'running')) AS ingestion_jobs_active,
+                    (SELECT COUNT(*) FROM knowledge_ingestion_jobs WHERE status = 'failed') AS ingestion_jobs_failed,
+                    (SELECT COUNT(*) FROM model_call_usage) AS model_calls,
+                    (SELECT COUNT(*) FROM audit_logs) AS audit_events
+                """
+            ).fetchone()
+        payload = {str(key): int(row[key] or 0) for key in row.keys()}
+        try:
+            payload["commercial_db_bytes"] = int(self.path.stat().st_size)
+        except OSError:
+            payload["commercial_db_bytes"] = 0
+        payload["commercial_db_path"] = str(self.path)
+        return payload
+
+    def list_platform_users(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        filters = []
+        params: list[Any] = []
+        if query.strip():
+            filters.append("(LOWER(u.email) LIKE ? OR LOWER(u.display_name) LIKE ?)")
+            term = f"%{query.strip().lower()}%"
+            params.extend([term, term])
+        where = f"WHERE {' AND '.join(filters)}" if filters else ""
+        params.append(max(1, min(limit, 500)))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT u.id AS user_id, u.email, u.display_name, u.is_active, u.created_at,
+                       COUNT(m.organization_id) AS organization_count,
+                       GROUP_CONCAT(o.name, ' | ') AS organization_names,
+                       CASE WHEN pa.user_id IS NULL THEN 0 ELSE 1 END AS is_platform_admin
+                FROM users u
+                LEFT JOIN memberships m ON m.user_id = u.id
+                LEFT JOIN organizations o ON o.id = m.organization_id
+                LEFT JOIN platform_admins pa ON pa.user_id = u.id
+                {where}
+                GROUP BY u.id
+                ORDER BY u.created_at DESC
+                LIMIT ?
+                """,
+                tuple(params),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_platform_organizations(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        filters = []
+        params: list[Any] = []
+        if query.strip():
+            filters.append("LOWER(o.name) LIKE ?")
+            params.append(f"%{query.strip().lower()}%")
+        where = f"WHERE {' AND '.join(filters)}" if filters else ""
+        params.append(max(1, min(limit, 500)))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT o.id, o.name, o.is_active, o.created_at,
+                       COUNT(DISTINCT m.user_id) AS member_count,
+                       COUNT(DISTINCT kb.id) AS knowledge_base_count,
+                       COUNT(DISTINCT mp.id) AS model_provider_count
+                FROM organizations o
+                LEFT JOIN memberships m ON m.organization_id = o.id
+                LEFT JOIN knowledge_bases kb ON kb.organization_id = o.id
+                LEFT JOIN model_providers mp ON mp.organization_id = o.id
+                {where}
+                GROUP BY o.id
+                ORDER BY o.created_at DESC
+                LIMIT ?
+                """,
+                tuple(params),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_platform_knowledge_bases(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        filters = []
+        params: list[Any] = []
+        if query.strip():
+            filters.append("(LOWER(kb.name) LIKE ? OR LOWER(o.name) LIKE ?)")
+            term = f"%{query.strip().lower()}%"
+            params.extend([term, term])
+        where = f"WHERE {' AND '.join(filters)}" if filters else ""
+        params.append(max(1, min(limit, 500)))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT kb.id, kb.organization_id, kb.name, kb.description, kb.created_at, kb.updated_at,
+                       o.name AS organization_name, o.is_active AS organization_active,
+                       COUNT(DISTINCT d.id) AS document_count,
+                       COALESCE(SUM(d.chunk_count), 0) AS chunk_count,
+                       COUNT(DISTINCT j.id) AS ingestion_job_count,
+                       SUM(CASE WHEN j.status = 'failed' THEN 1 ELSE 0 END) AS failed_job_count
+                FROM knowledge_bases kb
+                JOIN organizations o ON o.id = kb.organization_id
+                LEFT JOIN knowledge_documents d ON d.knowledge_base_id = kb.id
+                LEFT JOIN knowledge_ingestion_jobs j ON j.knowledge_base_id = kb.id
+                {where}
+                GROUP BY kb.id
+                ORDER BY kb.updated_at DESC
+                LIMIT ?
+                """,
+                tuple(params),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_platform_ingestion_jobs(self, *, job_status: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        params: list[Any] = []
+        where = ""
+        if job_status.strip():
+            where = "WHERE j.status = ?"
+            params.append(job_status.strip().lower())
+        params.append(max(1, min(limit, 500)))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT j.id, j.organization_id, j.knowledge_base_id, j.document_id, j.status, j.progress,
+                       j.error, j.created_at, j.updated_at, j.started_at, j.completed_at,
+                       o.name AS organization_name, kb.name AS knowledge_base_name, d.title AS document_title
+                FROM knowledge_ingestion_jobs j
+                LEFT JOIN organizations o ON o.id = j.organization_id
+                LEFT JOIN knowledge_bases kb ON kb.id = j.knowledge_base_id
+                LEFT JOIN knowledge_documents d ON d.id = j.document_id
+                {where}
+                ORDER BY j.updated_at DESC
+                LIMIT ?
+                """,
+                tuple(params),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_platform_audit_logs(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        filters = []
+        params: list[Any] = []
+        if query.strip():
+            filters.append("(a.action LIKE ? OR a.target_type LIKE ? OR a.target_id LIKE ? OR u.email LIKE ?)")
+            term = f"%{query.strip()}%"
+            params.extend([term, term, term, term])
+        where = f"WHERE {' AND '.join(filters)}" if filters else ""
+        params.append(max(1, min(limit, 500)))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT a.id, a.organization_id, a.user_id, a.action, a.target_type, a.target_id,
+                       a.metadata_json, a.created_at, u.email AS actor_email, o.name AS organization_name
+                FROM audit_logs a
+                LEFT JOIN users u ON u.id = a.user_id
+                LEFT JOIN organizations o ON o.id = a.organization_id
+                {where}
+                ORDER BY a.created_at DESC
+                LIMIT ?
+                """,
+                tuple(params),
+            ).fetchall()
+        return [dict(row) | {"metadata": _json_object(row["metadata_json"])} for row in rows]
+
+    def update_platform_user(self, actor: Principal, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        fields: list[str] = []
+        params: list[Any] = []
+        if "display_name" in payload:
+            fields.append("display_name = ?")
+            params.append(str(payload.get("display_name") or "").strip()[:200])
+        if "is_active" in payload:
+            is_active = bool(payload["is_active"])
+            if not is_active and user_id == actor.user_id:
+                raise ValueError("platform administrator cannot deactivate their own account")
+            fields.append("is_active = ?")
+            params.append(1 if is_active else 0)
+        if not fields:
+            raise ValueError("no user changes supplied")
+        params.append(user_id)
+        with self._connect() as conn:
+            cursor = conn.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = ?", tuple(params))
+            if cursor.rowcount == 0:
+                raise KeyError(user_id)
+            if "is_active" in payload and not bool(payload["is_active"]):
+                conn.execute("DELETE FROM auth_sessions WHERE user_id = ?", (user_id,))
+        self.audit(actor, "platform.user.update", "user", user_id, {"changes": {key: payload[key] for key in payload if key != "password"}})
+        return next((user for user in self.list_platform_users(limit=500) if user["user_id"] == user_id), {})
+
+    def update_platform_organization(self, actor: Principal, organization_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        fields: list[str] = []
+        params: list[Any] = []
+        if "name" in payload:
+            name = str(payload.get("name") or "").strip()[:200]
+            if not name:
+                raise ValueError("organization name is required")
+            fields.append("name = ?")
+            params.append(name)
+        if "is_active" in payload:
+            fields.append("is_active = ?")
+            params.append(1 if bool(payload["is_active"]) else 0)
+        if not fields:
+            raise ValueError("no organization changes supplied")
+        params.append(organization_id)
+        with self._connect() as conn:
+            cursor = conn.execute(f"UPDATE organizations SET {', '.join(fields)} WHERE id = ?", tuple(params))
+            if cursor.rowcount == 0:
+                raise KeyError(organization_id)
+            if "is_active" in payload and not bool(payload["is_active"]):
+                conn.execute("DELETE FROM auth_sessions WHERE organization_id = ?", (organization_id,))
+        self.audit(actor, "platform.organization.update", "organization", organization_id, {"changes": payload})
+        return next((org for org in self.list_platform_organizations(limit=500) if org["id"] == organization_id), {})
+
+    def set_platform_admin(self, actor: Principal, user_id: str, *, enabled: bool) -> dict[str, Any]:
+        with self._connect() as conn:
+            user = conn.execute("SELECT id, email FROM users WHERE id = ?", (user_id,)).fetchone()
+            if user is None:
+                raise KeyError(user_id)
+            if not enabled and str(user["email"]).lower() in _platform_admin_bootstrap_emails():
+                raise ValueError("bootstrap platform administrator cannot be revoked while configured")
+            if not enabled and user_id == actor.user_id:
+                raise ValueError("platform administrator cannot revoke their own access")
+            if enabled:
+                conn.execute(
+                    "INSERT OR IGNORE INTO platform_admins(user_id, created_at, created_by_user_id) VALUES (?, ?, ?)",
+                    (user_id, utcnow(), actor.user_id),
+                )
+            else:
+                count = conn.execute("SELECT COUNT(*) AS count FROM platform_admins").fetchone()
+                if int(count["count"] or 0) <= 1:
+                    raise ValueError("at least one platform administrator is required")
+                conn.execute("DELETE FROM platform_admins WHERE user_id = ?", (user_id,))
+        self.audit(actor, "platform.admin.update", "user", user_id, {"enabled": enabled})
+        return next((user for user in self.list_platform_users(limit=500) if user["user_id"] == user_id), {})
+
+    def delete_platform_knowledge_base(self, actor: Principal, knowledge_base_id: str) -> None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT organization_id, name FROM knowledge_bases WHERE id = ?", (knowledge_base_id,)).fetchone()
+            if row is None:
+                raise KeyError(knowledge_base_id)
+            conn.execute("DELETE FROM knowledge_chunks_fts WHERE knowledge_base_id = ?", (knowledge_base_id,))
+            conn.execute("DELETE FROM knowledge_retrieval_logs WHERE knowledge_base_id = ?", (knowledge_base_id,))
+            conn.execute("DELETE FROM knowledge_ingestion_jobs WHERE knowledge_base_id = ?", (knowledge_base_id,))
+            conn.execute("DELETE FROM knowledge_bases WHERE id = ?", (knowledge_base_id,))
+        self.audit(actor, "platform.knowledge_base.delete", "knowledge_base", knowledge_base_id, {
+            "organization_id": str(row["organization_id"]),
+            "name": str(row["name"]),
+        })
 
     def commercial_metrics(self) -> dict[str, int]:
         with self._connect() as conn:

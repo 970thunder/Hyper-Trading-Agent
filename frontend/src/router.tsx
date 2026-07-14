@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { createBrowserRouter } from "react-router-dom";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { Layout } from "@/components/layout/Layout";
+import { RequirePlatformAdmin } from "@/components/layout/RequirePlatformAdmin";
 import { RequireRole } from "@/components/layout/RequireRole";
 
 const Home = lazy(() => import("@/pages/Home").then((module) => ({ default: module.Home })));
@@ -24,6 +25,7 @@ const Runtime = lazy(() => import("@/pages/Runtime").then((module) => ({ default
 const Reports = lazy(() => import("@/pages/Reports").then((module) => ({ default: module.Reports })));
 const Correlation = lazy(() => import("@/pages/Correlation").then((module) => ({ default: module.Correlation })));
 const AlphaZoo = lazy(() => import("@/pages/AlphaZoo").then((module) => ({ default: module.AlphaZoo })));
+const PlatformAdmin = lazy(() => import("@/pages/PlatformAdmin").then((module) => ({ default: module.PlatformAdmin })));
 
 function PageLoader() {
   const { t } = useTranslation();
@@ -69,6 +71,7 @@ export const router = createBrowserRouter([
           { path: "usage", element: wrap(AdminUsage) },
         ],
       },
+      { path: "/platform", element: <RequirePlatformAdmin>{wrap(PlatformAdmin)}</RequirePlatformAdmin> },
       { path: "/settings", element: requireRole(Settings) },
       { path: "/runs/:runId", element: requireRole(RunDetail) },
       { path: "/compare", element: requireRole(Compare) },
