@@ -230,11 +230,11 @@ export function Layout() {
         </IconButton>
       </div>
 
-      <div className="max-h-[38%] shrink-0 overflow-y-auto">
+      <div className={cn("min-h-0 overflow-y-auto", isAgentPage && !collapsed ? "max-h-[38%] shrink-0" : "flex-1")}>
         <PrimaryNavigation groups={navigationGroups} pathname={pathname} collapsed={collapsed} ariaLabel={t("layout.primaryNavigation")} />
       </div>
 
-      {!collapsed && isAgentPage ? sessionRail : <div className="min-h-0 flex-1" />}
+      {!collapsed && isAgentPage ? sessionRail : null}
 
       <div className={cn("shrink-0 border-t border-[hsl(var(--border-subtle))]", collapsed ? "grid justify-items-center gap-1 p-1.5" : "grid gap-2 p-2.5")}>
         {accountMenu(collapsed, "top")}
