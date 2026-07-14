@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   Database,
   FileClock,
-  Filter,
   KeyRound,
   ListChecks,
   Loader2,
@@ -31,6 +30,7 @@ import {
   type RuntimeJob,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { Select } from "@/components/ui/Select";
 
 type AdminSnapshot = {
   principal: CommercialPrincipal | null;
@@ -241,42 +241,38 @@ export function Admin() {
                     className="h-10 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
                   />
                 </label>
-                <label className="block">
-                  <span className="sr-only">{t("admin.typeFilter")}</span>
-                  <select
-                    aria-label={t("admin.typeFilter")}
-                    value={recordType}
-                    onChange={(event) => setRecordType(event.target.value as GovernanceRecordType | "all")}
-                    className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-                  >
-                    <option value="all">{t("admin.recordTypes.all")}</option>
-                    <option value="member">{t("admin.recordTypes.member")}</option>
-                    <option value="model">{t("admin.recordTypes.model")}</option>
-                    <option value="knowledge">{t("admin.recordTypes.knowledge")}</option>
-                    <option value="job">{t("admin.recordTypes.job")}</option>
-                    <option value="audit">{t("admin.recordTypes.audit")}</option>
-                    <option value="usage">{t("admin.recordTypes.usage")}</option>
-                  </select>
-                </label>
-                <label className="relative block">
-                  <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <select
-                    aria-label={t("admin.statusFilter")}
-                    value={recordStatus}
-                    onChange={(event) => setRecordStatus(event.target.value)}
-                    className="h-10 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-                  >
-                    <option value="all">{t("admin.statuses.all")}</option>
-                    <option value="privileged">{t("admin.statuses.privileged")}</option>
-                    <option value="default">{t("admin.statuses.default")}</option>
-                    <option value="enabled">{t("admin.statuses.enabled")}</option>
-                    <option value="disabled">{t("admin.statuses.disabled")}</option>
-                    <option value="running">{t("admin.statuses.running")}</option>
-                    <option value="failed">{t("admin.statuses.failed")}</option>
-                    <option value="active">{t("admin.statuses.active")}</option>
-                    <option value="audit">{t("admin.statuses.audit")}</option>
-                  </select>
-                </label>
+                <Select
+                  value={recordType}
+                  onValueChange={(value) => setRecordType(value as GovernanceRecordType | "all")}
+                  options={[
+                    { value: "all", label: t("admin.recordTypes.all") },
+                    { value: "member", label: t("admin.recordTypes.member") },
+                    { value: "model", label: t("admin.recordTypes.model") },
+                    { value: "knowledge", label: t("admin.recordTypes.knowledge") },
+                    { value: "job", label: t("admin.recordTypes.job") },
+                    { value: "audit", label: t("admin.recordTypes.audit") },
+                    { value: "usage", label: t("admin.recordTypes.usage") },
+                  ]}
+                  label={t("admin.typeFilter")}
+                  className="w-full"
+                />
+                <Select
+                  value={recordStatus}
+                  onValueChange={setRecordStatus}
+                  options={[
+                    { value: "all", label: t("admin.statuses.all") },
+                    { value: "privileged", label: t("admin.statuses.privileged") },
+                    { value: "default", label: t("admin.statuses.default") },
+                    { value: "enabled", label: t("admin.statuses.enabled") },
+                    { value: "disabled", label: t("admin.statuses.disabled") },
+                    { value: "running", label: t("admin.statuses.running") },
+                    { value: "failed", label: t("admin.statuses.failed") },
+                    { value: "active", label: t("admin.statuses.active") },
+                    { value: "audit", label: t("admin.statuses.audit") },
+                  ]}
+                  label={t("admin.statusFilter")}
+                  className="w-full"
+                />
               </div>
 
               <div className="mt-4 overflow-hidden rounded-md border">
