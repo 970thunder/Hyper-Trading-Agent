@@ -6,6 +6,8 @@ Design specification: `docs/superpowers/specs/2026-07-13-ui-system-redesign-desi
 
 Implementation plan: `docs/superpowers/plans/2026-07-13-ui-system-redesign.md`
 
+Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-ui-refinement.md`
+
 - [x] Audit desktop/mobile layouts in light and dark themes.
 - [x] Define semantic light/dark theme, shadow, motion, interaction, and responsive tokens.
 - [x] Add shared Button, Field, Panel, Status, Progress, and async-state components.
