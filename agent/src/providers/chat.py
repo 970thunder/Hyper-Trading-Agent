@@ -270,21 +270,35 @@ class ChatLLM:
             reasoning_effort=reasoning_effort,
         )
 
-    def chat(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None, timeout: Optional[int] = None) -> LLMResponse:
+    def chat(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        timeout: Optional[int] = None,
+        max_tokens: Optional[int] = None,
+    ) -> LLMResponse:
         """Call the LLM synchronously.
 
         Args:
             messages: Message list (OpenAI format).
             tools: Tool definition list (OpenAI function calling format).
             timeout: Optional per-call timeout in seconds.
+            max_tokens: Optional output token limit.
 
         Returns:
             LLMResponse.
         """
-        llm = self._llm.bind_tools(tools) if tools else self._llm
-        config = {"timeout": timeout} if timeout else {}
-        ai_message = llm.invoke(messages, config=config)
-        return self._parse_response(ai_message)
+        try:
+            llm = self._llm.bind_tools(tools) if tools else self._llm
+            if max_tokens is not None:
+                llm = llm.bind(max_tokens=max_tokens)
+            config = {"timeout": timeout} if timeout else {}
+            ai_message = llm.invoke(messages, config=config)
+            return self._parse_response(ai_message)
+        except Exception as exc:
+            provider = self.provider or os.getenv("LANGCHAIN_PROVIDER", "openai").strip().lower() or "openai"
+            model = self.model_name or os.getenv("LANGCHAIN_MODEL_NAME", "").strip() or "(unset)"
+            raise ProviderStreamError(provider=provider, model=model, original=exc) from exc
 
     def stream_chat(
         self,

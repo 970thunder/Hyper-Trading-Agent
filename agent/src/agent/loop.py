@@ -763,6 +763,56 @@ class AgentLoop:
                         should_cancel=self._cancel_event.is_set,
                     )
                 except ProviderStreamError as exc:
+                    # Some OpenAI-compatible relays accept normal chat but
+                    # reject function definitions. Preserve a useful response
+                    # without pretending that unavailable tools were executed.
+                    if tool_defs and exc.status_code in {400, 401, 403, 404, 405, 422}:
+                        logger.warning(
+                            "Provider rejected tool definitions (iter %s); falling back to plain chat: %s",
+                            current_iter,
+                            exc,
+                        )
+                        trace.write({
+                            "type": "tool_calling_fallback",
+                            "iter": current_iter,
+                            "provider": exc.provider,
+                            "model": exc.model,
+                            "status_code": exc.status_code,
+                        })
+                        fallback_prompt = (
+                            "Answer the following request directly as a professional financial research assistant. "
+                            "Do not claim to have run tools or retrieved live data. Clearly state uncertainty where "
+                            "current data would be required, keep the tone concise and professional, and do not use emoji.\n\n"
+                            f"Request:\n{user_message}"
+                        )
+                        fallback_response = self.llm.chat(
+                            [{"role": "user", "content": fallback_prompt}],
+                            tools=None,
+                            max_tokens=512,
+                        )
+                        fallback_content = str(fallback_response.content or "").strip()
+                        if not fallback_content:
+                            raise exc
+                        _on_text_chunk(fallback_content)
+                        trace.write_text_entry(
+                            {"type": "message", "iter": current_iter, "role": "assistant"},
+                            field="content",
+                            value=fallback_content,
+                            offload_kind=f"assistant-message-{current_iter}",
+                        )
+                        react_trace.append({"type": "answer", "content": fallback_content[:500]})
+                        trace.close()
+                        state_store.mark_success(run_dir)
+                        return {
+                            "status": "success",
+                            "run_dir": str(run_dir),
+                            "run_id": run_dir.name,
+                            "content": fallback_content,
+                            "react_trace": react_trace,
+                            "iterations": iteration,
+                            "max_iterations": self.max_iterations,
+                            "tool_calling_fallback": True,
+                        }
                     # One retry for transient mid-stream failures (connection
                     # reset, relay hiccup) — mirrors the swarm worker policy.
                     # Deterministic 4xx errors fail immediately. Deltas from
