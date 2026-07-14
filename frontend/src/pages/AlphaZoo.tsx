@@ -205,21 +205,22 @@ function BrowseView() {
   const visible = filtered.slice(0, visibleCount);
 
   return (
-    <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-8">
+    <div data-page-enter className="min-h-full bg-canvas px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       {/* Hero */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground uppercase tracking-wide">
+      <header className="border-b border-[hsl(var(--border-subtle))] pb-5">
+        <div className="mb-2 flex items-center gap-2 text-xs font-medium text-primary">
           <Layers className="h-3.5 w-3.5" aria-hidden="true" /> {i18n.t("alphaZoo.title")}
         </div>
-        <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
+        <h1 className="text-2xl font-semibold leading-8 text-ink-strong">
           {loading
             ? i18n.t("alphaZoo.prebuiltAlphaLoading")
             : i18n.t("alphaZoo.prebuiltAlpha", { count: total })}
         </h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
+        <p className="mt-1 max-w-3xl text-sm leading-6 text-ink-muted">
           {i18n.t("alphaZoo.browseDesc")}
         </p>
-      </div>
+      </header>
 
       {/* Zoo cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -231,7 +232,7 @@ function BrowseView() {
               type="button"
               onClick={() => setZooFilter(active ? "" : z.id)}
               className={cn(
-                "space-y-2 rounded-lg border border-border/70 bg-card p-4 text-left shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-base ease-standard hover:-translate-y-0.5 hover:border-primary/45 hover:bg-muted/20 hover:shadow-md",
+                "space-y-2 rounded-lg border border-[hsl(var(--border-subtle))] bg-surface-1 p-4 text-left shadow-xs transition-[background-color,border-color,box-shadow,transform] duration-base ease-standard hover:-translate-y-0.5 hover:border-primary/45 hover:bg-surface-2 hover:shadow-md",
                 active && "border-primary bg-primary/5 ring-1 ring-primary/25",
               )}
             >
@@ -436,6 +437,7 @@ function BrowseView() {
             </button>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
