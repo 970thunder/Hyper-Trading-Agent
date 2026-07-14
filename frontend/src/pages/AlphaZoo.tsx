@@ -42,6 +42,7 @@ import { echarts } from "@/lib/echarts";
 import { getChartTheme } from "@/lib/chart-theme";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { Select, type SelectOption } from "@/components/ui/Select";
+import { Button } from "@/components/ui/Button";
 import { Metric, Panel, SectionHeader } from "@/components/ui/Panel";
 
 /* ---------- Constants ---------- */
@@ -524,37 +525,40 @@ function DetailView({ alphaId }: DetailProps) {
     : `/alpha-zoo/bench?zoo=${encodeURIComponent(a.zoo)}&period=2020-2025`;
 
   return (
-    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6">
+    <div data-page-enter className="min-h-full bg-canvas px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
+      <header className="border-b border-[hsl(var(--border-subtle))] pb-5">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <Link
           to="/alpha-zoo"
-          className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+          className="inline-flex h-9 items-center gap-2 rounded-md border border-transparent px-2 text-sm text-ink-muted transition-[color,background-color] duration-fast hover:bg-surface-2 hover:text-ink-strong"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> {i18n.t("alphaZoo.backToAlphaZoo")}
         </Link>
-        <button
-          type="button"
+        <Button
+          size="sm"
           onClick={() => navigate(benchHref)}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition"
+          leftIcon={<Play className="h-3.5 w-3.5" />}
         >
-          <Play className="h-3.5 w-3.5" aria-hidden="true" /> {i18n.t("alphaZoo.runBenchmark")}
-        </button>
+          {i18n.t("alphaZoo.runBenchmark")}
+        </Button>
       </div>
 
       {/* Title */}
-      <div className="space-y-1">
+      <div className="mt-4 space-y-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <h1 className="font-mono text-xl md:text-2xl font-bold tracking-tight">
+          <h1 className="font-mono text-xl font-semibold text-ink-strong">
             {a.id}
           </h1>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+          <span className="status-soft text-primary">
             {a.zoo}
           </span>
         </div>
         {nickname && (
-          <p className="text-sm text-muted-foreground">{nickname}</p>
+          <p className="text-sm text-ink-muted">{nickname}</p>
         )}
       </div>
+      </header>
 
       <section className="rounded-lg border border-border/70 bg-card p-4 shadow-sm">
         <div className="mb-3 flex flex-col gap-1">
@@ -616,6 +620,7 @@ function DetailView({ alphaId }: DetailProps) {
           </pre>
         </details>
       </section>
+    </div>
     </div>
   );
 }
