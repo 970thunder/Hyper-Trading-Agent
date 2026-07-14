@@ -13,7 +13,7 @@ import {
   ServerCog,
   ShieldCheck,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast, Toaster } from "sonner";
 import { api, type CommercialOrganizationMembership, type CommercialPrincipal, type SessionItem } from "@/lib/api";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { useAgentStore } from "@/stores/agent";
@@ -114,7 +114,8 @@ export function Layout() {
       await api.logoutCommercial();
       setPrincipal(null);
       setOrganizations([]);
-      window.location.reload();
+      setSessions([]);
+      window.location.replace("/login");
     } catch {
       toast.error(t("layout.logoutFailed"));
       setLoggingOut(false);
@@ -314,6 +315,8 @@ export function Layout() {
       >
         <div className="flex h-full min-h-0 flex-col">{sessionRail}</div>
       </Drawer>
+
+      <Toaster position="bottom-right" richColors closeButton duration={3500} />
     </>
   );
 }

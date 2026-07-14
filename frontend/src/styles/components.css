@@ -16,7 +16,7 @@
   .auth-shell {
     position: fixed;
     inset: 0;
-    z-index: 60;
+    z-index: calc(var(--layer-toast) + 1);
     height: 100dvh;
     min-height: 100dvh;
     padding: 1.5rem;
@@ -76,6 +76,12 @@
     gap: 0.625rem;
     color: hsl(var(--text-muted));
     font-size: 0.875rem;
+  }
+
+  /* The public route never shares scroll or visual layers with the workspace. */
+  body.auth-active {
+    overflow: hidden;
+    background: hsl(var(--canvas));
   }
 
   .dark .auth-shell::before {

@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2, LogIn, ShieldCheck } from "lucide-react";
@@ -12,6 +12,13 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    document.body.classList.add("auth-active");
+    return () => {
+      document.body.classList.remove("auth-active");
+    };
+  }, []);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -33,7 +40,7 @@ export function Login() {
   };
 
   return (
-    <main className="auth-shell text-ink-strong">
+    <main className="auth-shell text-ink-strong" data-auth-screen>
       <form onSubmit={submit} className="auth-card" aria-label={t("login.title")}>
         <div className="mb-8 flex items-center gap-3.5">
           <div className="auth-brand-mark">
