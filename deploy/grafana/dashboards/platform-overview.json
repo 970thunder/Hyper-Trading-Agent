@@ -1,0 +1,49 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [{ "expr": "vibe_trading_api_up", "refId": "A" }],
+      "title": "API health",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 12, "lineWidth": 2 } }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 9, "x": 6, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "vibe_trading_commercial_model_calls", "legendFormat": "Model calls", "refId": "A" },
+        { "expr": "vibe_trading_commercial_knowledge_retrievals", "legendFormat": "RAG retrievals", "refId": "B" },
+        { "expr": "vibe_trading_commercial_tool_calls", "legendFormat": "Tool calls", "refId": "C" }
+      ],
+      "title": "Commercial activity",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 9, "x": 15, "y": 0 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        { "expr": "vibe_trading_commercial_ingestion_jobs_failed", "legendFormat": "Ingestion failures", "refId": "A" },
+        { "expr": "vibe_trading_commercial_tool_call_errors", "legendFormat": "Tool errors", "refId": "B" }
+      ],
+      "title": "Operational failures",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["hyper-trading-agent", "operations"],
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Hyper Trading Agent Platform Overview",
+  "version": 1
+}

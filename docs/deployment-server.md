@@ -55,6 +55,37 @@ The TLS overlay publishes port `443`, redirects HTTP to HTTPS, enables TLS 1.2/1
 docker compose --env-file .env.production -f docker-compose.prod.yml -f docker-compose.server.yml -f docker-compose.tls.yml exec gateway nginx -s reload
 ```
 
+## Optional Observability
+
+The `docker-compose.observability.yml` overlay starts Prometheus and Grafana.
+Both default to `127.0.0.1`; expose them only through an authenticated VPN or
+separate administrator gateway.
+
+Create local secret files. The metrics file must contain the same exact value
+as `API_AUTH_KEY`; do not commit this directory:
+
+```powershell
+New-Item -ItemType Directory -Force secrets | Out-Null
+$apiKey = (Select-String -Path .env.production -Pattern '^API_AUTH_KEY=').Line.Split('=', 2)[1]
+Set-Content -NoNewline -Path secrets/api_auth_key -Value $apiKey
+$grafanaPassword = [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }))
+Set-Content -NoNewline -Path secrets/grafana_admin_password -Value $grafanaPassword
+```
+
+Then start the stack with the overlay:
+
+```powershell
+docker compose --env-file .env.production -f docker-compose.prod.yml -f docker-compose.server.yml -f docker-compose.observability.yml up --build -d
+```
+
+Prometheus scrapes the protected internal `/metrics` endpoint using a Docker
+secret. Grafana provisions the `Hyper Trading Agent Platform Overview`
+dashboard with API health, model calls, RAG retrievals, tool calls, ingestion
+failures, and tool errors. Open `http://127.0.0.1:3000` from the server or an
+authorized tunnel, sign in with `GRAFANA_ADMIN_USER`, and immediately rotate
+the generated password into the secret file if it is shared with another
+operator.
+
 ## Initialize and Verify
 
 Create the first organization Owner after the services are healthy:
@@ -78,5 +109,5 @@ Then sign in through the public domain, create an organization knowledge base, a
 
 - Use [backup and restore](operations-backup-restore.md) before upgrades and at least quarterly for restore drills.
 - Use [secret rotation](operations-secret-rotation.md) for provider keys, API keys, and the encryption root key.
-- Keep PostgreSQL and Redis volumes on persistent storage and monitor Docker health, gateway logs, worker failures, and `/metrics` from an internal Prometheus network.
+- Keep PostgreSQL, Redis, and the application volumes on persistent storage and monitor Docker health, gateway logs, worker failures, and `/metrics` from the internal Prometheus network.
 - Do not publish port `8899` via a public firewall rule. The `API_BIND=127.0.0.1` setting is part of the server security boundary.

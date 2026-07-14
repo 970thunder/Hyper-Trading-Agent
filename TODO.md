@@ -114,5 +114,5 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [ ] Make PostgreSQL the primary commercial repository instead of an initialized but partially unused service.
 - [ ] Add Alembic migration execution and rollback documentation.
 - [ ] Add backup/restore drills for PostgreSQL, uploads/object storage, and encrypted secrets.
-- [ ] Add Prometheus/Grafana dashboard examples for jobs, model calls, RAG, audit, and failures.
+- [x] Add Prometheus/Grafana dashboard examples for jobs, model calls, RAG, audit, and failures.
 - [ ] Add production SSO, TLS reverse-proxy, rate limiting, and deployment hardening checks.

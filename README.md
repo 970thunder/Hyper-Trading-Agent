@@ -107,6 +107,13 @@ tenant-scoped `rag_vector_chunks` pgvector table. If PostgreSQL, `psycopg`, or
 the configured embedding dimension is unavailable, retrieval falls back to the
 SQLite path without exposing the database error to users.
 
+Commercial metadata is still in a staged migration: the application currently
+persists organization metadata, sessions, knowledge lifecycle records, audit
+data, and encrypted provider settings in the `vibe-home` volume, while
+production vectors are stored in PostgreSQL. Back up both persistence layers
+before every upgrade. PostgreSQL-primary repositories remain an explicit
+roadmap item rather than an implied deployment guarantee.
+
 For a single-machine deployment without Redis/Postgres workers, set `HYPER_TRADING_RUNTIME_JOB_BACKEND=sqlite-local`.
 
 Start:
@@ -147,6 +154,7 @@ Operations runbooks:
 - [Secret rotation and encryption migration](docs/operations-secret-rotation.md)
 - [Backup and restore drill](docs/operations-backup-restore.md)
 - [Server deployment guide](docs/deployment-server.md)
+- [Prometheus and Grafana overlay](docs/deployment-server.md#optional-observability)
 - [UI screenshot regression](docs/ui-screenshot-regression.md)
 
 ## Commercial API Surface

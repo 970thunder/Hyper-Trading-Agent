@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: Hyper Trading Agent
+    orgId: 1
+    folder: Hyper Trading Agent
+    type: file
+    disableDeletion: true
+    editable: false
+    options:
+      path: /var/lib/grafana/dashboards
