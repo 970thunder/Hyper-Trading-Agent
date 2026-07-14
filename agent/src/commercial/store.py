@@ -100,6 +100,21 @@ def _json_object(value: Any) -> dict[str, Any]:
     return dict(parsed) if isinstance(parsed, dict) else {}
 
 
+_SENSITIVE_METADATA_KEY_RE = re.compile(r"(?:api[_-]?key|authorization|cookie|password|secret|token)", re.IGNORECASE)
+
+
+def _redact_metadata(value: Any) -> Any:
+    """Return operational metadata without credentials or session material."""
+    if isinstance(value, dict):
+        return {
+            str(key): "[redacted]" if _SENSITIVE_METADATA_KEY_RE.search(str(key)) else _redact_metadata(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_metadata(item) for item in value]
+    return value
+
+
 def _normalize_knowledge_config(
     value: dict[str, Any] | None,
     *,
@@ -2731,7 +2746,10 @@ class CommercialStore:
                     (SELECT COUNT(*) FROM knowledge_ingestion_jobs WHERE status IN ('pending', 'running')) AS ingestion_jobs_active,
                     (SELECT COUNT(*) FROM knowledge_ingestion_jobs WHERE status = 'failed') AS ingestion_jobs_failed,
                     (SELECT COUNT(*) FROM model_call_usage) AS model_calls,
-                    (SELECT COUNT(*) FROM audit_logs) AS audit_events
+                    (SELECT COUNT(*) FROM audit_logs) AS audit_events,
+                    (SELECT COUNT(*) FROM workspace_sessions) AS workspace_sessions,
+                    (SELECT COUNT(*) FROM workspace_runs) AS workspace_runs,
+                    (SELECT COUNT(*) FROM workspace_artifacts) AS workspace_artifacts
                 """
             ).fetchone()
         payload = {str(key): int(row[key] or 0) for key in row.keys()}
@@ -2741,6 +2759,104 @@ class CommercialStore:
             payload["commercial_db_bytes"] = 0
         payload["commercial_db_path"] = str(self.path)
         return payload
+
+    def platform_database_status(self) -> dict[str, Any]:
+        """Return non-secret SQLite repository health for platform operations."""
+        with self._connect() as conn:
+            page_count = int(conn.execute("PRAGMA page_count").fetchone()[0] or 0)
+            page_size = int(conn.execute("PRAGMA page_size").fetchone()[0] or 0)
+            free_pages = int(conn.execute("PRAGMA freelist_count").fetchone()[0] or 0)
+            journal_mode = str(conn.execute("PRAGMA journal_mode").fetchone()[0] or "")
+            table_counts = {
+                "users": int(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] or 0),
+                "organizations": int(conn.execute("SELECT COUNT(*) FROM organizations").fetchone()[0] or 0),
+                "knowledge_bases": int(conn.execute("SELECT COUNT(*) FROM knowledge_bases").fetchone()[0] or 0),
+                "knowledge_documents": int(conn.execute("SELECT COUNT(*) FROM knowledge_documents").fetchone()[0] or 0),
+                "knowledge_chunks": int(conn.execute("SELECT COUNT(*) FROM knowledge_chunks").fetchone()[0] or 0),
+                "workspace_artifacts": int(conn.execute("SELECT COUNT(*) FROM workspace_artifacts").fetchone()[0] or 0),
+                "audit_logs": int(conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0] or 0),
+            }
+        try:
+            file_bytes = int(self.path.stat().st_size)
+        except OSError:
+            file_bytes = page_count * page_size
+        return {
+            "engine": "sqlite",
+            "file_bytes": file_bytes,
+            "page_count": page_count,
+            "page_size": page_size,
+            "free_pages": free_pages,
+            "journal_mode": journal_mode,
+            "table_counts": table_counts,
+            "postgres_configured": bool(os.getenv("DATABASE_URL", "").strip()),
+        }
+
+    def list_platform_workspace_artifacts(
+        self,
+        *,
+        artifact_type: str = "",
+        organization_id: str = "",
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List tenant-bound generated resources for platform-level support work."""
+        clauses: list[str] = []
+        params: list[Any] = []
+        if artifact_type.strip():
+            clauses.append("a.artifact_type = ?")
+            params.append(artifact_type.strip().lower())
+        if organization_id.strip():
+            clauses.append("a.organization_id = ?")
+            params.append(organization_id.strip())
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(max(1, min(limit, 500)))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT a.artifact_type, a.artifact_id, a.organization_id, a.session_id, a.attempt_id,
+                       a.storage_path, a.metadata_json, a.created_at, a.updated_at,
+                       o.name AS organization_name, u.email AS created_by_email
+                FROM workspace_artifacts a
+                LEFT JOIN organizations o ON o.id = a.organization_id
+                LEFT JOIN users u ON u.id = a.created_by_user_id
+                {where}
+                ORDER BY a.updated_at DESC, a.created_at DESC
+                LIMIT ?
+                """,
+                tuple(params),
+            ).fetchall()
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = _redact_metadata(_json_object(item.pop("metadata_json", "{}")))
+            items.append(item)
+        return items
+
+    def run_platform_maintenance(self, actor: Principal, action: str) -> dict[str, Any]:
+        """Run an explicitly allowlisted maintenance action and audit it."""
+        normalized = str(action or "").strip().lower()
+        if normalized not in {"expire_sessions", "sqlite_checkpoint", "sqlite_vacuum"}:
+            raise ValueError("unsupported maintenance action")
+
+        details: dict[str, Any] = {"action": normalized}
+        if normalized == "expire_sessions":
+            with self._connect() as conn:
+                cursor = conn.execute("DELETE FROM auth_sessions WHERE expires_at < ?", (utcnow(),))
+            details["records_affected"] = max(0, int(cursor.rowcount or 0))
+        elif normalized == "sqlite_checkpoint":
+            with self._connect() as conn:
+                row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            details["checkpoint"] = [int(value or 0) for value in row] if row is not None else []
+        else:
+            conn = self._connect()
+            try:
+                conn.execute("VACUUM")
+            finally:
+                conn.close()
+            details["records_affected"] = 0
+
+        details["database"] = self.platform_database_status()
+        self.audit(actor, "platform.maintenance.run", "database", normalized, details)
+        return details
 
     def list_platform_users(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
         filters = []

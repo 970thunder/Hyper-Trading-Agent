@@ -63,6 +63,8 @@ Create the first organization Owner after the services are healthy:
 docker compose --env-file .env.production -f docker-compose.prod.yml exec api python -m src.commercial.bootstrap --email owner@example.com --password "replace-with-a-long-password" --organization "Hyper Research"
 ```
 
+The base production Compose file runs all idempotent SQL files in `migrations/` and initializes the application volumes before API and worker startup. Do not bypass these services with direct `docker run` commands; doing so can leave schema changes unapplied or create root-owned persistent files that the non-root application user cannot update.
+
 Verify without exposing operational endpoints publicly:
 
 ```powershell

@@ -100,6 +100,8 @@ Start:
 docker compose --env-file .env.production -f docker-compose.prod.yml up --build -d
 ```
 
+The production stack runs the idempotent SQL migration service and initializes named-volume ownership before starting the API and worker. The API port defaults to `127.0.0.1`; expose the service through `docker-compose.server.yml` and the Nginx gateway rather than binding the API directly to a public interface.
+
 Initialize the first organization owner:
 
 ```powershell

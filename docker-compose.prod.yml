@@ -22,6 +22,44 @@ services:
       - vibe-redis:/data
     command: redis-server --appendonly yes
 
+  migrations:
+    image: pgvector/pgvector:pg16
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: vibe_trading
+      PGUSER: vibe
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        for migration in /migrations/*.sql; do
+          echo "Applying $$migration"
+          psql -v ON_ERROR_STOP=1 -f "$$migration"
+        done
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  volume-init:
+    image: alpine:3.20
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        mkdir -p /data/runs /data/sessions /data/home /data/uploads
+        chown -R 1000:1000 /data
+    volumes:
+      - vibe-runs:/data/runs
+      - vibe-sessions:/data/sessions
+      - vibe-home:/data/home
+      - vibe-uploads:/data/uploads
+    restart: "no"
+
   api:
     build: .
     env_file:
@@ -30,14 +68,17 @@ services:
       DATABASE_URL: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
       REDIS_URL: redis://redis:6379/0
       VIBE_TRADING_COMMERCIAL_MODE: "1"
+      HYPER_TRADING_ALLOW_SELF_REGISTRATION: "${HYPER_TRADING_ALLOW_SELF_REGISTRATION:-0}"
       HYPER_TRADING_RUNTIME_JOB_BACKEND: "${HYPER_TRADING_RUNTIME_JOB_BACKEND:-redis-postgres}"
       HYPER_TRADING_RUNTIME_JOB_QUEUE: "${HYPER_TRADING_RUNTIME_JOB_QUEUE:-hyper:runtime:jobs}"
       VIBE_TRADING_TRUST_DOCKER_LOOPBACK: "${VIBE_TRADING_TRUST_DOCKER_LOOPBACK:-0}"
     ports:
-      - "${API_BIND:-0.0.0.0}:${API_PORT:-8899}:8899"
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-8899}:8899"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+      volume-init:
+        condition: service_completed_successfully
       redis:
         condition: service_started
     volumes:
@@ -55,14 +96,17 @@ services:
       DATABASE_URL: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
       REDIS_URL: redis://redis:6379/0
       VIBE_TRADING_COMMERCIAL_MODE: "1"
+      HYPER_TRADING_ALLOW_SELF_REGISTRATION: "${HYPER_TRADING_ALLOW_SELF_REGISTRATION:-0}"
       HYPER_TRADING_RUNTIME_JOB_BACKEND: "${HYPER_TRADING_RUNTIME_JOB_BACKEND:-redis-postgres}"
       HYPER_TRADING_RUNTIME_JOB_QUEUE: "${HYPER_TRADING_RUNTIME_JOB_QUEUE:-hyper:runtime:jobs}"
       VIBE_TRADING_SKIP_PREFLIGHT: "1"
       VIBE_TRADING_TRUST_DOCKER_LOOPBACK: "${VIBE_TRADING_TRUST_DOCKER_LOOPBACK:-0}"
     command: ["python", "-m", "src.commercial.worker"]
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+      volume-init:
+        condition: service_completed_successfully
       redis:
         condition: service_started
     volumes:

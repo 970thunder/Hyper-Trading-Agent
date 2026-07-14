@@ -659,6 +659,35 @@
     "failedJobs": "{{count}} 个失败任务",
     "delete": "删除",
     "deleteKnowledgeConfirm": "删除知识库 {{name}} 及其文档？此操作无法撤销。",
+    "runtimeJobsTitle": "全部运行时任务",
+    "artifactsTitle": "租户归属产物",
+    "emptyRuntimeJobs": "当前没有已归属组织的运行时任务。",
+    "emptyArtifacts": "当前没有已归属租户的工作区产物。",
+    "databaseTitle": "商业数据仓库",
+    "repositoryEngine": "仓库引擎",
+    "databasePages": "已分配 / 空闲页",
+    "databaseJournal": "日志模式",
+    "queueBackend": "队列后端",
+    "queueName": "队列名称",
+    "postgresConfigured": "PostgreSQL 已配置",
+    "storageTitle": "受管存储",
+    "storageUploads": "上传文件",
+    "storageRuns": "运行产物",
+    "storageSessions": "会话数据",
+    "maintenanceTitle": "仓库维护",
+    "maintenanceDescription": "执行经过批准的维护操作，并完整记录到平台审计日志。",
+    "maintenanceConfirmTitle": "执行维护操作？",
+    "maintenanceConfirmDescription": "确认对商业数据仓库执行 {{action}}。",
+    "maintenanceConfirmBody": "操作将写入平台审计日志。数据库维护可能会短暂延迟并发写入。",
+    "maintenance": {
+      "expire_sessions": "清理过期会话",
+      "sqlite_checkpoint": "执行 WAL 检查点",
+      "sqlite_vacuum": "压缩数据库"
+    },
+    "unavailable": "不可用",
+    "cancel": "取消",
+    "close": "关闭",
+    "confirm": "执行操作",
     "stats": {
       "users": "用户",
       "organizations": "组织",
@@ -674,6 +703,9 @@
       "organizations": "组织",
       "knowledge": "知识库",
       "jobs": "任务",
+      "runtime": "运行时",
+      "artifacts": "产物",
+      "operations": "运维",
       "audit": "审计"
     },
     "columns": {
@@ -695,7 +727,9 @@
       "progress": "进度",
       "updated": "更新时间",
       "event": "事件",
-      "actor": "操作者"
+      "actor": "操作者",
+      "type": "类型",
+      "identifier": "标识符"
     }
   },
   "knowledge": {

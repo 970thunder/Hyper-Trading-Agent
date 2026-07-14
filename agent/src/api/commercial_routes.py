@@ -6,6 +6,7 @@ import sys as _sys
 import json
 import os
 import time
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -131,6 +132,11 @@ class PlatformOrganizationUpdateRequest(BaseModel):
     is_active: bool | None = None
 
 
+class PlatformMaintenanceRequest(BaseModel):
+    action: str
+    confirmed: bool = False
+
+
 class ToolPolicyUpdateRequest(BaseModel):
     risk_level: str | None = None
     permission_scope: str | None = None
@@ -161,6 +167,131 @@ def _store() -> CommercialStore:
 def _runtime_redis_client():
     redis_url = _redis_url()
     return _redis_client_from_url(redis_url) if redis_url else None
+
+
+_PLATFORM_SENSITIVE_METADATA_KEYWORDS = ("api_key", "authorization", "cookie", "password", "secret", "token")
+
+
+def _sanitize_platform_metadata(value: Any) -> Any:
+    """Preserve operational context while keeping runtime payload secrets out of the API."""
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        for key, item in value.items():
+            normalized = str(key).lower().replace("-", "_")
+            if any(keyword in normalized for keyword in _PLATFORM_SENSITIVE_METADATA_KEYWORDS):
+                sanitized[str(key)] = "[redacted]"
+            elif normalized == "payload":
+                sanitized[str(key)] = {"available": bool(item)}
+            else:
+                sanitized[str(key)] = _sanitize_platform_metadata(item)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_platform_metadata(item) for item in value]
+    return value
+
+
+def _directory_size(path: Path) -> int:
+    total = 0
+    try:
+        for candidate in path.rglob("*"):
+            if candidate.is_file():
+                try:
+                    total += candidate.stat().st_size
+                except OSError:
+                    continue
+    except OSError:
+        return total
+    return total
+
+
+def _platform_runtime_jobs(store: CommercialStore, *, limit: int = 200) -> list[dict[str, Any]]:
+    """Join durable job envelopes with tenant-bound artifact ownership."""
+    try:
+        from src.runtime_jobs.store import DurableRuntimeJobStore
+
+        durable_jobs = DurableRuntimeJobStore().list_jobs(limit=limit)
+    except Exception:
+        durable_jobs = []
+    artifacts = store.list_platform_workspace_artifacts(artifact_type="runtime_job", limit=limit)
+    artifact_by_id = {str(item["artifact_id"]): item for item in artifacts}
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for job in durable_jobs:
+        job_id = str(job.get("job_id") or "")
+        artifact = artifact_by_id.get(job_id)
+        if artifact is None:
+            continue
+        seen.add(job_id)
+        rows.append(
+            {
+                "job_id": job_id,
+                "kind": str(job.get("kind") or ""),
+                "source": str(job.get("source") or ""),
+                "title": str(job.get("title") or job_id),
+                "status": str(job.get("status") or "unknown"),
+                "progress": int(job.get("progress") or 0),
+                "error": str(job.get("error") or ""),
+                "retryable": bool(job.get("retryable")),
+                "cancelable": bool(job.get("cancelable")),
+                "retry_count": int(job.get("retry_count") or 0),
+                "created_at": str(job.get("created_at") or artifact.get("created_at") or ""),
+                "updated_at": str(job.get("updated_at") or artifact.get("updated_at") or ""),
+                "organization_id": str(artifact.get("organization_id") or ""),
+                "organization_name": str(artifact.get("organization_name") or ""),
+                "created_by_email": str(artifact.get("created_by_email") or ""),
+                "metadata": _sanitize_platform_metadata(job.get("metadata") or artifact.get("metadata") or {}),
+            }
+        )
+    for artifact in artifacts:
+        job_id = str(artifact.get("artifact_id") or "")
+        if not job_id or job_id in seen:
+            continue
+        rows.append(
+            {
+                "job_id": job_id,
+                "kind": str((artifact.get("metadata") or {}).get("kind") or "unknown"),
+                "source": "",
+                "title": job_id,
+                "status": "unavailable",
+                "progress": 0,
+                "error": "",
+                "retryable": False,
+                "cancelable": False,
+                "retry_count": 0,
+                "created_at": str(artifact.get("created_at") or ""),
+                "updated_at": str(artifact.get("updated_at") or ""),
+                "organization_id": str(artifact.get("organization_id") or ""),
+                "organization_name": str(artifact.get("organization_name") or ""),
+                "created_by_email": str(artifact.get("created_by_email") or ""),
+                "metadata": _sanitize_platform_metadata(artifact.get("metadata") or {}),
+            }
+        )
+    return sorted(rows, key=lambda item: str(item.get("updated_at") or ""), reverse=True)[:limit]
+
+
+def _platform_operations(store: CommercialStore) -> dict[str, Any]:
+    """Build a non-secret platform health snapshot for the global console."""
+    from src.runtime_jobs.backend import build_runtime_job_backend
+    from src.runtime_jobs.store import DurableRuntimeJobStore
+
+    agent_root = Path(__file__).resolve().parents[2]
+    runtime_store = DurableRuntimeJobStore()
+    try:
+        runtime_db_bytes = int(runtime_store.path.stat().st_size)
+    except OSError:
+        runtime_db_bytes = 0
+    return {
+        "database": store.platform_database_status(),
+        "runtime": {
+            **build_runtime_job_backend(redis_client=_runtime_redis_client()).status(),
+            "durable_job_db_bytes": runtime_db_bytes,
+        },
+        "storage": {
+            "uploads_bytes": _directory_size(agent_root / "uploads"),
+            "runs_bytes": _directory_size(agent_root / "runs"),
+            "sessions_bytes": _directory_size(agent_root / "sessions"),
+        },
+    }
 
 
 def _principal_from_cookie(vibe_session: str | None = Cookie(default=None)) -> Principal:
@@ -866,9 +997,50 @@ def register_commercial_routes(app: FastAPI) -> None:
     # All endpoints return operational metadata only and never provider secrets.
     @app.get("/platform-admin/summary")
     async def platform_summary(principal: Principal = Depends(_require_platform_admin)):
-        payload = _store().platform_summary()
+        store = _store()
+        payload = store.platform_summary()
+        runtime_jobs = _platform_runtime_jobs(store)
+        payload["runtime_jobs"] = len(runtime_jobs)
+        payload["runtime_jobs_active"] = sum(1 for job in runtime_jobs if job["status"] in {"queued", "pending", "running"})
+        payload["runtime_jobs_failed"] = sum(1 for job in runtime_jobs if job["status"] in {"failed", "error"})
         payload["requested_by"] = principal.user_id
         return payload
+
+    @app.get("/platform-admin/operations")
+    async def platform_operations(principal: Principal = Depends(_require_platform_admin)):
+        return _platform_operations(_store())
+
+    @app.post("/platform-admin/maintenance")
+    async def run_platform_maintenance(
+        payload: PlatformMaintenanceRequest,
+        principal: Principal = Depends(_require_platform_admin),
+    ):
+        if not payload.confirmed:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="maintenance action requires confirmation")
+        try:
+            return _store().run_platform_maintenance(principal, payload.action)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get("/platform-admin/runtime-jobs")
+    async def platform_runtime_jobs(
+        limit: int = Query(100, ge=1, le=500),
+        principal: Principal = Depends(_require_platform_admin),
+    ):
+        return _platform_runtime_jobs(_store(), limit=limit)
+
+    @app.get("/platform-admin/workspace-artifacts")
+    async def platform_workspace_artifacts(
+        artifact_type: str = "",
+        organization_id: str = "",
+        limit: int = Query(100, ge=1, le=500),
+        principal: Principal = Depends(_require_platform_admin),
+    ):
+        return _store().list_platform_workspace_artifacts(
+            artifact_type=artifact_type,
+            organization_id=organization_id,
+            limit=limit,
+        )
 
     @app.get("/platform-admin/users")
     async def platform_users(

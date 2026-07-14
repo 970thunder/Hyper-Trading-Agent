@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
+  Archive,
   Building2,
   Database,
   FileClock,
+  HardDrive,
   RefreshCw,
+  ServerCog,
   ShieldCheck,
   Trash2,
   UsersRound,
+  Wrench,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -15,15 +19,20 @@ import {
   type PlatformAuditLog,
   type PlatformIngestionJob,
   type PlatformKnowledgeBase,
+  type PlatformMaintenanceAction,
   type PlatformOrganization,
+  type PlatformOperations,
+  type PlatformRuntimeJob,
   type PlatformSummary,
   type PlatformUser,
+  type PlatformWorkspaceArtifact,
 } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
 import { StatusIndicator, type StatusTone } from "@/components/ui/Status";
 import { Tab, TabList, TabPanel, Tabs } from "@/components/ui/Tabs";
 
-type PlatformTab = "overview" | "users" | "organizations" | "knowledge" | "jobs" | "audit";
+type PlatformTab = "overview" | "users" | "organizations" | "knowledge" | "jobs" | "runtime" | "artifacts" | "operations" | "audit";
 
 const EMPTY_SUMMARY: PlatformSummary = {
   users: 0,
@@ -43,6 +52,30 @@ const EMPTY_SUMMARY: PlatformSummary = {
   commercial_db_path: "",
 };
 
+const EMPTY_OPERATIONS: PlatformOperations = {
+  database: {
+    engine: "sqlite",
+    file_bytes: 0,
+    page_count: 0,
+    page_size: 0,
+    free_pages: 0,
+    journal_mode: "",
+    postgres_configured: false,
+    table_counts: {},
+  },
+  runtime: {
+    active: "",
+    configured: "",
+    available: false,
+    redis_configured: false,
+    postgres_configured: false,
+    queue_name: "",
+    fallback_reason: "",
+    durable_job_db_bytes: 0,
+  },
+  storage: { uploads_bytes: 0, runs_bytes: 0, sessions_bytes: 0 },
+};
+
 export function PlatformAdmin() {
   const { t: translate, i18n } = useTranslation();
   const t = (key: string, options?: Record<string, unknown>): string => (
@@ -54,21 +87,28 @@ export function PlatformAdmin() {
   const [organizations, setOrganizations] = useState<PlatformOrganization[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<PlatformKnowledgeBase[]>([]);
   const [jobs, setJobs] = useState<PlatformIngestionJob[]>([]);
+  const [runtimeJobs, setRuntimeJobs] = useState<PlatformRuntimeJob[]>([]);
+  const [artifacts, setArtifacts] = useState<PlatformWorkspaceArtifact[]>([]);
+  const [operations, setOperations] = useState<PlatformOperations>(EMPTY_OPERATIONS);
   const [auditLogs, setAuditLogs] = useState<PlatformAuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState("");
   const [error, setError] = useState("");
+  const [maintenanceAction, setMaintenanceAction] = useState<PlatformMaintenanceAction | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [nextSummary, nextUsers, nextOrganizations, nextKnowledgeBases, nextJobs, nextAudit] = await Promise.all([
+      const [nextSummary, nextUsers, nextOrganizations, nextKnowledgeBases, nextJobs, nextRuntimeJobs, nextArtifacts, nextOperations, nextAudit] = await Promise.all([
         api.getPlatformSummary(),
         api.listPlatformUsers(),
         api.listPlatformOrganizations(),
         api.listPlatformKnowledgeBases(),
         api.listPlatformIngestionJobs(),
+        api.listPlatformRuntimeJobs(),
+        api.listPlatformWorkspaceArtifacts(),
+        api.getPlatformOperations(),
         api.listPlatformAuditLogs(),
       ]);
       setSummary(nextSummary);
@@ -76,6 +116,9 @@ export function PlatformAdmin() {
       setOrganizations(nextOrganizations);
       setKnowledgeBases(nextKnowledgeBases);
       setJobs(nextJobs);
+      setRuntimeJobs(nextRuntimeJobs);
+      setArtifacts(nextArtifacts);
+      setOperations(nextOperations);
       setAuditLogs(nextAudit);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("platformAdmin.loadError"));
@@ -161,6 +204,24 @@ export function PlatformAdmin() {
     }
   };
 
+  const maintenanceLabel = (action: PlatformMaintenanceAction) => t(`platformAdmin.maintenance.${action}`);
+
+  const runMaintenance = async () => {
+    if (!maintenanceAction) return;
+    setActionId(`maintenance-${maintenanceAction}`);
+    setError("");
+    try {
+      const result = await api.runPlatformMaintenance(maintenanceAction);
+      setOperations((current) => ({ ...current, database: result.database }));
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t("platformAdmin.actionError"));
+    } finally {
+      setActionId("");
+      setMaintenanceAction(null);
+    }
+  };
+
   return (
     <div data-page-enter className="mx-auto w-full max-w-[1600px] px-3 py-3 sm:px-4 sm:py-5 lg:px-6">
       <section className="surface-panel overflow-hidden p-5 lg:p-6">
@@ -183,6 +244,9 @@ export function PlatformAdmin() {
           <Tab value="organizations"><Building2 className="h-3.5 w-3.5" />{t("platformAdmin.tabs.organizations")}</Tab>
           <Tab value="knowledge"><Database className="h-3.5 w-3.5" />{t("platformAdmin.tabs.knowledge")}</Tab>
           <Tab value="jobs"><FileClock className="h-3.5 w-3.5" />{t("platformAdmin.tabs.jobs")}</Tab>
+          <Tab value="runtime"><ServerCog className="h-3.5 w-3.5" />{t("platformAdmin.tabs.runtime")}</Tab>
+          <Tab value="artifacts"><Archive className="h-3.5 w-3.5" />{t("platformAdmin.tabs.artifacts")}</Tab>
+          <Tab value="operations"><HardDrive className="h-3.5 w-3.5" />{t("platformAdmin.tabs.operations")}</Tab>
           <Tab value="audit"><ShieldCheck className="h-3.5 w-3.5" />{t("platformAdmin.tabs.audit")}</Tab>
         </TabList>
 
@@ -204,10 +268,80 @@ export function PlatformAdmin() {
 
         <TabPanel value="jobs" className="mt-5"><section className="surface-panel overflow-hidden"><TableHeader title={t("platformAdmin.jobsTitle")} count={jobs.length} /><div className="overflow-x-auto"><table className="w-full min-w-[840px] text-sm"><thead><tr>{["job", "organization", "knowledgeBase", "status", "progress", "updated"].map((key) => <th key={key} className="border-b border-border px-4 py-3 text-start text-xs font-medium text-ink-muted">{t(`platformAdmin.columns.${key}`)}</th>)}</tr></thead><tbody>{jobs.map((job) => <tr key={job.id} className="border-b border-border/70 last:border-0 hover:bg-surface-2/70"><td className="px-4 py-3"><div className="font-medium text-ink-strong">{job.document_title || job.id}</div>{job.error ? <div className="max-w-[260px] truncate text-xs text-danger">{job.error}</div> : null}</td><td className="px-4 py-3 text-ink-muted">{job.organization_name || "-"}</td><td className="px-4 py-3 text-ink-muted">{job.knowledge_base_name || "-"}</td><td className="px-4 py-3"><StatusIndicator label={job.status} tone={statusTone(job.status)} /></td><td className="px-4 py-3"><div className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-3"><div className="h-full bg-primary transition-[width] duration-base" style={{ width: `${Math.max(0, Math.min(100, job.progress))}%` }} /></div><span className="mt-1 block text-xs text-ink-muted">{job.progress}%</span></td><td className="px-4 py-3 text-xs text-ink-muted">{date(job.updated_at)}</td></tr>)}</tbody></table></div></section></TabPanel>
 
+        <TabPanel value="runtime" className="mt-5"><PlatformRuntimeJobsTable rows={runtimeJobs} date={date} t={t} statusTone={statusTone} /></TabPanel>
+
+        <TabPanel value="artifacts" className="mt-5"><PlatformArtifactsTable rows={artifacts} date={date} t={t} /></TabPanel>
+
+        <TabPanel value="operations" className="mt-5 space-y-4">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <section className="surface-panel p-4"><div className="flex items-center gap-2"><Database className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-ink-strong">{t("platformAdmin.databaseTitle")}</h2></div><dl className="mt-4 grid gap-3 text-sm"><Metric label={t("platformAdmin.repositoryEngine")} value={operations.database.engine} /><Metric label={t("platformAdmin.runtimeStorage")} value={formatBytes(operations.database.file_bytes)} /><Metric label={t("platformAdmin.databasePages")} value={`${operations.database.page_count.toLocaleString()} / ${operations.database.free_pages.toLocaleString()}`} /><Metric label={t("platformAdmin.databaseJournal")} value={operations.database.journal_mode || "-"} /></dl></section>
+            <section className="surface-panel p-4"><div className="flex items-center gap-2"><ServerCog className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-ink-strong">{t("platformAdmin.runtime")}</h2></div><dl className="mt-4 grid gap-3 text-sm"><Metric label={t("platformAdmin.queueBackend")} value={operations.runtime.active || "-"} /><Metric label={t("platformAdmin.queueName")} value={operations.runtime.queue_name || "-"} /><Metric label={t("platformAdmin.runtimeStorage")} value={formatBytes(operations.runtime.durable_job_db_bytes)} /><Metric label={t("platformAdmin.postgresConfigured")} value={operations.runtime.postgres_configured ? t("platformAdmin.active") : t("platformAdmin.unavailable")} /></dl></section>
+          </div>
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <section className="surface-panel p-4"><div className="flex items-center gap-2"><HardDrive className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-ink-strong">{t("platformAdmin.storageTitle")}</h2></div><div className="mt-4 grid gap-3 sm:grid-cols-3"><StorageMetric label={t("platformAdmin.storageUploads")} value={operations.storage.uploads_bytes} /><StorageMetric label={t("platformAdmin.storageRuns")} value={operations.storage.runs_bytes} /><StorageMetric label={t("platformAdmin.storageSessions")} value={operations.storage.sessions_bytes} /></div></section>
+            <section className="surface-panel p-4"><div className="flex items-center gap-2"><Wrench className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-ink-strong">{t("platformAdmin.maintenanceTitle")}</h2></div><p className="mt-2 text-sm leading-6 text-ink-muted">{t("platformAdmin.maintenanceDescription")}</p><div className="mt-4 flex flex-wrap gap-2">{(["expire_sessions", "sqlite_checkpoint", "sqlite_vacuum"] as PlatformMaintenanceAction[]).map((action) => <Button key={action} size="sm" variant={action === "sqlite_vacuum" ? "outline" : "secondary"} onClick={() => setMaintenanceAction(action)}>{maintenanceLabel(action)}</Button>)}</div></section>
+          </div>
+        </TabPanel>
+
         <TabPanel value="audit" className="mt-5"><section className="surface-panel overflow-hidden"><TableHeader title={t("platformAdmin.auditTitle")} count={auditLogs.length} /><AuditTable rows={auditLogs} date={date} t={t} /></section></TabPanel>
       </Tabs>
+
+      <Dialog
+        open={maintenanceAction !== null}
+        onOpenChange={(open) => { if (!open) setMaintenanceAction(null); }}
+        title={t("platformAdmin.maintenanceConfirmTitle")}
+        description={maintenanceAction ? t("platformAdmin.maintenanceConfirmDescription", { action: maintenanceLabel(maintenanceAction) }) : ""}
+        closeLabel={t("platformAdmin.close")}
+        footer={<><Button variant="ghost" onClick={() => setMaintenanceAction(null)}>{t("platformAdmin.cancel")}</Button><Button variant="primary" loading={Boolean(maintenanceAction && actionId === `maintenance-${maintenanceAction}`)} onClick={() => void runMaintenance()}>{t("platformAdmin.confirm")}</Button></>}
+      >
+        <p className="text-sm leading-6 text-ink-muted">{t("platformAdmin.maintenanceConfirmBody")}</p>
+      </Dialog>
     </div>
   );
+}
+
+function PlatformRuntimeJobsTable({
+  rows,
+  date,
+  t,
+  statusTone,
+}: {
+  rows: PlatformRuntimeJob[];
+  date: (value?: string | null) => string;
+  t: (key: string, options?: Record<string, unknown>) => string;
+  statusTone: (status: string | number | boolean) => StatusTone;
+}) {
+  return (
+    <section className="surface-panel overflow-hidden">
+      <TableHeader title={t("platformAdmin.runtimeJobsTitle")} count={rows.length} />
+      {rows.length === 0 ? <p className="p-4 text-sm text-ink-muted">{t("platformAdmin.emptyRuntimeJobs")}</p> : (
+        <div className="overflow-x-auto"><table className="w-full min-w-[920px] text-sm"><thead><tr>{["job", "organization", "type", "status", "progress", "updated"].map((key) => <th key={key} className="border-b border-border px-4 py-3 text-start text-xs font-medium text-ink-muted">{t(`platformAdmin.columns.${key}`)}</th>)}</tr></thead><tbody>{rows.map((job) => <tr key={job.job_id} className="border-b border-border/70 last:border-0 hover:bg-surface-2/70"><td className="px-4 py-3"><div className="max-w-[280px] truncate font-medium text-ink-strong">{job.title}</div><div className="max-w-[280px] truncate font-mono text-xs text-ink-muted">{job.job_id}</div>{job.error ? <div className="max-w-[280px] truncate text-xs text-danger">{job.error}</div> : null}</td><td className="px-4 py-3 text-ink-muted">{job.organization_name || "-"}</td><td className="px-4 py-3 text-ink-muted">{job.kind || "-"}</td><td className="px-4 py-3"><StatusIndicator label={job.status} tone={statusTone(job.status)} /></td><td className="px-4 py-3"><div className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-3"><div className="h-full bg-primary transition-[width] duration-base" style={{ width: `${Math.max(0, Math.min(100, job.progress))}%` }} /></div><span className="mt-1 block text-xs text-ink-muted">{job.progress}%</span></td><td className="px-4 py-3 text-xs text-ink-muted">{date(job.updated_at)}</td></tr>)}</tbody></table></div>
+      )}
+    </section>
+  );
+}
+
+function PlatformArtifactsTable({
+  rows,
+  date,
+  t,
+}: {
+  rows: PlatformWorkspaceArtifact[];
+  date: (value?: string | null) => string;
+  t: (key: string, options?: Record<string, unknown>) => string;
+}) {
+  return (
+    <section className="surface-panel overflow-hidden">
+      <TableHeader title={t("platformAdmin.artifactsTitle")} count={rows.length} />
+      {rows.length === 0 ? <p className="p-4 text-sm text-ink-muted">{t("platformAdmin.emptyArtifacts")}</p> : (
+        <div className="overflow-x-auto"><table className="w-full min-w-[920px] text-sm"><thead><tr>{["identifier", "type", "organization", "actor", "status", "updated"].map((key) => <th key={key} className="border-b border-border px-4 py-3 text-start text-xs font-medium text-ink-muted">{t(`platformAdmin.columns.${key}`)}</th>)}</tr></thead><tbody>{rows.map((artifact) => <tr key={`${artifact.artifact_type}-${artifact.artifact_id}`} className="border-b border-border/70 last:border-0 hover:bg-surface-2/70"><td className="px-4 py-3"><div className="max-w-[300px] truncate font-mono text-xs text-ink-strong">{artifact.artifact_id}</div><div className="mt-1 max-w-[300px] truncate text-xs text-ink-muted">{artifact.storage_path || artifact.session_id || "-"}</div></td><td className="px-4 py-3 text-ink-muted">{artifact.artifact_type}</td><td className="px-4 py-3 text-ink-muted">{artifact.organization_name || "-"}</td><td className="px-4 py-3 text-ink-muted">{artifact.created_by_email || "-"}</td><td className="px-4 py-3"><StatusIndicator label={artifact.attempt_id ? t("platformAdmin.active") : t("platformAdmin.unavailable")} tone={artifact.attempt_id ? "primary" : "neutral"} /></td><td className="px-4 py-3 text-xs text-ink-muted">{date(artifact.updated_at)}</td></tr>)}</tbody></table></div>
+      )}
+    </section>
+  );
+}
+
+function StorageMetric({ label, value }: { label: string; value: number }) {
+  return <div className="rounded-md border border-border/80 bg-surface-2/50 p-3"><div className="text-xs text-ink-muted">{label}</div><div className="mt-2 text-lg font-semibold tabular-nums text-ink-strong">{formatBytes(value)}</div></div>;
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {

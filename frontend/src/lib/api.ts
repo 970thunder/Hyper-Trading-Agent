@@ -354,6 +354,20 @@ export const api = {
     return request<FeedbackEvent[]>(`/feedback${qs ? `?${qs}` : ""}`);
   },
   getPlatformSummary: () => request<PlatformSummary>("/platform-admin/summary"),
+  getPlatformOperations: () => request<PlatformOperations>("/platform-admin/operations"),
+  runPlatformMaintenance: (action: PlatformMaintenanceAction) =>
+    request<PlatformMaintenanceResult>("/platform-admin/maintenance", {
+      method: "POST",
+      body: JSON.stringify({ action, confirmed: true }),
+    }),
+  listPlatformRuntimeJobs: () => request<PlatformRuntimeJob[]>("/platform-admin/runtime-jobs"),
+  listPlatformWorkspaceArtifacts: (params: { artifact_type?: string; organization_id?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (params.artifact_type) query.set("artifact_type", params.artifact_type);
+    if (params.organization_id) query.set("organization_id", params.organization_id);
+    const suffix = query.toString();
+    return request<PlatformWorkspaceArtifact[]>(`/platform-admin/workspace-artifacts${suffix ? `?${suffix}` : ""}`);
+  },
   listPlatformUsers: (query = "") =>
     request<PlatformUser[]>(`/platform-admin/users${query ? `?query=${encodeURIComponent(query)}` : ""}`),
   updatePlatformUser: (userId: string, body: PlatformUserUpdateRequest) =>
@@ -620,8 +634,84 @@ export interface PlatformSummary {
   ingestion_jobs_failed: number;
   model_calls: number;
   audit_events: number;
+  workspace_sessions?: number;
+  workspace_runs?: number;
+  workspace_artifacts?: number;
+  runtime_jobs?: number;
+  runtime_jobs_active?: number;
+  runtime_jobs_failed?: number;
   commercial_db_bytes: number;
   commercial_db_path: string;
+}
+
+export type PlatformMaintenanceAction = "expire_sessions" | "sqlite_checkpoint" | "sqlite_vacuum";
+
+export interface PlatformOperations {
+  database: {
+    engine: string;
+    file_bytes: number;
+    page_count: number;
+    page_size: number;
+    free_pages: number;
+    journal_mode: string;
+    postgres_configured: boolean;
+    table_counts: Record<string, number>;
+  };
+  runtime: {
+    active: string;
+    configured: string;
+    available: boolean;
+    redis_configured: boolean;
+    postgres_configured: boolean;
+    queue_name: string;
+    fallback_reason: string;
+    durable_job_db_bytes: number;
+  };
+  storage: {
+    uploads_bytes: number;
+    runs_bytes: number;
+    sessions_bytes: number;
+  };
+}
+
+export interface PlatformMaintenanceResult {
+  action: PlatformMaintenanceAction;
+  records_affected?: number;
+  checkpoint?: number[];
+  database: PlatformOperations["database"];
+}
+
+export interface PlatformRuntimeJob {
+  job_id: string;
+  kind: string;
+  source: string;
+  title: string;
+  status: string;
+  progress: number;
+  error: string;
+  retryable: boolean;
+  cancelable: boolean;
+  retry_count: number;
+  created_at: string;
+  updated_at: string;
+  organization_id: string;
+  organization_name: string;
+  created_by_email: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface PlatformWorkspaceArtifact {
+  artifact_type: string;
+  artifact_id: string;
+  organization_id: string;
+  organization_name?: string | null;
+  session_id: string;
+  attempt_id: string;
+  storage_path: string;
+  created_at: string;
+  updated_at: string;
+  created_by_email?: string | null;
+  metadata: Record<string, unknown>;
 }
 
 export interface PlatformUser {
