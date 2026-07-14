@@ -560,10 +560,10 @@ function DetailView({ alphaId }: DetailProps) {
       </div>
       </header>
 
-      <section className="rounded-lg border border-border/70 bg-card p-4 shadow-sm">
+      <section className="rounded-lg border border-[hsl(var(--border-subtle))] bg-surface-1 p-4 shadow-xs">
         <div className="mb-3 flex flex-col gap-1">
-          <h2 className="text-sm font-semibold">{i18n.t("alphaZoo.researchBrief")}</h2>
-          <p className="text-xs text-muted-foreground">{i18n.t("alphaZoo.researchBriefDesc")}</p>
+          <h2 className="text-sm font-semibold text-ink-strong">{i18n.t("alphaZoo.researchBrief")}</h2>
+          <p className="text-xs leading-5 text-ink-muted">{i18n.t("alphaZoo.researchBriefDesc")}</p>
         </div>
         <div className="grid gap-3 md:grid-cols-3">
           <BriefMetric label={i18n.t("alphaZoo.sourceModule")} value={a.module_path || "—"} />
@@ -577,16 +577,16 @@ function DetailView({ alphaId }: DetailProps) {
 
       {/* Formula */}
       <section className="space-y-2">
-        <h2 className="text-sm font-medium text-muted-foreground">{i18n.t("alphaZoo.formula")}</h2>
-        <pre className="border rounded-lg bg-muted/30 p-4 overflow-x-auto text-xs leading-relaxed">
+        <h2 className="text-sm font-semibold text-ink-strong">{i18n.t("alphaZoo.formula")}</h2>
+        <pre className="max-h-96 overflow-auto rounded-lg border border-[hsl(var(--border-subtle))] bg-surface-2/45 p-4 font-mono text-xs leading-relaxed text-ink shadow-xs">
           <code>{formulaLatex || i18n.t("alphaZoo.noFormula")}</code>
         </pre>
       </section>
 
       {/* Metadata */}
       <section className="space-y-2">
-        <h2 className="text-sm font-medium text-muted-foreground">{i18n.t("alphaZoo.metadata")}</h2>
-        <div className="border rounded-lg overflow-hidden">
+        <h2 className="text-sm font-semibold text-ink-strong">{i18n.t("alphaZoo.metadata")}</h2>
+        <div className="overflow-hidden rounded-lg border border-[hsl(var(--border-subtle))] bg-surface-1 shadow-xs">
           <table className="w-full text-sm">
             <tbody>
               <MetaRow
@@ -610,12 +610,12 @@ function DetailView({ alphaId }: DetailProps) {
 
       {/* Source code */}
       <section className="space-y-2">
-        <h2 className="text-sm font-medium text-muted-foreground">{i18n.t("alphaZoo.sourceCode")}</h2>
-        <details className="border rounded-lg bg-card group">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-medium hover:bg-muted/40 select-none">
+        <h2 className="text-sm font-semibold text-ink-strong">{i18n.t("alphaZoo.sourceCode")}</h2>
+        <details className="group overflow-hidden rounded-lg border border-[hsl(var(--border-subtle))] bg-surface-1 shadow-xs">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-ink-strong transition-[color,background-color] duration-fast hover:bg-surface-2 select-none">
             {i18n.t("alphaZoo.viewSource", { lines: (detail.source_code || "").split("\n").length })}
           </summary>
-          <pre className="border-t bg-muted/30 p-4 overflow-x-auto text-xs leading-relaxed">
+          <pre className="max-h-[32rem] overflow-auto border-t border-[hsl(var(--border-subtle))] bg-surface-2/45 p-4 font-mono text-xs leading-relaxed text-ink">
             <code>{detail.source_code || i18n.t("alphaZoo.noSource")}</code>
           </pre>
         </details>
@@ -627,18 +627,18 @@ function DetailView({ alphaId }: DetailProps) {
 
 function BriefMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border bg-background px-3 py-2">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 break-words text-xs font-medium text-foreground">{value}</div>
+    <div className="min-w-0 rounded-md border border-[hsl(var(--border-subtle))] bg-surface-2/45 px-3 py-2.5">
+      <div className="text-xs text-ink-muted">{label}</div>
+      <div className="mt-1 break-words text-xs font-medium text-ink-strong">{value}</div>
     </div>
   );
 }
 
 function MetaRow({ label, value, last }: { label: string; value: string; last?: boolean }) {
   return (
-    <tr className={cn(!last && "border-b", "hover:bg-muted/20")}>
-      <td className="px-4 py-2 text-xs text-muted-foreground w-1/3">{label}</td>
-      <td className="px-4 py-2 text-xs font-mono break-all">{value}</td>
+    <tr className={cn(!last && "border-b border-[hsl(var(--border-subtle))]", "transition-colors duration-fast hover:bg-surface-2/45")}>
+      <td className="w-1/3 px-4 py-2.5 text-xs text-ink-muted">{label}</td>
+      <td className="px-4 py-2.5 font-mono text-xs break-all text-ink">{value}</td>
     </tr>
   );
 }
