@@ -90,6 +90,7 @@ class SwarmRuntime:
         include_shell_tools: bool = False,
         model_provider_runtimes: dict[str, dict[str, Any]] | None = None,
         default_model_provider_runtime: dict[str, Any] | None = None,
+        preset_organization_id: str | None = None,
     ) -> SwarmRun:
         """Start a swarm run. Returns immediately, execution happens in background.
 
@@ -117,7 +118,7 @@ class SwarmRuntime:
         except Exception:
             logger.warning("Stale-run reaper failed", exc_info=True)
 
-        run = build_run_from_preset(preset_name, user_vars)
+        run = build_run_from_preset(preset_name, user_vars, organization_id=preset_organization_id)
         if model_provider_runtimes or default_model_provider_runtime:
             run.agents = [
                 self._apply_agent_model_runtime(

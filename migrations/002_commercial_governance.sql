@@ -34,6 +34,22 @@ CREATE TABLE IF NOT EXISTS workspace_runs (
 CREATE INDEX IF NOT EXISTS idx_workspace_runs_organization
     ON workspace_runs(organization_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS workspace_artifacts (
+    artifact_type text NOT NULL,
+    artifact_id text NOT NULL,
+    organization_id text NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    session_id text NOT NULL DEFAULT '',
+    attempt_id text NOT NULL DEFAULT '',
+    created_by_user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    storage_path text NOT NULL DEFAULT '',
+    metadata_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (artifact_type, artifact_id)
+);
+CREATE INDEX IF NOT EXISTS idx_workspace_artifacts_organization
+    ON workspace_artifacts(organization_id, artifact_type, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS uploaded_files (
     storage_key text PRIMARY KEY,
     organization_id text NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,

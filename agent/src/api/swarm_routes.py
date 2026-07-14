@@ -94,6 +94,37 @@ def register_swarm_routes(
         h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
         return h._shell_tools_enabled_for_request(request)
 
+    def _commercial_swarm_context(request: Request):
+        h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
+        if h is None or not h._env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
+            return None
+        principal = h._commercial_principal_from_request(request)
+        if principal is None:
+            raise HTTPException(status_code=401, detail="Organization session required")
+        from src.commercial.store import CommercialStore
+
+        return CommercialStore(), principal
+
+    def _require_workspace_swarm_run_access(request: Request) -> None:
+        context = _commercial_swarm_context(request)
+        if context is None:
+            return
+        run_id = str(request.path_params.get("run_id") or "")
+        if run_id and not context[0].workspace_artifact_belongs_to_organization(context[1], "swarm_run", run_id):
+            raise HTTPException(status_code=404, detail="Swarm run not found")
+
+    def _bind_workspace_swarm_run(request: Request, runtime: Any, run: Any) -> None:
+        context = _commercial_swarm_context(request)
+        if context is None:
+            return
+        context[0].bind_workspace_artifact(
+            context[1],
+            "swarm_run",
+            str(run.id),
+            storage_path=str(runtime._store.run_dir(run.id)),
+            metadata={"preset_name": str(run.preset_name or "")},
+        )
+
     def _audit_agent_management(
         request: Request,
         action: str,
@@ -122,19 +153,16 @@ def register_swarm_routes(
         in that case provider ids are ignored and each worker falls back to the
         stored model name or process-level LLM settings.
         """
-        session_token = request.cookies.get("vibe_session")
-        if not session_token:
+        context = _commercial_swarm_context(request)
+        if context is None:
             return None
         from src.commercial.store import CommercialStore
         from src.swarm.presets import list_preset_agents
 
-        store = CommercialStore()
-        principal = store.principal_from_token(session_token)
-        if principal is None:
-            return None
+        store, principal = context
         provider_ids = {
             str(agent.get("model_provider_id") or "").strip()
-            for agent in list_preset_agents(preset_name).get("agents", [])
+            for agent in list_preset_agents(preset_name, organization_id=principal.organization_id).get("agents", [])
         }
         provider_ids.discard("")
         runtimes: dict[str, dict[str, Any]] = {}
@@ -155,20 +183,22 @@ def register_swarm_routes(
     # --- Routes ---
 
     @app.get("/swarm/presets")
-    async def list_swarm_presets():
+    async def list_swarm_presets(request: Request):
         """List Swarm YAML presets."""
         from src.swarm.presets import list_presets
 
-        return list_presets()
+        context = _commercial_swarm_context(request)
+        return list_presets(organization_id=context[1].organization_id if context is not None else None)
 
     @app.get("/swarm/presets/{preset_name}/agents", dependencies=[Depends(require_auth)])
-    async def list_swarm_preset_agents(preset_name: str):
+    async def list_swarm_preset_agents(preset_name: str, request: Request):
         """List editable agents for a swarm preset."""
         _host_validate_path_param(preset_name, "preset_name")
         from src.swarm.presets import list_preset_agents
 
         try:
-            return list_preset_agents(preset_name)
+            context = _commercial_swarm_context(request)
+            return list_preset_agents(preset_name, organization_id=context[1].organization_id if context is not None else None)
         except FileNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
         except ValueError as e:
@@ -181,7 +211,13 @@ def register_swarm_routes(
         from src.swarm.presets import save_preset_agent
 
         try:
-            result = save_preset_agent(preset_name, payload.model_dump(), create=True)
+            context = _commercial_swarm_context(request)
+            result = save_preset_agent(
+                preset_name,
+                payload.model_dump(),
+                create=True,
+                organization_id=context[1].organization_id if context is not None else None,
+            )
             _audit_agent_management(
                 request,
                 "swarm_agent.create",
@@ -205,7 +241,13 @@ def register_swarm_routes(
         data = payload.model_dump()
         data["id"] = agent_id
         try:
-            result = save_preset_agent(preset_name, data, create=False)
+            context = _commercial_swarm_context(request)
+            result = save_preset_agent(
+                preset_name,
+                data,
+                create=False,
+                organization_id=context[1].organization_id if context is not None else None,
+            )
             _audit_agent_management(
                 request,
                 "swarm_agent.update",
@@ -229,7 +271,12 @@ def register_swarm_routes(
         from src.swarm.presets import delete_preset_agent
 
         try:
-            result = delete_preset_agent(preset_name, agent_id)
+            context = _commercial_swarm_context(request)
+            result = delete_preset_agent(
+                preset_name,
+                agent_id,
+                organization_id=context[1].organization_id if context is not None else None,
+            )
             _audit_agent_management(request, "swarm_agent.delete", preset_name, agent_id)
             return result
         except FileNotFoundError as e:
@@ -251,7 +298,17 @@ def register_swarm_routes(
                 user_vars,
                 include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
                 model_provider_runtimes=_resolve_model_provider_runtimes(http_request, preset_name),
+                preset_organization_id=(
+                    _commercial_swarm_context(http_request)[1].organization_id
+                    if _commercial_swarm_context(http_request) is not None
+                    else None
+                ),
             )
+            try:
+                _bind_workspace_swarm_run(http_request, runtime, run)
+            except Exception as exc:
+                runtime.cancel_run(run.id)
+                raise HTTPException(status_code=500, detail="Unable to secure swarm run") from exc
             return {"id": run.id, "status": run.status.value, "preset_name": run.preset_name}
         except FileNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
@@ -259,10 +316,14 @@ def register_swarm_routes(
             raise HTTPException(status_code=400, detail=str(e))
 
     @app.get("/swarm/runs", dependencies=[Depends(require_auth)])
-    async def list_swarm_runs(limit: int = Query(20, ge=1, le=100)):
+    async def list_swarm_runs(request: Request, limit: int = Query(20, ge=1, le=100)):
         """List swarm runs (newest first), reconciled."""
         runtime = _get_swarm_runtime()
-        runs = runtime._store.list_runs(limit=limit)
+        context = _commercial_swarm_context(request)
+        owned_ids = context[0].list_workspace_artifact_ids(context[1], "swarm_run", limit=1000) if context is not None else None
+        runs = runtime._store.list_runs(limit=1000 if owned_ids is not None else limit)
+        if owned_ids is not None:
+            runs = [run for run in runs if run.id in owned_ids][:limit]
         items = []
         for r in runs:
             # Reconcile each row: a zombie running run will be auto-finalized so
@@ -284,7 +345,7 @@ def register_swarm_routes(
             )
         return items
 
-    @app.get("/swarm/runs/{run_id}", dependencies=[Depends(require_auth)])
+    @app.get("/swarm/runs/{run_id}", dependencies=[Depends(require_auth), Depends(_require_workspace_swarm_run_access)])
     async def get_swarm_run(run_id: str):
         """Swarm run detail including task statuses (reconciled)."""
         _host_validate_path_param(run_id, "run_id")
@@ -310,7 +371,7 @@ def register_swarm_routes(
 
     @app.get(
         "/swarm/runs/{run_id}/events",
-        dependencies=[Depends(require_event_stream_auth)],
+        dependencies=[Depends(require_event_stream_auth), Depends(_require_workspace_swarm_run_access)],
     )
     async def swarm_run_events(
         run_id: str, request: Request, last_index: int = Query(0, ge=0)
@@ -343,7 +404,7 @@ def register_swarm_routes(
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
-    @app.post("/swarm/runs/{run_id}/cancel", dependencies=[Depends(require_auth)])
+    @app.post("/swarm/runs/{run_id}/cancel", dependencies=[Depends(require_auth), Depends(_require_workspace_swarm_run_access)])
     async def cancel_swarm_run(run_id: str):
         """Cancel an active swarm run."""
         _host_validate_path_param(run_id, "run_id")
@@ -353,7 +414,7 @@ def register_swarm_routes(
             raise HTTPException(status_code=404, detail=f"No active run {run_id}")
         return {"status": "cancelled"}
 
-    @app.post("/swarm/runs/{run_id}/retry", dependencies=[Depends(require_auth)])
+    @app.post("/swarm/runs/{run_id}/retry", dependencies=[Depends(require_auth), Depends(_require_workspace_swarm_run_access)])
     async def retry_swarm_run(run_id: str, http_request: Request):
         """Retry a failed, stale, or cancelled swarm run.
 
@@ -381,7 +442,17 @@ def register_swarm_routes(
                 reconciled.user_vars or {},
                 include_shell_tools=_host_shell_tools_enabled_for_request(http_request),
                 model_provider_runtimes=_resolve_model_provider_runtimes(http_request, reconciled.preset_name),
+                preset_organization_id=(
+                    _commercial_swarm_context(http_request)[1].organization_id
+                    if _commercial_swarm_context(http_request) is not None
+                    else None
+                ),
             )
+            try:
+                _bind_workspace_swarm_run(http_request, runtime, new_run)
+            except Exception as exc:
+                runtime.cancel_run(new_run.id)
+                raise HTTPException(status_code=500, detail="Unable to secure swarm run") from exc
             return {
                 "id": new_run.id,
                 "status": new_run.status.value,

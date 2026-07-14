@@ -30,6 +30,11 @@ class BaseTool(ABC):
     requires_approval: bool = False
     enabled_by_default: bool = True
 
+    def get_execution_context(self) -> Dict[str, Any]:
+        """Return server-provided execution metadata without exposing it to the model."""
+        value = getattr(self, "_execution_context", None)
+        return dict(value) if isinstance(value, dict) else {}
+
     @classmethod
     def check_available(cls) -> bool:
         """Check if this tool's dependencies are met.
@@ -78,10 +83,18 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: Dict[str, BaseTool] = {}
+        self._execution_context: Dict[str, Any] = {}
 
     def register(self, tool: BaseTool) -> None:
         """Register a tool."""
+        tool._execution_context = dict(self._execution_context)
         self._tools[tool.name] = tool
+
+    def set_execution_context(self, context: Dict[str, Any] | None) -> None:
+        """Attach request-scoped metadata to tools in this registry instance."""
+        self._execution_context = dict(context or {})
+        for tool in self._tools.values():
+            tool._execution_context = dict(self._execution_context)
 
     def get(self, name: str) -> Optional[BaseTool]:
         """Retrieve a tool by name."""

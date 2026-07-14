@@ -91,29 +91,6 @@ def register_uploads_routes(
         host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
         return host._UPLOAD_CHUNK_SIZE if host else _UPLOAD_CHUNK_SIZE
 
-    @app.get("/shadow-reports/{shadow_id}", dependencies=[Depends(require_auth)])
-    async def get_shadow_report(shadow_id: str, format: str = "html"):
-        """Serve a rendered Shadow Account report.
-
-        Reports live under ``~/.vibe-trading/shadow_reports/<shadow_id>.{html,pdf}``.
-        """
-        if not _SHADOW_ID_RE.match(shadow_id):
-            raise HTTPException(status_code=400, detail="invalid shadow_id")
-        if format not in ("html", "pdf"):
-            raise HTTPException(status_code=400, detail="format must be html or pdf")
-
-        reports_dir = Path.home() / ".vibe-trading" / "shadow_reports"
-        path = reports_dir / f"{shadow_id}.{format}"
-        if not path.exists():
-            raise HTTPException(status_code=404, detail=f"Shadow report not found: {shadow_id}.{format}")
-
-        media_type = "text/html; charset=utf-8" if format == "html" else "application/pdf"
-        return FileResponse(
-            path,
-            media_type=media_type,
-            headers={"Content-Disposition": f'inline; filename="{shadow_id}.{format}"'},
-        )
-
     def _commercial_upload_context(request: Request):
         import sys as _sys
 
@@ -126,6 +103,35 @@ def register_uploads_routes(
         from src.commercial.store import CommercialStore
 
         return CommercialStore(), principal
+
+    @app.get("/shadow-reports/{shadow_id}", dependencies=[Depends(require_auth)])
+    async def get_shadow_report(shadow_id: str, request: Request, format: str = "html"):
+        """Serve a rendered Shadow Account report.
+
+        Reports live under ``~/.vibe-trading/shadow_reports/<shadow_id>.{html,pdf}``.
+        """
+        if not _SHADOW_ID_RE.match(shadow_id):
+            raise HTTPException(status_code=400, detail="invalid shadow_id")
+        if format not in ("html", "pdf"):
+            raise HTTPException(status_code=400, detail="format must be html or pdf")
+
+        reports_dir = Path.home() / ".vibe-trading" / "shadow_reports"
+        path = reports_dir / f"{shadow_id}.{format}"
+        context = _commercial_upload_context(request)
+        if context is not None and not context[0].workspace_artifact_belongs_to_organization(
+            context[1], "shadow_report", shadow_id
+        ):
+            # Do not reveal whether a report exists in another organization.
+            raise HTTPException(status_code=404, detail="Shadow report not found")
+        if not path.exists():
+            raise HTTPException(status_code=404, detail=f"Shadow report not found: {shadow_id}.{format}")
+
+        media_type = "text/html; charset=utf-8" if format == "html" else "application/pdf"
+        return FileResponse(
+            path,
+            media_type=media_type,
+            headers={"Content-Disposition": f'inline; filename="{shadow_id}.{format}"'},
+        )
 
     @app.post("/upload", dependencies=[Depends(require_auth)])
     async def upload_file(file: UploadFile, request: Request):

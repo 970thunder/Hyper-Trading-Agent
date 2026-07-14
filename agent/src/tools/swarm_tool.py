@@ -732,6 +732,13 @@ class SwarmTool(BaseTool):
 
         pending_live_events: list[dict[str, Any]] = []
         run_id_holder: dict[str, str | None] = {"run_id": None}
+        execution_context = self.get_execution_context()
+        principal_payload = execution_context.get("commercial_principal")
+        organization_id = (
+            str(principal_payload.get("organization_id") or "")
+            if isinstance(principal_payload, dict)
+            else ""
+        )
 
         try:
             def _live_callback(event: Any) -> None:
@@ -751,6 +758,7 @@ class SwarmTool(BaseTool):
                 live_callback=_live_callback if self._event_callback is not None else None,
                 include_shell_tools=self.include_shell_tools,
                 default_model_provider_runtime=self._default_model_provider_runtime,
+                preset_organization_id=organization_id or None,
             )
         except FileNotFoundError as exc:
             return json.dumps(
@@ -769,6 +777,32 @@ class SwarmTool(BaseTool):
             )
 
         run_id = run.id
+        if isinstance(principal_payload, dict) and organization_id and principal_payload.get("user_id"):
+            try:
+                from src.commercial.store import CommercialStore, Principal
+
+                principal = Principal(
+                    user_id=str(principal_payload["user_id"]),
+                    organization_id=organization_id,
+                    email=str(principal_payload.get("email") or ""),
+                    role=str(principal_payload.get("role") or "member"),
+                )
+                CommercialStore().bind_workspace_artifact(
+                    principal,
+                    "swarm_run",
+                    run_id,
+                    session_id=str(execution_context.get("session_id") or ""),
+                    attempt_id=str(execution_context.get("attempt_id") or ""),
+                    storage_path=str(store.run_dir(run_id)),
+                    metadata={"preset_name": preset},
+                )
+            except Exception:
+                runtime.cancel_run(run_id)
+                logger.exception("failed to bind swarm run to commercial workspace")
+                return json.dumps(
+                    {"status": "error", "error": "Unable to secure swarm run"},
+                    ensure_ascii=False,
+                )
         run_id_holder["run_id"] = run_id
         logger.info("SwarmTool: started run %s (preset=%s)", run_id, preset)
         self._emit_session_event(

@@ -293,7 +293,7 @@ def test_swarm_agent_management_writes_commercial_audit_event(tmp_path: Path, mo
 
     monkeypatch.setattr(
         "src.swarm.presets.save_preset_agent",
-        lambda preset_name, payload, create: {"preset_name": preset_name, "agent": payload, "created": create},
+        lambda preset_name, payload, create, **_kwargs: {"preset_name": preset_name, "agent": payload, "created": create},
     )
     response = owner_client.post(
         "/swarm/presets/quant_strategy_desk/agents",

@@ -805,6 +805,14 @@ class SessionService:
                 event_callback=event_callback,
                 warn_callback=_mcp_collision_warn,
                 commercial_model_provider=model_provider if isinstance(model_provider, dict) else None,
+                execution_context={
+                    "session_id": session_id,
+                    "attempt_id": attempt_id,
+                    "commercial_principal": dict(session_config.get("commercial_principal") or {}),
+                } if isinstance(session_config.get("commercial_principal"), dict) else {
+                    "session_id": session_id,
+                    "attempt_id": attempt_id,
+                },
             ),
         )
 

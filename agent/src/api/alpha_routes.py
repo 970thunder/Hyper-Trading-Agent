@@ -478,13 +478,19 @@ def _sync_alpha_job_to_durable(kind: str, job: dict[str, Any]) -> None:
         logger.debug("Failed to sync alpha job to durable runtime store: %s", exc)
 
 
-def _runtime_job_rows(extra_rows: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+def _runtime_job_rows(
+    extra_rows: list[dict[str, Any]] | None = None,
+    *,
+    allowed_job_ids: set[str] | None = None,
+) -> list[dict[str, Any]]:
     with _JOBS_LOCK:
         rows = [
             *(_runtime_job_row("alpha_bench", dict(job)) for job in ALPHA_BENCH_JOBS.values()),
             *(_runtime_job_row("alpha_compare", dict(job)) for job in ALPHA_COMPARE_JOBS.values()),
         ]
     rows.extend(_durable_runtime_job_rows())
+    if allowed_job_ids is not None:
+        rows = [row for row in rows if str(row.get("job_id") or "") in allowed_job_ids]
     if extra_rows:
         rows.extend(extra_rows)
     deduped: dict[str, dict[str, Any]] = {}
@@ -593,6 +599,43 @@ def _commercial_principal(request: Request) -> Any | None:
     return host._commercial_principal_from_request(request)
 
 
+def _commercial_runtime_context(request: Request) -> tuple[Any, Any] | None:
+    import sys as _sys
+
+    host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
+    if host is None or not host._env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
+        return None
+    principal = host._commercial_principal_from_request(request)
+    if principal is None:
+        raise HTTPException(status_code=401, detail="Organization session required")
+    from src.commercial.store import CommercialStore
+
+    return CommercialStore(), principal
+
+
+def _bind_commercial_runtime_job(request: Request, job_id: str, kind: str, metadata: dict[str, Any]) -> None:
+    context = _commercial_runtime_context(request)
+    if context is None:
+        return
+    context[0].bind_workspace_artifact(
+        context[1],
+        "runtime_job",
+        job_id,
+        metadata={"kind": kind, **metadata},
+    )
+
+
+def _require_workspace_runtime_job_access(request: Request, job_id: str) -> None:
+    context = _commercial_runtime_context(request)
+    if context is None:
+        return
+    if context[0].workspace_artifact_belongs_to_organization(context[1], "runtime_job", job_id):
+        return
+    if _find_rag_ingestion_job(request, job_id) is not None:
+        return
+    raise HTTPException(status_code=404, detail="Runtime job not found")
+
+
 def _find_rag_ingestion_job(request: Request, job_id: str) -> tuple[Any, Any, str, dict[str, Any]] | None:
     if not _JOB_ID_RE.fullmatch(job_id or ""):
         raise HTTPException(status_code=400, detail="invalid job_id")
@@ -695,11 +738,18 @@ def register_alpha_routes(
     @app.get("/runtime/jobs", dependencies=[Depends(require_admin)])
     async def list_runtime_jobs(request: Request) -> list[dict[str, Any]]:
         """Return a unified read-only snapshot of process-local background jobs."""
-        return _runtime_job_rows(_commercial_runtime_job_rows(request))
+        context = _commercial_runtime_context(request)
+        allowed_job_ids = (
+            context[0].list_workspace_artifact_ids(context[1], "runtime_job", limit=1000)
+            if context is not None
+            else None
+        )
+        return _runtime_job_rows(_commercial_runtime_job_rows(request), allowed_job_ids=allowed_job_ids)
 
     @app.post("/runtime/jobs/{job_id}/cancel", dependencies=[Depends(require_admin)])
     async def cancel_runtime_job(job_id: str, request: Request) -> dict[str, Any]:
         """Mark a queued/running process-local background job as cancelled."""
+        _require_workspace_runtime_job_access(request, job_id)
         try:
             _kind, store, job = _find_runtime_job(job_id)
         except HTTPException as exc:
@@ -733,6 +783,7 @@ def register_alpha_routes(
     @app.post("/runtime/jobs/{job_id}/retry", dependencies=[Depends(require_admin)])
     async def retry_runtime_job(job_id: str, request: Request) -> dict[str, Any]:
         """Retry a failed alpha bench/compare job with its original parameters."""
+        _require_workspace_runtime_job_access(request, job_id)
         try:
             kind, store, job = _find_runtime_job(job_id)
         except HTTPException as exc:
@@ -916,7 +967,7 @@ def register_alpha_routes(
         status_code=202,
         dependencies=[Depends(require_auth)],
     )
-    async def kick_off_bench(payload: BenchRequest) -> dict[str, Any]:
+    async def kick_off_bench(payload: BenchRequest, request: Request) -> dict[str, Any]:
         """Queue a background bench job and return a job_id."""
         # Cheap period parse pre-check so we 400 here instead of letting the
         # worker fail asynchronously.
@@ -957,6 +1008,17 @@ def register_alpha_routes(
                 "error": None,
             }
             snapshot = dict(ALPHA_BENCH_JOBS[job_id])
+        try:
+            _bind_commercial_runtime_job(
+                request,
+                job_id,
+                "alpha_bench",
+                {"zoo": payload.zoo, "universe": payload.universe, "period": payload.period, "top": payload.top},
+            )
+        except Exception as exc:
+            with _JOBS_LOCK:
+                ALPHA_BENCH_JOBS.pop(job_id, None)
+            raise HTTPException(status_code=500, detail="Unable to secure alpha benchmark job") from exc
         _sync_alpha_job_to_durable("alpha_bench", snapshot)
 
         backend = build_runtime_job_backend(redis_client=_runtime_redis_client())
@@ -1025,6 +1087,7 @@ def register_alpha_routes(
         """SSE: progress / result / done / error until the job terminates."""
         if not _JOB_ID_RE.fullmatch(job_id or ""):
             raise HTTPException(status_code=400, detail="invalid job_id")
+        _require_workspace_runtime_job_access(request, job_id)
         with _JOBS_LOCK:
             if job_id not in ALPHA_BENCH_JOBS:
                 raise HTTPException(status_code=404, detail=f"job {job_id} not found")
@@ -1039,7 +1102,7 @@ def register_alpha_routes(
         status_code=202,
         dependencies=[Depends(require_auth)],
     )
-    async def kick_off_compare(payload: CompareRequest) -> dict[str, Any]:
+    async def kick_off_compare(payload: CompareRequest, request: Request) -> dict[str, Any]:
         """Queue a background head-to-head comparison and return a job_id."""
         from src.tools.alpha_bench_tool import _parse_period
 
@@ -1072,6 +1135,17 @@ def register_alpha_routes(
                 "error": None,
             }
             snapshot = dict(ALPHA_COMPARE_JOBS[job_id])
+        try:
+            _bind_commercial_runtime_job(
+                request,
+                job_id,
+                "alpha_compare",
+                {"universe": payload.universe, "period": payload.period, "sort": payload.sort},
+            )
+        except Exception as exc:
+            with _JOBS_LOCK:
+                ALPHA_COMPARE_JOBS.pop(job_id, None)
+            raise HTTPException(status_code=500, detail="Unable to secure alpha comparison job") from exc
         _sync_alpha_job_to_durable("alpha_compare", snapshot)
 
         backend = build_runtime_job_backend(redis_client=_runtime_redis_client())
@@ -1140,6 +1214,7 @@ def register_alpha_routes(
         """SSE: progress / result / done / error until the comparison terminates."""
         if not _JOB_ID_RE.fullmatch(job_id or ""):
             raise HTTPException(status_code=400, detail="invalid job_id")
+        _require_workspace_runtime_job_access(request, job_id)
         with _JOBS_LOCK:
             if job_id not in ALPHA_COMPARE_JOBS:
                 raise HTTPException(status_code=404, detail=f"job {job_id} not found")

@@ -72,6 +72,7 @@ def build_registry(
     event_callback: Callable[[str, dict], None] | None = None,
     warn_callback: Callable[[str], None] | None = None,
     commercial_model_provider: Mapping[str, Any] | None = None,
+    execution_context: Mapping[str, Any] | None = None,
     interactive: bool | None = None,
     _mcp_server_tool_name_segments: Mapping[str, str] | None = None,
 ) -> ToolRegistry:
@@ -134,6 +135,7 @@ def build_registry(
     # session's research goal, and the LLM never knows the session id.
     session_injected_classes = goal_tool_classes | {RunResearchAutopilotTool}
     registry = ToolRegistry()
+    registry.set_execution_context(dict(execution_context or {}))
     for cls in _discover_subclasses():
         try:
             if cls.name in _SHELL_TOOL_NAMES and not include_shell_tools:

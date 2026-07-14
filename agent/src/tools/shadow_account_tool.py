@@ -50,6 +50,36 @@ def _validate_optional_journal_path(raw: Any) -> str | None:
     return str(safe_user_path(raw))
 
 
+def _commercial_artifact_principal(tool: BaseTool):
+    """Return the commercial principal when a tool executes in a workspace."""
+    payload = tool.get_execution_context().get("commercial_principal")
+    if not isinstance(payload, dict) or not payload.get("organization_id") or not payload.get("user_id"):
+        return None
+    from src.commercial.store import Principal
+
+    return Principal(
+        user_id=str(payload["user_id"]),
+        organization_id=str(payload["organization_id"]),
+        email=str(payload.get("email") or ""),
+        role=str(payload.get("role") or "member"),
+    )
+
+
+def _workspace_context(tool: BaseTool) -> tuple[str, str]:
+    context = tool.get_execution_context()
+    return str(context.get("session_id") or ""), str(context.get("attempt_id") or "")
+
+
+def _assert_shadow_account_access(tool: BaseTool, shadow_id: str) -> None:
+    principal = _commercial_artifact_principal(tool)
+    if principal is None:
+        return
+    from src.commercial.store import CommercialStore
+
+    if not CommercialStore().workspace_artifact_belongs_to_organization(principal, "shadow_account", shadow_id):
+        raise PermissionError("shadow account not found")
+
+
 # ---------------- Tool 1: extract ----------------
 
 class ExtractShadowStrategyTool(BaseTool):
@@ -105,7 +135,26 @@ class ExtractShadowStrategyTool(BaseTool):
             logger.exception("extract_shadow_strategy failed")
             return _err(f"unexpected error: {exc}")
 
-        save_profile(profile)
+        profile_path = save_profile(profile)
+        principal = _commercial_artifact_principal(self)
+        if principal is not None:
+            session_id, attempt_id = _workspace_context(self)
+            try:
+                from src.commercial.store import CommercialStore
+
+                CommercialStore().bind_workspace_artifact(
+                    principal,
+                    "shadow_account",
+                    profile.shadow_id,
+                    session_id=session_id,
+                    attempt_id=attempt_id,
+                    storage_path=str(profile_path),
+                    metadata={"source_market": profile.source_market},
+                )
+            except Exception:
+                profile_path.unlink(missing_ok=True)
+                logger.exception("failed to bind shadow account to commercial workspace")
+                return _err("unable to secure the generated shadow account")
         rules_preview = [
             {
                 "rule_id": r.rule_id,
@@ -168,6 +217,10 @@ class RunShadowBacktestTool(BaseTool):
         shadow_id = kwargs.get("shadow_id")
         if not shadow_id:
             return _err("shadow_id is required")
+        try:
+            _assert_shadow_account_access(self, str(shadow_id))
+        except PermissionError:
+            return _err("shadow account not found")
         try:
             profile = load_profile(shadow_id)
         except FileNotFoundError as exc:
@@ -239,6 +292,10 @@ class RenderShadowReportTool(BaseTool):
         if not shadow_id:
             return _err("shadow_id is required")
         try:
+            _assert_shadow_account_access(self, str(shadow_id))
+        except PermissionError:
+            return _err("shadow account not found")
+        try:
             profile = load_profile(shadow_id)
         except FileNotFoundError as exc:
             return _err(str(exc))
@@ -277,14 +334,33 @@ class RenderShadowReportTool(BaseTool):
             scan_today_signals(profile) if kwargs.get("include_today_signals", True) else []
         )
         report = render_shadow_report(profile, result, today_signals=today_signals)
+        principal = _commercial_artifact_principal(self)
+        if principal is not None:
+            session_id, attempt_id = _workspace_context(self)
+            try:
+                from src.commercial.store import CommercialStore
+
+                CommercialStore().bind_workspace_artifact(
+                    principal,
+                    "shadow_report",
+                    profile.shadow_id,
+                    session_id=session_id,
+                    attempt_id=attempt_id,
+                    storage_path=str(report["html_path"]),
+                    metadata={"pdf_available": bool(report["pdf_path"]), "engine": report["engine"]},
+                )
+            except Exception:
+                logger.exception("failed to bind shadow report to commercial workspace")
+                return _err("unable to secure the generated shadow report")
         payload = {
             "shadow_id": profile.shadow_id,
-            "html_path": report["html_path"],
-            "pdf_path": report["pdf_path"],
             "engine": report["engine"],
             "delta_pnl": result.delta_pnl,
             "report_url": f"/shadow-reports/{profile.shadow_id}",
         }
+        if principal is None:
+            payload["html_path"] = report["html_path"]
+            payload["pdf_path"] = report["pdf_path"]
         if report["pdf_path"]:
             payload["pdf_url"] = f"/shadow-reports/{profile.shadow_id}?format=pdf"
         return _ok(**payload)
@@ -318,6 +394,10 @@ class ScanShadowSignalsTool(BaseTool):
         shadow_id = kwargs.get("shadow_id")
         if not shadow_id:
             return _err("shadow_id is required")
+        try:
+            _assert_shadow_account_access(self, str(shadow_id))
+        except PermissionError:
+            return _err("shadow account not found")
         try:
             profile = load_profile(shadow_id)
         except FileNotFoundError as exc:

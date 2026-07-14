@@ -52,3 +52,36 @@ def test_swarm_preset_agent_crud_persists_model_provider(tmp_path, monkeypatch):
     assert deleted == {"agent_id": "codex_test_agent", "removed_task_ids": []}
     assert all(item["id"] != "codex_test_agent" for item in presets.list_preset_agents("quant_strategy_desk")["agents"])
 
+
+def test_swarm_preset_overrides_are_isolated_by_organization(tmp_path, monkeypatch):
+    monkeypatch.setattr(presets, "get_runtime_root", lambda: tmp_path)
+    payload = {
+        "id": "tenant_researcher",
+        "role": "Tenant Researcher",
+        "system_prompt": "Research the assigned market.",
+        "tools": ["market_data"],
+        "skills": ["risk"],
+        "max_iterations": 6,
+        "timeout_seconds": 90,
+        "max_retries": 1,
+    }
+
+    presets.save_preset_agent(
+        "quant_strategy_desk",
+        {**payload, "model_provider_id": "provider_org_a"},
+        create=True,
+        organization_id="org_a",
+    )
+    presets.save_preset_agent(
+        "quant_strategy_desk",
+        {**payload, "model_provider_id": "provider_org_b"},
+        create=True,
+        organization_id="org_b",
+    )
+
+    agents_a = presets.list_preset_agents("quant_strategy_desk", organization_id="org_a")["agents"]
+    agents_b = presets.list_preset_agents("quant_strategy_desk", organization_id="org_b")["agents"]
+    agent_a = next(item for item in agents_a if item["id"] == "tenant_researcher")
+    agent_b = next(item for item in agents_b if item["id"] == "tenant_researcher")
+    assert agent_a["model_provider_id"] == "provider_org_a"
+    assert agent_b["model_provider_id"] == "provider_org_b"

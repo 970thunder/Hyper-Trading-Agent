@@ -484,6 +484,21 @@ class CommercialStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_workspace_runs_organization
                     ON workspace_runs(organization_id, created_at DESC);
+                CREATE TABLE IF NOT EXISTS workspace_artifacts (
+                    artifact_type TEXT NOT NULL,
+                    artifact_id TEXT NOT NULL,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    session_id TEXT NOT NULL DEFAULT '',
+                    attempt_id TEXT NOT NULL DEFAULT '',
+                    created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    storage_path TEXT NOT NULL DEFAULT '',
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (artifact_type, artifact_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_workspace_artifacts_organization
+                    ON workspace_artifacts(organization_id, artifact_type, updated_at DESC);
                 CREATE TABLE IF NOT EXISTS uploaded_files (
                     storage_key TEXT PRIMARY KEY,
                     organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -897,6 +912,99 @@ class CommercialStore:
                 (principal.organization_id, max(1, min(limit, 1000))),
             ).fetchall()
         return {str(row["run_id"]) for row in rows}
+
+    def bind_workspace_artifact(
+        self,
+        principal: Principal,
+        artifact_type: str,
+        artifact_id: str,
+        *,
+        session_id: str = "",
+        attempt_id: str = "",
+        storage_path: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Bind a generated workspace artifact to its tenant exactly once."""
+        normalized_type = str(artifact_type or "").strip().lower()
+        normalized_id = str(artifact_id or "").strip()
+        if not re.fullmatch(r"[a-z0-9_.-]{1,80}", normalized_type) or not normalized_id:
+            raise ValueError("artifact identity is invalid")
+        now = utcnow()
+        metadata_json = json.dumps(metadata or {}, ensure_ascii=False, default=str)
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT organization_id FROM workspace_artifacts WHERE artifact_type = ? AND artifact_id = ?",
+                (normalized_type, normalized_id),
+            ).fetchone()
+            if existing is not None and str(existing["organization_id"]) != principal.organization_id:
+                raise ValueError("artifact is already bound to another organization")
+            conn.execute(
+                """
+                INSERT INTO workspace_artifacts(
+                    artifact_type, artifact_id, organization_id, session_id, attempt_id,
+                    created_by_user_id, storage_path, metadata_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(artifact_type, artifact_id) DO UPDATE SET
+                    session_id = excluded.session_id,
+                    attempt_id = excluded.attempt_id,
+                    storage_path = excluded.storage_path,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    normalized_type,
+                    normalized_id,
+                    principal.organization_id,
+                    session_id,
+                    attempt_id,
+                    principal.user_id,
+                    storage_path,
+                    metadata_json,
+                    now,
+                    now,
+                ),
+            )
+        self.audit(
+            principal,
+            "workspace.artifact.upsert",
+            normalized_type,
+            normalized_id,
+            {"session_id": session_id, "attempt_id": attempt_id, "storage_path": storage_path},
+        )
+
+    def workspace_artifact_belongs_to_organization(
+        self,
+        principal: Principal,
+        artifact_type: str,
+        artifact_id: str,
+    ) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM workspace_artifacts
+                WHERE artifact_type = ? AND artifact_id = ? AND organization_id = ?
+                """,
+                (str(artifact_type or "").strip().lower(), str(artifact_id or "").strip(), principal.organization_id),
+            ).fetchone()
+        return row is not None
+
+    def list_workspace_artifact_ids(
+        self,
+        principal: Principal,
+        artifact_type: str,
+        *,
+        limit: int = 200,
+    ) -> set[str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT artifact_id FROM workspace_artifacts
+                WHERE organization_id = ? AND artifact_type = ?
+                ORDER BY updated_at DESC LIMIT ?
+                """,
+                (principal.organization_id, str(artifact_type or "").strip().lower(), max(1, min(limit, 1000))),
+            ).fetchall()
+        return {str(row["artifact_id"]) for row in rows}
 
     def register_uploaded_file(
         self,

@@ -27,8 +27,14 @@ _INTERNAL_TEMPLATE_VARS = {"upstream_context"}
 _PRESET_OVERRIDES_DIRNAME = "swarm-presets"
 
 
-def _preset_override_path(name: str) -> Path:
-    return get_runtime_root() / _PRESET_OVERRIDES_DIRNAME / f"{name}.json"
+def _preset_override_path(name: str, organization_id: str | None = None) -> Path:
+    root = get_runtime_root() / _PRESET_OVERRIDES_DIRNAME
+    if organization_id:
+        normalized = str(organization_id).strip()
+        if not normalized or Path(normalized).name != normalized:
+            raise ValueError("organization id is invalid")
+        root = root / normalized
+    return root / f"{name}.json"
 
 
 def _load_base_preset(name: str) -> dict:
@@ -41,8 +47,8 @@ def _load_base_preset(name: str) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
-def _load_override(name: str) -> dict:
-    path = _preset_override_path(name)
+def _load_override(name: str, organization_id: str | None = None) -> dict:
+    path = _preset_override_path(name, organization_id)
     if not path.exists():
         return {}
     try:
@@ -52,8 +58,8 @@ def _load_override(name: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _write_override(name: str, data: dict[str, Any]) -> None:
-    path = _preset_override_path(name)
+def _write_override(name: str, data: dict[str, Any], organization_id: str | None = None) -> None:
+    path = _preset_override_path(name, organization_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
@@ -68,7 +74,7 @@ def _apply_override(base: dict, override: dict) -> dict:
     return data
 
 
-def load_preset(name: str) -> dict:
+def load_preset(name: str, organization_id: str | None = None) -> dict:
     """Load a YAML preset by name.
 
     Args:
@@ -80,10 +86,10 @@ def load_preset(name: str) -> dict:
     Raises:
         FileNotFoundError: If the preset file does not exist.
     """
-    return _apply_override(_load_base_preset(name), _load_override(name))
+    return _apply_override(_load_base_preset(name), _load_override(name, organization_id))
 
 
-def list_presets() -> list[dict]:
+def list_presets(organization_id: str | None = None) -> list[dict]:
     """Return summary info for all available presets.
 
     Returns:
@@ -95,7 +101,7 @@ def list_presets() -> list[dict]:
     results: list[dict] = []
     for path in sorted(PRESETS_DIR.glob("*.yaml")):
         try:
-            data = load_preset(path.stem)
+            data = load_preset(path.stem, organization_id)
         except Exception:
             continue
 
@@ -110,9 +116,9 @@ def list_presets() -> list[dict]:
     return results
 
 
-def list_preset_agents(preset_name: str) -> dict:
+def list_preset_agents(preset_name: str, organization_id: str | None = None) -> dict:
     """Return editable agent definitions for a preset."""
-    data = load_preset(preset_name)
+    data = load_preset(preset_name, organization_id)
     task_counts: Counter[str] = Counter()
     for task in data.get("tasks", []):
         agent_id = str(task.get("agent_id") or "")
@@ -129,9 +135,15 @@ def list_preset_agents(preset_name: str) -> dict:
     }
 
 
-def save_preset_agent(preset_name: str, agent_payload: dict[str, Any], *, create: bool = False) -> dict:
+def save_preset_agent(
+    preset_name: str,
+    agent_payload: dict[str, Any],
+    *,
+    create: bool = False,
+    organization_id: str | None = None,
+) -> dict:
     """Create or update a preset agent override."""
-    data = load_preset(preset_name)
+    data = load_preset(preset_name, organization_id)
     agents = [dict(agent) for agent in data.get("agents", [])]
     tasks = [dict(task) for task in data.get("tasks", [])]
     agent = _normalize_agent_payload(agent_payload)
@@ -144,13 +156,13 @@ def save_preset_agent(preset_name: str, agent_payload: dict[str, Any], *, create
         agents.append(agent)
     else:
         agents[existing_idx] = agent
-    _write_override(preset_name, {"agents": agents, "tasks": tasks})
+    _write_override(preset_name, {"agents": agents, "tasks": tasks}, organization_id)
     return {**agent, "task_count": sum(1 for task in tasks if task.get("agent_id") == agent["id"])}
 
 
-def delete_preset_agent(preset_name: str, agent_id: str) -> dict:
+def delete_preset_agent(preset_name: str, agent_id: str, *, organization_id: str | None = None) -> dict:
     """Delete an agent and any tasks that depend on its removed tasks."""
-    data = load_preset(preset_name)
+    data = load_preset(preset_name, organization_id)
     agents = [dict(agent) for agent in data.get("agents", [])]
     tasks = [dict(task) for task in data.get("tasks", [])]
     if not any(agent.get("id") == agent_id for agent in agents):
@@ -183,7 +195,7 @@ def delete_preset_agent(preset_name: str, agent_id: str) -> dict:
         }
         next_tasks.append(task)
 
-    _write_override(preset_name, {"agents": next_agents, "tasks": next_tasks})
+    _write_override(preset_name, {"agents": next_agents, "tasks": next_tasks}, organization_id)
     return {"agent_id": agent_id, "removed_task_ids": sorted(removed_task_ids)}
 
 
@@ -355,7 +367,11 @@ def inspect_preset(name: str) -> dict:
     }
 
 
-def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmRun:
+def build_run_from_preset(
+    preset_name: str,
+    user_vars: dict[str, str],
+    organization_id: str | None = None,
+) -> SwarmRun:
     """Create a SwarmRun from a preset with user variables applied.
 
     Steps:
@@ -376,7 +392,7 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
         FileNotFoundError: If preset does not exist.
         ValueError: If preset YAML is malformed.
     """
-    data = load_preset(preset_name)
+    data = load_preset(preset_name, organization_id)
 
     # Parse agents
     agents: list[SwarmAgentSpec] = []
