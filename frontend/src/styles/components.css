@@ -1,4 +1,78 @@
 @layer components {
+  .workspace-shell {
+    position: relative;
+    isolation: isolate;
+    background:
+      linear-gradient(135deg, hsl(var(--canvas)) 0%, hsl(var(--surface-1)) 54%, hsl(var(--canvas)) 100%);
+  }
+
+  .workspace-shell::before {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    content: "";
+    opacity: 0.42;
+    background-image:
+      linear-gradient(hsl(var(--border-subtle) / 0.42) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border-subtle) / 0.42) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: linear-gradient(to bottom, black, transparent 72%);
+  }
+
+  .workspace-shell > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .agent-welcome-mark {
+    display: grid;
+    width: 4rem;
+    height: 4rem;
+    place-items: center;
+    border: 1px solid hsl(var(--interactive-primary) / 0.34);
+    border-radius: var(--radius-panel);
+    color: hsl(var(--interactive-primary));
+    background: linear-gradient(145deg, hsl(var(--interactive-primary) / 0.14), hsl(var(--interactive-accent) / 0.1));
+    box-shadow: 0 12px 30px hsl(var(--interactive-primary) / 0.12), var(--shadow-sm);
+  }
+
+  .brand-header {
+    color: hsl(var(--text-strong));
+  }
+
+  .brand-mark {
+    display: grid;
+    width: 2rem;
+    height: 2rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid hsl(var(--interactive-primary) / 0.25);
+    border-radius: var(--radius-control);
+    color: hsl(var(--interactive-primary));
+    background: linear-gradient(145deg, hsl(var(--interactive-primary) / 0.12), hsl(var(--interactive-accent) / 0.08));
+    transition: transform var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard);
+  }
+
+  .brand-header:hover .brand-mark {
+    border-color: hsl(var(--interactive-primary) / 0.52);
+    transform: translateY(-1px);
+  }
+
+  .brand-title {
+    font-size: 0.875rem;
+    font-weight: 650;
+    line-height: 1;
+  }
+
+  .dark .workspace-shell::before {
+    opacity: 0.24;
+  }
+
+  .dark .agent-welcome-mark {
+    box-shadow: 0 14px 36px hsl(var(--interactive-primary) / 0.16), var(--shadow-sm);
+  }
+
   .surface-panel {
     border: 1px solid hsl(var(--border-subtle));
     border-radius: var(--radius-panel);

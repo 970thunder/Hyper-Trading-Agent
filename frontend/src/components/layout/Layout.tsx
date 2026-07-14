@@ -217,9 +217,9 @@ export function Layout() {
       )}
     >
       <div className={cn("h-14 shrink-0 items-center border-b border-[hsl(var(--border-subtle))]", collapsed ? "grid grid-cols-2" : "flex gap-1 px-3")}>
-        <Link to="/" aria-label="Hyper Trading Agent" className={cn("flex min-w-0 items-center gap-2 font-semibold text-ink-strong", collapsed && "h-full w-full justify-center")}>
-          <BarChart3 className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
-          {!collapsed ? <span className="truncate text-sm">Hyper Trading Agent</span> : null}
+        <Link to="/" aria-label="Hyper Trading Agent" className={cn("brand-header flex min-w-0 items-center gap-2", collapsed && "h-full w-full justify-center")}>
+          <span className="brand-mark"><BarChart3 className="h-4 w-4" aria-hidden="true" /></span>
+          {!collapsed ? <span className="brand-title truncate">Hyper Trading Agent</span> : null}
         </Link>
         <IconButton
           label={collapsed ? t("layout.expand") : t("layout.collapse")}

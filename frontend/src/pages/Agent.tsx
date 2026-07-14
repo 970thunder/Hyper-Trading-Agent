@@ -10,7 +10,7 @@ import { extractKnowledgeCitations } from "@/lib/citations";
 import { isReportWorthyRun } from "@/lib/runReports";
 import type { AgentMessage, ToolCallEntry } from "@/types/agent";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
-import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
+import { WelcomeScreen, type WelcomeExampleSelection } from "@/components/chat/WelcomeScreen";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { ThinkingTimeline } from "@/components/chat/ThinkingTimeline";
 import { ConversationTimeline } from "@/components/chat/ConversationTimeline";
@@ -1241,6 +1241,12 @@ export function Agent() {
 
   const handleSubmit = (e: FormEvent) => { e.preventDefault(); runPrompt(input.trim()); };
 
+  const applyExample = useCallback((selection: WelcomeExampleSelection) => {
+    setInput(selection.prompt);
+    setExecutionMode(selection.executionMode);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
+
   const handleCancel = async () => {
     setReasoningActive(false);
     setAttemptStartedAt(null);
@@ -1522,7 +1528,7 @@ export function Agent() {
               ))}
             </div>
           )}
-          {!sessionLoading && messages.length === 0 && <WelcomeScreen onExample={runPrompt} />}
+          {!sessionLoading && messages.length === 0 && <WelcomeScreen onExample={applyExample} />}
 
           {timelineRows.map((row, rowIdx) => {
             if (row.render === "live") {

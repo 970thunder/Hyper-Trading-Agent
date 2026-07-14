@@ -12,7 +12,7 @@ export interface AppShellProps {
 
 export function AppShell({ desktopSidebar, mobileHeader, banner, children, className, mainClassName }: AppShellProps) {
   return (
-    <div data-app-shell className={cn("flex h-dvh min-h-0 w-full overflow-hidden bg-canvas text-ink-strong", className)}>
+    <div data-app-shell className={cn("workspace-shell flex h-dvh min-h-0 w-full overflow-hidden text-ink-strong", className)}>
       <aside data-testid="desktop-sidebar" className="hidden h-full shrink-0 md:flex">
         {desktopSidebar}
       </aside>
@@ -21,7 +21,7 @@ export function AppShell({ desktopSidebar, mobileHeader, banner, children, class
           {mobileHeader}
         </header>
         {banner}
-        <main className={cn("min-h-0 min-w-0 flex-1 overflow-auto bg-canvas", mainClassName)}>
+        <main className={cn("min-h-0 min-w-0 flex-1 overflow-auto", mainClassName)}>
           {children}
         </main>
       </div>
