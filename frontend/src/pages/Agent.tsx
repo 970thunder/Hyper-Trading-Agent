@@ -1020,9 +1020,9 @@ export function Agent() {
       ));
       setLiveStatusUnavailable(false);
     } catch (error) {
-      // A 404/501 means the runtime endpoint is not wired on this backend; treat the
-      // status source as unavailable. Any other failure keeps the last snapshot.
-      if (error instanceof ApiError && (error.status === 404 || error.status === 501)) {
+      // A missing endpoint or a non-platform workspace does not expose the
+      // process-wide connector runtime to this session.
+      if (error instanceof ApiError && [401, 403, 404, 501].includes(error.status)) {
         setLiveStatus(null);
         setLiveStatusUnavailable(true);
       }

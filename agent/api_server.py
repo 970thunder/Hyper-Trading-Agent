@@ -1211,7 +1211,7 @@ from src.api.swarm_routes import _get_swarm_runtime  # noqa: F401, E402
 
 from src.api.live_routes import register_live_routes  # noqa: E402
 
-register_live_routes(app)
+register_live_routes(app, require_auth=require_platform_admin_or_auth)
 
 # Re-export for test monkeypatch compatibility
 from src.api.live_routes import (  # noqa: F401, E402

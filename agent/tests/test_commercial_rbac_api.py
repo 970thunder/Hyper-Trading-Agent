@@ -221,12 +221,13 @@ def test_commercial_mode_reserves_process_wide_legacy_resources_for_platform_adm
     _register_owner(platform_client, email="platform@example.com")
     _register_owner(owner_client, email="organization-owner@example.com")
 
-    for path in ("/settings/llm", "/settings/data-sources", "/knowledge/stats", "/knowledge/documents", "/channels/status", "/scheduled-runs", "/metrics"):
+    for path in ("/settings/llm", "/settings/data-sources", "/knowledge/stats", "/knowledge/documents", "/channels/status", "/scheduled-runs", "/live/status", "/metrics"):
         assert owner_client.get(path).status_code == 403, path
 
     assert platform_client.get("/settings/llm").status_code == 200
     assert platform_client.get("/knowledge/stats").status_code == 200
     assert platform_client.get("/scheduled-runs").status_code == 200
+    assert platform_client.get("/live/status").status_code == 200
     assert platform_client.get("/metrics").status_code == 200
     assert api_client.get("/metrics", headers={"Authorization": "Bearer platform-operator-key"}).status_code == 200
 
