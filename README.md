@@ -121,6 +121,7 @@ Operations runbooks:
 
 - [Secret rotation and encryption migration](docs/operations-secret-rotation.md)
 - [Backup and restore drill](docs/operations-backup-restore.md)
+- [Server deployment guide](docs/deployment-server.md)
 - [UI screenshot regression](docs/ui-screenshot-regression.md)
 
 ## Commercial API Surface

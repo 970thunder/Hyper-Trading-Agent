@@ -1,0 +1,13 @@
+name: hyper-trading-agent
+
+# TLS overlay for a server that owns certificate files at ./certs.
+# Apply after docker-compose.server.yml once fullchain.pem and privkey.pem are
+# provisioned by the chosen ACME client or certificate-management system.
+services:
+  gateway:
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./deploy/nginx/https.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/nginx/proxy-locations.conf:/etc/nginx/includes/proxy-locations.conf:ro
+      - ./certs:/etc/nginx/certs:ro

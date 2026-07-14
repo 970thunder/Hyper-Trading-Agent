@@ -102,6 +102,8 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Docker Compose stack for API, worker, frontend, PostgreSQL/pgvector, and Redis.
 - [x] Redis durable worker queue for Agent and RAG jobs.
 - [x] Health endpoint and commercial metrics.
+- [x] Add a rate-limited Nginx server gateway with TLS overlay and secure public endpoint policy.
+- [x] Align backup/restore and secret-rotation runbooks with the production Compose services and PostgreSQL credentials.
 - [ ] Make PostgreSQL the primary commercial repository instead of an initialized but partially unused service.
 - [ ] Add Alembic migration execution and rollback documentation.
 - [ ] Add backup/restore drills for PostgreSQL, uploads/object storage, and encrypted secrets.

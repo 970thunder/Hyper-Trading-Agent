@@ -41,7 +41,7 @@ For Docker Compose:
 ```powershell
 $newKey = [System.Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Maximum 256 }))
 (Get-Content .env.production) -replace '^API_AUTH_KEY=.*', "API_AUTH_KEY=$newKey" | Set-Content .env.production
-docker compose --env-file .env.production -f docker-compose.prod.yml up -d api frontend
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d api
 ```
 
 After rotation:
@@ -79,4 +79,3 @@ If a key is exposed:
 3. Search audit logs and model usage for unexpected calls.
 4. Review run artifacts and traces for accidental secret capture.
 5. Document affected provider, time window, users, and remediation.
-

@@ -18,7 +18,7 @@ Create a dated backup:
 ```powershell
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 New-Item -ItemType Directory -Force backups | Out-Null
-docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres pg_dump -U hyper_trading hyper_trading | Set-Content -Encoding UTF8 "backups/postgres-$stamp.sql"
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres pg_dump -U vibe vibe_trading | Set-Content -Encoding UTF8 "backups/postgres-$stamp.sql"
 ```
 
 Verify the file exists and is non-empty:
@@ -49,13 +49,13 @@ Run restores into a clean staging environment first.
 1. Stop application services:
 
 ```powershell
-docker compose --env-file .env.production -f docker-compose.prod.yml stop api worker frontend
+docker compose --env-file .env.production -f docker-compose.prod.yml stop api worker
 ```
 
 2. Restore PostgreSQL:
 
 ```powershell
-Get-Content backups/postgres-YYYYMMDD-HHMMSS.sql | docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres psql -U hyper_trading hyper_trading
+Get-Content backups/postgres-YYYYMMDD-HHMMSS.sql | docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres psql -U vibe vibe_trading
 ```
 
 3. Restore artifacts or object storage from the matching backup.
@@ -85,4 +85,3 @@ docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 - If database restore succeeds but artifacts are missing, disable document download and report export until artifacts are restored.
 - If artifacts restore succeeds but database restore fails, do not point production traffic at the partial environment.
 - If `VIBE_TRADING_SECRET_KEY` is missing or changed unexpectedly, encrypted provider keys may be unreadable; restore the matching secret key or run the planned re-encryption migration.
-
