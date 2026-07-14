@@ -330,10 +330,26 @@ async def _spa_html_deep_link_fallback(request: Request, call_next):
 # assets public, but never let anonymous users call a business API or load an
 # authenticated SPA route.  The browser redirect gives direct deep links a
 # predictable sign-in experience; non-browser clients receive a normal 401.
+def _commercial_mode_enabled() -> bool:
+    return os.getenv("VIBE_TRADING_COMMERCIAL_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def commercial_self_registration_enabled() -> bool:
+    """Return whether anonymous account creation is explicitly allowed.
+
+    Commercial deployments start with an Owner provisioned by the bootstrap
+    command.  Public registration is disabled by default so the browser has a
+    single unauthenticated entry point: sign in.  Local development can retain
+    self-registration by setting ``HYPER_TRADING_ALLOW_SELF_REGISTRATION=1``.
+    """
+    if not _commercial_mode_enabled():
+        return True
+    return os.getenv("HYPER_TRADING_ALLOW_SELF_REGISTRATION", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 _COMMERCIAL_PUBLIC_PATHS = frozenset({
     "/auth/status",
     "/auth/login",
-    "/auth/register",
     "/health",
     "/login",
 })
@@ -358,11 +374,12 @@ def _is_browser_document_request(request: Request) -> bool:
 @app.middleware("http")
 async def _require_commercial_login(request: Request, call_next):
     """Keep commercial workspace data behind an organization session."""
-    if not _env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
+    if not _commercial_mode_enabled():
         return await call_next(request)
 
     path = request.url.path
-    if request.method.upper() == "OPTIONS" or path in _COMMERCIAL_PUBLIC_PATHS or _is_commercial_static_asset(path):
+    registration_path_is_public = path == "/auth/register" and commercial_self_registration_enabled()
+    if request.method.upper() == "OPTIONS" or path in _COMMERCIAL_PUBLIC_PATHS or registration_path_is_public or _is_commercial_static_asset(path):
         return await call_next(request)
 
     if _commercial_principal_from_request(request) is not None:

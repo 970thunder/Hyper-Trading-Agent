@@ -107,6 +107,8 @@ $sfKey = (Select-String -Path .env.production -Pattern '^SILICONFLOW_API_KEY=').
 docker compose --env-file .env.production -f docker-compose.prod.yml exec api python -m src.commercial.bootstrap --email owner@example.com --password "change-this-password" --organization "Hyper Research" --api-key "$sfKey"
 ```
 
+Commercial mode exposes only the sign-in screen to anonymous visitors. Public self-registration is disabled by default; create additional users through the organization administration console after signing in. Set `HYPER_TRADING_ALLOW_SELF_REGISTRATION=1` only for a controlled local development environment.
+
 Stop:
 
 ```powershell
@@ -126,7 +128,6 @@ Operations runbooks:
 
 ## Commercial API Surface
 
-- `POST /auth/register`
 - `POST /auth/login`
 - `POST /auth/logout`
 - `GET /auth/me`

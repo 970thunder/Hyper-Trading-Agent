@@ -207,6 +207,25 @@ def test_commercial_governance_routes_require_admin_even_from_loopback(tmp_path:
     assert admin_client.get("/runtime/jobs").status_code == 200
 
 
+def test_commercial_mode_blocks_anonymous_self_registration(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_DB", str(tmp_path / "commercial.db"))
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_MODE", "1")
+    monkeypatch.setenv("HYPER_TRADING_ALLOW_SELF_REGISTRATION", "0")
+    client = TestClient(api_server.app, client=("127.0.0.1", 50310))
+
+    response = client.post(
+        "/auth/register",
+        json={
+            "email": "anonymous@example.com",
+            "password": PASSWORD,
+            "organization_name": "Blocked Org",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Authentication required"
+
+
 def test_knowledge_file_ingestion_queues_parsing_and_vectorization_job(tmp_path: Path, monkeypatch) -> None:
     pushed: list[tuple[str, str]] = []
 

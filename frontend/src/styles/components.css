@@ -12,6 +12,21 @@
       linear-gradient(145deg, hsl(var(--canvas)) 0%, hsl(var(--surface-2)) 52%, hsl(var(--canvas)) 100%);
   }
 
+  /* The sign-in surface deliberately sits above the entire application shell. */
+  .auth-shell {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    height: 100dvh;
+    min-height: 100dvh;
+    padding: 1.5rem;
+    overflow-y: auto;
+    background:
+      radial-gradient(circle at 16% 12%, hsl(var(--interactive-accent) / 0.11), transparent 27rem),
+      radial-gradient(circle at 84% 88%, hsl(var(--interactive-primary) / 0.11), transparent 30rem),
+      linear-gradient(145deg, hsl(var(--canvas)) 0%, hsl(var(--surface-2)) 52%, hsl(var(--canvas)) 100%);
+  }
+
   .auth-shell::before {
     position: absolute;
     inset: 0;
@@ -35,6 +50,13 @@
     padding: 2rem;
     box-shadow: var(--shadow-lg);
     backdrop-filter: blur(14px);
+  }
+
+  @media (max-height: 42rem) {
+    .auth-shell {
+      align-items: flex-start;
+      padding-block: 1rem;
+    }
   }
 
   .auth-brand-mark {

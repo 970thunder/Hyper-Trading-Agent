@@ -256,6 +256,12 @@ def register_commercial_routes(app: FastAPI) -> None:
 
     @app.post("/auth/register", response_model=PrincipalResponse)
     async def register(payload: RegisterRequest, response: Response):
+        host = _host()
+        if host is not None and not host.commercial_self_registration_enabled():
+            # Do not expose a separate anonymous provisioning path in a
+            # commercial deployment. Bootstrap and organization management own
+            # account creation instead.
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not found")
         try:
             principal, token = _store().register_owner(
                 email=payload.email,
