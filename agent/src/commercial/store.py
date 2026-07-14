@@ -474,6 +474,16 @@ class CommercialStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_workspace_sessions_organization
                     ON workspace_sessions(organization_id, created_at DESC);
+                CREATE TABLE IF NOT EXISTS uploaded_files (
+                    storage_key TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    uploaded_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    original_filename TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_uploaded_files_organization
+                    ON uploaded_files(organization_id, created_at DESC);
                 CREATE TABLE IF NOT EXISTS platform_admins (
                     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                     created_at TEXT NOT NULL,
@@ -841,6 +851,38 @@ class CommercialStore:
                 (session_id, principal.organization_id),
             )
         self.audit(principal, "workspace.session.delete", "session", session_id, {})
+
+    def register_uploaded_file(
+        self,
+        principal: Principal,
+        storage_key: str,
+        *,
+        original_filename: str,
+        size_bytes: int,
+    ) -> None:
+        if not storage_key.startswith("uploads/"):
+            raise ValueError("upload storage key is invalid")
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO uploaded_files(storage_key, organization_id, uploaded_by_user_id, original_filename, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    storage_key,
+                    principal.organization_id,
+                    principal.user_id,
+                    original_filename[:500],
+                    max(0, int(size_bytes)),
+                    utcnow(),
+                ),
+            )
+        self.audit(principal, "workspace.upload.create", "upload", storage_key, {"size_bytes": max(0, int(size_bytes))})
+
+    def uploaded_file_belongs_to_organization(self, principal: Principal, storage_key: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM uploaded_files WHERE storage_key = ? AND organization_id = ?",
+                (storage_key, principal.organization_id),
+            ).fetchone()
+        return row is not None
 
     def list_organization_members(self, principal: Principal) -> list[dict[str, Any]]:
         with self._connect() as conn:

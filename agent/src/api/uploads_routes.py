@@ -10,7 +10,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 
 # ---------------------------------------------------------------------------
@@ -114,8 +114,21 @@ def register_uploads_routes(
             headers={"Content-Disposition": f'inline; filename="{shadow_id}.{format}"'},
         )
 
+    def _commercial_upload_context(request: Request):
+        import sys as _sys
+
+        host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
+        if host is None or not host._env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
+            return None
+        principal = host._commercial_principal_from_request(request)
+        if principal is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Organization session required")
+        from src.commercial.store import CommercialStore
+
+        return CommercialStore(), principal
+
     @app.post("/upload", dependencies=[Depends(require_auth)])
-    async def upload_file(file: UploadFile):
+    async def upload_file(file: UploadFile, request: Request):
         """Upload any document or data file (max 50MB).
 
         Accepts most common formats: PDF, Word, Excel, PowerPoint, images,
@@ -132,16 +145,18 @@ def register_uploads_routes(
                 detail="This file type is not allowed for upload.",
             )
 
+        context = _commercial_upload_context(request)
         uploads_dir = _host_uploads_dir()
+        tenant_dir = uploads_dir / context[1].organization_id if context is not None else uploads_dir
         max_size = _host_max_upload_size()
         chunk_size = _host_chunk_size()
 
         safe_name = f"{uuid.uuid4().hex}{ext}"
-        dest = uploads_dir / safe_name
+        dest = tenant_dir / safe_name
         total_size = 0
 
         try:
-            uploads_dir.mkdir(parents=True, exist_ok=True)
+            tenant_dir.mkdir(parents=True, exist_ok=True)
             with dest.open("wb") as handle:
                 while True:
                     chunk = await file.read(chunk_size)
@@ -169,8 +184,22 @@ def register_uploads_routes(
         finally:
             await file.close()
 
+        storage_key = f"uploads/{context[1].organization_id}/{safe_name}" if context is not None else f"uploads/{safe_name}"
+        if context is not None:
+            try:
+                context[0].register_uploaded_file(
+                    context[1],
+                    storage_key,
+                    original_filename=filename,
+                    size_bytes=total_size,
+                )
+            except Exception as exc:
+                if dest.exists():
+                    dest.unlink()
+                raise HTTPException(status_code=500, detail="Upload ownership registration failed") from exc
+
         return {
             "status": "ok",
-            "file_path": f"uploads/{safe_name}",
+            "file_path": storage_key,
             "filename": filename,
         }

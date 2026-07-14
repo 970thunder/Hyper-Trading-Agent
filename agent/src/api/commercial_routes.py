@@ -229,6 +229,19 @@ def _read_document_text(path_value: str) -> tuple[str, str, dict[str, Any]]:
     return text, str(path), metadata
 
 
+def _require_owned_upload(principal: Principal, path_value: str) -> None:
+    """Require browser upload handles to belong to the current organization."""
+    normalized = path_value.replace("\\", "/").lstrip("./")
+    parts = normalized.split("/")
+    # Legacy local imports use uploads/<file>; new commercial browser uploads
+    # always use uploads/<organization_id>/<file> and are tenant-bound.
+    if len(parts) < 3 or parts[0] != "uploads" or not parts[1].startswith("org_"):
+        return
+    if not _store().uploaded_file_belongs_to_organization(principal, normalized):
+        # Match the resource-not-found behavior used for other tenant records.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="file not found")
+
+
 def register_commercial_routes(app: FastAPI) -> None:
     """Mount commercial platform routes."""
     if _host() is None:
@@ -467,6 +480,7 @@ def register_commercial_routes(app: FastAPI) -> None:
         payload: KnowledgeDocumentCreateRequest,
         principal: Principal = Depends(_require_role("owner", "admin", "member")),
     ):
+        _require_owned_upload(principal, payload.path)
         backend = build_runtime_job_backend(redis_client=_runtime_redis_client())
         if backend.status().get("configured") == REDIS_POSTGRES_RUNTIME_BACKEND and backend.name == REDIS_POSTGRES_RUNTIME_BACKEND:
             try:

@@ -45,7 +45,8 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Add a separate platform-admin identity, bootstrap allowlist, global operations API, and `/platform` console.
 - [x] Keep platform administration distinct from organization Owner/Admin roles; allow global user/org suspension and knowledge-base governance.
 - [x] Bind commercial sessions to `organization_id` and deny cross-organization list/read/message/SSE access.
-- [ ] Bind runs, reports, uploads, and generated artifacts to `organization_id`.
+- [x] Bind commercial browser uploads to `organization_id` and reject cross-organization knowledge imports.
+- [ ] Bind runs, reports, and generated artifacts to `organization_id`.
 - [ ] Add repository-level cross-organization isolation tests for sessions, runs, reports, and artifacts.
 - [ ] Add an organization switcher for users with multiple memberships.
 - [ ] Add dedicated localized Unauthorized and Forbidden routes.
