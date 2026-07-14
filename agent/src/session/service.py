@@ -13,6 +13,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
+import httpx
+
 from src.session.events import EventBus
 from src.session.models import (
     Attempt,
@@ -32,6 +34,14 @@ _AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_na
 _SESSION_TITLE_MAX_CHARS = 18
 _CONVERSATION_RECALL_MAX = 3
 _TITLE_TICKER_STOPWORDS = {"API", "CSV", "DOC", "EXCEL", "HTML", "IM", "LLM", "PDF", "RAG", "URL", "WORD"}
+_DIRECT_CHAT_LIMIT = 180
+_RESEARCH_OR_TOOL_MARKERS = (
+    "backtest", "rag", "knowledge", "multi-agent", "swarm", "report", "research",
+    "strategy", "factor", "alpha", "portfolio", "market", "stock", "ticker", "trade",
+    "回测", "知识库", "文档", "文件", "研报", "研究", "策略", "量化", "因子", "组合",
+    "行情", "股票", "估值", "投资", "交易", "资金", "风险", "工具", "数据", "检索",
+)
+_TICKER_PATTERN = re.compile(r"(?:\b[A-Z]{1,6}(?:\.[A-Z]{1,4})?\b|\b\d{6}\.(?:SZ|SH|BJ)\b)", re.IGNORECASE)
 
 
 class SessionService:
@@ -214,6 +224,8 @@ class SessionService:
     def _resolve_execution_mode(requested: str, content: str) -> str:
         if requested in {"react", "plan_execute"}:
             return requested
+        if SessionService._is_lightweight_chat(content):
+            return "direct"
         complex_markers = (
             "backtest", "rag", "knowledge", "multi-agent", "swarm", "report",
             "回测", "知识库", "多智能体", "研究报告", "组合", "因子", "检索",
@@ -222,8 +234,21 @@ class SessionService:
         return "plan_execute" if score >= 1 or len(content) >= 180 else "react"
 
     @staticmethod
+    def _is_lightweight_chat(content: str) -> bool:
+        """Route small conversational turns away from the tool-using agent loop."""
+        normalized = " ".join(str(content or "").split())
+        if not normalized or len(normalized) > _DIRECT_CHAT_LIMIT:
+            return False
+        lowered = normalized.lower()
+        if _TICKER_PATTERN.search(normalized):
+            return False
+        return not any(marker in lowered for marker in _RESEARCH_OR_TOOL_MARKERS)
+
+    @staticmethod
     def _initial_plan(mode: str) -> list[Dict[str, Any]]:
         now = datetime.now().isoformat()
+        if mode == "direct":
+            return []
         if mode == "react":
             return [{
                 "step_id": "analysis",
@@ -486,17 +511,25 @@ class SessionService:
         self.store.update_attempt(attempt)
         self.event_bus.emit(session.session_id, "attempt.started", {"attempt_id": attempt.attempt_id, "execution_mode": attempt.execution_mode})
         attempt.status = AttemptStatus.RUNNING
-        self._mark_plan_step(attempt, "execute" if attempt.execution_mode == "plan_execute" else "analysis", "running")
+        if attempt.execution_mode != "direct":
+            self._mark_plan_step(attempt, "execute" if attempt.execution_mode == "plan_execute" else "analysis", "running")
 
         try:
             messages = self.store.get_messages(session.session_id)
-            result = await self._run_with_agent(
-                attempt,
-                messages=messages,
-                include_shell_tools=include_shell_tools,
-                session_config=dict(session.config),
-                commercial_model_provider=commercial_model_provider,
-            )
+            if attempt.execution_mode == "direct":
+                result = await self._run_lightweight_chat(
+                    attempt,
+                    messages=messages,
+                    commercial_model_provider=commercial_model_provider,
+                )
+            else:
+                result = await self._run_with_agent(
+                    attempt,
+                    messages=messages,
+                    include_shell_tools=include_shell_tools,
+                    session_config=dict(session.config),
+                    commercial_model_provider=commercial_model_provider,
+                )
             if result.get("status") == "waiting_approval":
                 attempt.status = AttemptStatus.WAITING_APPROVAL
                 attempt.run_dir = result.get("run_dir")
@@ -504,7 +537,8 @@ class SessionService:
                 return
             if result.get("status") == "success":
                 attempt.mark_completed(summary=result.get("content", ""))
-                self._mark_plan_step(attempt, "execute" if attempt.execution_mode == "plan_execute" else "analysis", "completed")
+                if attempt.execution_mode != "direct":
+                    self._mark_plan_step(attempt, "execute" if attempt.execution_mode == "plan_execute" else "analysis", "completed")
                 if attempt.execution_mode == "plan_execute":
                     self._mark_plan_step(attempt, "synthesize", "completed", summary="Research result synthesized")
             elif result.get("status") == "cancelled":
@@ -513,7 +547,8 @@ class SessionService:
                 attempt.error = result.get("reason", "cancelled")
             else:
                 attempt.mark_failed(error=result.get("reason", "unknown"))
-                self._mark_plan_step(attempt, attempt.current_step_id or "execute", "failed", error=attempt.error or "")
+                if attempt.execution_mode != "direct":
+                    self._mark_plan_step(attempt, attempt.current_step_id or "execute", "failed", error=attempt.error or "")
             attempt.run_dir = result.get("run_dir")
 
             self.store.update_attempt(attempt)
@@ -543,6 +578,79 @@ class SessionService:
             attempt.mark_failed(error=str(exc))
             self.store.update_attempt(attempt)
             self.event_bus.emit(session.session_id, "attempt.failed", {"attempt_id": attempt.attempt_id, "error": str(exc)})
+
+    async def _run_lightweight_chat(
+        self,
+        attempt: Attempt,
+        *,
+        messages: list | None,
+        commercial_model_provider: Dict[str, Any] | None,
+    ) -> Dict[str, Any]:
+        """Run a short conversational turn without agent instructions or tools."""
+        history = self._convert_messages_to_history(messages or [])[-8:]
+        request_messages = [*history, {"role": "user", "content": attempt.prompt}]
+        provider = commercial_model_provider if isinstance(commercial_model_provider, dict) else None
+
+        if not provider or not provider.get("api_key"):
+            from src.providers.chat import ChatLLM, ProviderStreamError
+
+            llm = ChatLLM()
+            loop = asyncio.get_running_loop()
+            try:
+                response = await loop.run_in_executor(
+                    _AGENT_EXECUTOR,
+                    lambda: llm.stream_chat(request_messages, tools=None),
+                )
+            except ProviderStreamError as exc:
+                return {"status": "error", "reason": exc.user_message, "run_dir": ""}
+            return {"status": "success", "content": str(response.content or ""), "run_dir": ""}
+
+        from src.providers.chat import _classify_provider_error
+
+        endpoint = str(provider.get("base_url") or "").rstrip("/") + "/chat/completions"
+        payload = {
+            "model": str(provider.get("model") or ""),
+            "messages": request_messages,
+            "temperature": float(provider.get("temperature") or 0),
+            "max_tokens": 512,
+        }
+        headers = {"Authorization": f"Bearer {provider['api_key']}"}
+        timeout_seconds = max(5, min(int(provider.get("timeout_seconds") or 30), 60))
+        try:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                response = await client.post(endpoint, headers=headers, json=payload)
+            response.raise_for_status()
+            body = response.json()
+            choices = body.get("choices") if isinstance(body, dict) else []
+            message = choices[0].get("message") if isinstance(choices, list) and choices else {}
+            content = message.get("content") if isinstance(message, dict) else ""
+            text = str(content or "").strip()
+            if not text:
+                return {"status": "error", "reason": "The model returned no response text.", "run_dir": ""}
+            return {"status": "success", "content": text, "run_dir": ""}
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text[:500]
+            return {
+                "status": "error",
+                "reason": _classify_provider_error(
+                    str(provider.get("provider") or "openai"),
+                    str(provider.get("model") or "(unset)"),
+                    exc.response.status_code,
+                    detail,
+                ),
+                "run_dir": "",
+            }
+        except Exception as exc:
+            return {
+                "status": "error",
+                "reason": _classify_provider_error(
+                    str(provider.get("provider") or "openai"),
+                    str(provider.get("model") or "(unset)"),
+                    None,
+                    str(exc),
+                ),
+                "run_dir": "",
+            }
 
     def _mark_plan_step(self, attempt: Attempt, step_id: str, status: str, *, summary: str = "", error: str = "") -> None:
         now = datetime.now().isoformat()
