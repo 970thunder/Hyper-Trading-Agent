@@ -1371,12 +1371,9 @@ function CompareResultPanel({ result }: { result: AlphaCompareResult }) {
   );
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-        <span className="inline-flex items-center gap-1.5 font-medium text-success">
-          <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> {i18n.t("alphaZoo.winner")}:{" "}
-          <span className="font-mono">{result.winner}</span>
-        </span>
-        <span className="text-muted-foreground">
+      <Panel className="flex flex-wrap items-center gap-x-4 gap-y-2 shadow-xs">
+        <span className="inline-flex items-center gap-1.5 font-medium text-success"><CheckCircle2 className="h-4 w-4" aria-hidden="true" /> {i18n.t("alphaZoo.winner")}: <span className="font-mono">{result.winner}</span></span>
+        <span className="text-sm text-ink-muted">
           {i18n.t("alphaZoo.comparedRankedBy", {
             count: result.n_compared,
             sort: result.sort,
@@ -1385,20 +1382,15 @@ function CompareResultPanel({ result }: { result: AlphaCompareResult }) {
           })}
         </span>
         {result.n_skipped > 0 && (
-          <span className="inline-flex items-center gap-1 text-warning">
+          <span className="inline-flex items-center gap-1 text-sm text-warning">
             <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" /> {i18n.t("alphaZoo.skippedCount", { count: result.n_skipped })}
           </span>
         )}
-      </div>
+      </Panel>
 
-      <div className="border rounded-lg overflow-hidden">
-        <div className="flex flex-col gap-3 border-b bg-muted/20 px-4 py-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h3 className="text-sm font-semibold">{i18n.t("alphaZoo.comparisonTableControls")}</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {i18n.t("alphaZoo.comparisonTableDesc", { shown: visibleRanking.length, total: result.ranking.length })}
-            </p>
-          </div>
+      <Panel padding="none" className="overflow-visible shadow-xs">
+        <div className="flex flex-col gap-3 border-b border-[hsl(var(--border-subtle))] bg-surface-2/45 px-4 py-4 md:flex-row md:items-end md:justify-between">
+          <SectionHeader title={i18n.t("alphaZoo.comparisonTableControls")} description={i18n.t("alphaZoo.comparisonTableDesc", { shown: visibleRanking.length, total: result.ranking.length })} />
           <label className="grid gap-1 text-xs text-muted-foreground md:w-48">
             <span>{i18n.t("alphaZoo.rankingFilter")}</span>
             <Select
@@ -1417,7 +1409,7 @@ function CompareResultPanel({ result }: { result: AlphaCompareResult }) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm" aria-label={i18n.t("alphaZoo.alphaComparisonRanking")}>
             <thead>
-              <tr className="border-b bg-muted/40 text-muted-foreground text-xs">
+              <tr className="border-b border-[hsl(var(--border-subtle))] bg-surface-2/55 text-xs text-ink-muted">
                 <th className="text-right px-3 py-2">#</th>
                 <th className="text-left px-3 py-2">{i18n.t("alphaZoo.alpha")}</th>
                 <th className="text-right px-3 py-2 hidden sm:table-cell">{i18n.t("alphaZoo.zoo")}</th>
@@ -1441,7 +1433,7 @@ function CompareResultPanel({ result }: { result: AlphaCompareResult }) {
                   <tr
                     key={`${r.zoo}:${r.id}`}
                     className={cn(
-                      "border-b last:border-0 hover:bg-muted/20",
+                      "border-b border-[hsl(var(--border-subtle))] transition-colors duration-fast last:border-0 hover:bg-surface-2/45",
                       r.rank === 1 && "bg-success/5",
                     )}
                   >
@@ -1469,10 +1461,10 @@ function CompareResultPanel({ result }: { result: AlphaCompareResult }) {
             </tbody>
           </table>
         </div>
-      </div>
+      </Panel>
 
       {result.skipped.length > 0 && (
-        <p className="text-xs text-muted-foreground">
+        <p className="rounded-lg border border-warning/25 bg-warning/8 p-3 text-xs leading-5 text-ink-muted">
           <span className="font-medium">{i18n.t("alphaZoo.skippedPre")}</span>{" "}
           {result.skipped.map((s) => `${s.id} (${s.reason})`).join("; ")}
         </p>
