@@ -41,6 +41,7 @@ import {
 import { echarts } from "@/lib/echarts";
 import { getChartTheme } from "@/lib/chart-theme";
 import { useDarkMode } from "@/hooks/useDarkMode";
+import { Select, type SelectOption } from "@/components/ui/Select";
 
 /* ---------- Constants ---------- */
 
@@ -273,55 +274,47 @@ function BrowseView() {
         </div>
         <div className="md:w-40">
           <label htmlFor="alpha-zoo-filter" className="text-xs text-muted-foreground block mb-1">{i18n.t("alphaZoo.zoo")}</label>
-          <select
-            id="alpha-zoo-filter"
+          <Select
             value={zooFilter}
-            onChange={(e) => setZooFilter(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-          >
-            <option value="">{i18n.t("alphaZoo.allZoos")}</option>
-            {ZOO_CARDS.map((z) => (
-              <option key={z.id} value={z.id}>
-                {i18n.t("alphaZoo.zooCardTitle." + z.id as any, { defaultValue: z.title })}
-              </option>
-            ))}
-          </select>
+            onValueChange={setZooFilter}
+            options={[
+              { value: "", label: i18n.t("alphaZoo.allZoos") },
+              ...ZOO_CARDS.map((z) => ({ value: z.id, label: i18n.t("alphaZoo.zooCardTitle." + z.id as any, { defaultValue: z.title }) })),
+            ] as SelectOption[]}
+            label={i18n.t("alphaZoo.zoo")}
+            className="w-full"
+          />
         </div>
         <div className="md:w-40">
           <label htmlFor="alpha-theme-filter" className="text-xs text-muted-foreground block mb-1">
             {i18n.t("alphaZoo.theme")}
           </label>
-          <select
-            id="alpha-theme-filter"
+          <Select
             value={themeFilter}
-            onChange={(e) => setThemeFilter(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-          >
-            <option value="">{i18n.t("alphaZoo.allThemes")}</option>
-            {themeOptions.map((tname) => (
-              <option key={tname} value={tname}>
-                {i18n.t("alphaZoo.themes." + tname, { defaultValue: tname })}
-              </option>
-            ))}
-          </select>
+            onValueChange={setThemeFilter}
+            options={[
+              { value: "", label: i18n.t("alphaZoo.allThemes") },
+              ...themeOptions.map((tname) => ({ value: tname, label: i18n.t("alphaZoo.themes." + tname, { defaultValue: tname }) })),
+            ] as SelectOption[]}
+            label={i18n.t("alphaZoo.theme")}
+            searchable={themeOptions.length > 8}
+            className="w-full"
+          />
         </div>
         <div className="md:w-44">
           <label htmlFor="alpha-universe-filter" className="text-xs text-muted-foreground block mb-1">
             {i18n.t("alphaZoo.universe")}
           </label>
-          <select
-            id="alpha-universe-filter"
+          <Select
             value={universeFilter}
-            onChange={(e) => setUniverseFilter(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-          >
-            <option value="">{i18n.t("alphaZoo.allUniverses")}</option>
-            {UNIVERSE_OPTIONS.map((u) => (
-              <option key={u.value} value={u.value}>
-                {i18n.t("alphaZoo.universeOption." + u.value as any, { defaultValue: u.label })}
-              </option>
-            ))}
-          </select>
+            onValueChange={setUniverseFilter}
+            options={[
+              { value: "", label: i18n.t("alphaZoo.allUniverses") },
+              ...UNIVERSE_OPTIONS.map((u) => ({ value: u.value, label: i18n.t("alphaZoo.universeOption." + u.value as any, { defaultValue: u.label }) })),
+            ] as SelectOption[]}
+            label={i18n.t("alphaZoo.universe")}
+            className="w-full"
+          />
         </div>
         <Link
           to={compareHref}
