@@ -1056,12 +1056,6 @@ export function Agent() {
   useEffect(() => () => doDisconnect(), [doDisconnect]);
 
   useEffect(() => {
-    api.getLLMSettings().then((s) => {
-      sseTimeoutMsRef.current = s.sse_timeout_seconds * 1000;
-    }).catch(() => {});
-  }, []);
-
-  useEffect(() => {
     let alive = true;
     async function loadModelProviders() {
       try {

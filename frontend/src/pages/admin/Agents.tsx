@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import {
   api,
   type CommercialModelProvider,
-  type LLMSettings,
+  type LLMProviderOption,
   type SwarmPreset,
   type SwarmPresetAgent,
   type SwarmPresetAgentList,
@@ -16,7 +16,7 @@ import { SwarmAgentsPanel, type SwarmAgentFormState } from "@/pages/settings/Swa
 
 export function Agents() {
   const { t } = useTranslation();
-  const [settings, setSettings] = useState<LLMSettings | null>(null);
+  const [providerOptions, setProviderOptions] = useState<LLMProviderOption[]>([]);
   const [providers, setProviders] = useState<CommercialModelProvider[]>([]);
   const [presets, setPresets] = useState<SwarmPreset[]>([]);
   const [selectedPreset, setSelectedPreset] = useState("quant_strategy_desk");
@@ -38,13 +38,13 @@ export function Agents() {
 
   const load = async (preferredPreset = selectedPreset) => {
     setError("");
-    const [nextSettings, nextProviders, nextPresets] = await Promise.all([
-      api.getLLMSettings(),
+    const [nextProviders, nextProviderOptions, nextPresets] = await Promise.all([
       api.listCommercialModelProviders(),
+      api.listCommercialModelCatalog(),
       api.listSwarmPresets(),
     ]);
-    setSettings(nextSettings);
     setProviders(nextProviders);
+    setProviderOptions(nextProviderOptions);
     setPresets(nextPresets);
     const nextPreset = nextPresets.some((preset) => preset.name === preferredPreset) ? preferredPreset : nextPresets[0]?.name || "";
     if (nextPreset) await loadAgents(nextPreset);
@@ -61,14 +61,14 @@ export function Agents() {
 
   const modelOptions = useMemo(() => {
     const values = new Set<string>();
-    settings?.providers?.forEach((provider) => {
+    providerOptions.forEach((provider) => {
       if (provider.default_model) values.add(provider.default_model);
       provider.model_options?.forEach((model) => values.add(model));
     });
     providers.forEach((provider) => values.add(provider.model));
     if (form.model_name) values.add(form.model_name);
     return Array.from(values).sort();
-  }, [form.model_name, providers, settings?.providers]);
+  }, [form.model_name, providers, providerOptions]);
 
   const selectedModelValue = form.model_provider_id ? `provider:${form.model_provider_id}` : form.model_name ? `model:${form.model_name}` : "";
 

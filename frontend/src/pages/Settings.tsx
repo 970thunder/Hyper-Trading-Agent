@@ -43,7 +43,6 @@ export function Settings() {
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedSection = searchParams.get("section");
-  const activeSection: SettingsSection = isSettingsSection(requestedSection) ? requestedSection : "overview";
   const [settings, setSettings] = useState<LLMSettings | null>(null);
   const [dataSettings, setDataSettings] = useState<DataSourceSettings | null>(null);
   const [principal, setPrincipal] = useState<CommercialPrincipal | null>(null);
@@ -56,31 +55,49 @@ export function Settings() {
   const [dataSaving, setDataSaving] = useState(false);
   const [channelRefreshing, setChannelRefreshing] = useState(false);
   const [channelAction, setChannelAction] = useState<"start" | "stop" | null>(null);
+  const visibleSettingsSections = principal?.is_platform_admin
+    ? SETTINGS_SECTIONS
+    : SETTINGS_SECTIONS.filter((section) => section.id !== "data" && section.id !== "channels");
+  const activeSection: SettingsSection = isSettingsSection(requestedSection)
+    && visibleSettingsSections.some((section) => section.id === requestedSection)
+    ? requestedSection
+    : "overview";
 
   useEffect(() => {
     let alive = true;
-    Promise.allSettled([
-      api.getLLMSettings(),
-      api.getDataSourceSettings(),
-      api.getChannelStatus(),
-      api.getCommercialMe(),
-    ]).then(([llmResult, dataResult, channelResult, principalResult]) => {
-      if (!alive) return;
-      const errors: Record<string, string> = {};
-      if (llmResult.status === "fulfilled") setSettings(llmResult.value);
-      else errors.overview = errorMessage(llmResult.reason, t("settings.unknownError"));
-
-      if (dataResult.status === "fulfilled") setDataSettings(dataResult.value);
-      else errors.data = errorMessage(dataResult.reason, t("settings.unknownError"));
-
-      if (channelResult.status === "fulfilled") setChannelStatus(channelResult.value);
-      else errors.channels = errorMessage(channelResult.reason, t("settings.unknownError"));
-
-      setPrincipal(principalResult.status === "fulfilled" ? principalResult.value : null);
-      setLoadErrors(errors);
-    }).finally(() => {
-      if (alive) setLoading(false);
-    });
+    async function loadSettings() {
+      try {
+        const nextPrincipal = await api.getCommercialMe();
+        if (!alive) return;
+        setPrincipal(nextPrincipal);
+        if (!nextPrincipal.is_platform_admin) {
+          setSettings(null);
+          setDataSettings(null);
+          setChannelStatus(null);
+          setLoadErrors({});
+          return;
+        }
+        const [llmResult, dataResult, channelResult] = await Promise.allSettled([
+          api.getLLMSettings(),
+          api.getDataSourceSettings(),
+          api.getChannelStatus(),
+        ]);
+        if (!alive) return;
+        const errors: Record<string, string> = {};
+        if (llmResult.status === "fulfilled") setSettings(llmResult.value);
+        else errors.overview = errorMessage(llmResult.reason, t("settings.unknownError"));
+        if (dataResult.status === "fulfilled") setDataSettings(dataResult.value);
+        else errors.data = errorMessage(dataResult.reason, t("settings.unknownError"));
+        if (channelResult.status === "fulfilled") setChannelStatus(channelResult.value);
+        else errors.channels = errorMessage(channelResult.reason, t("settings.unknownError"));
+        setLoadErrors(errors);
+      } catch (error) {
+        if (alive) setLoadErrors({ overview: errorMessage(error, t("settings.unknownError")) });
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }
+    void loadSettings();
     return () => { alive = false; };
   }, [t]);
 
@@ -201,7 +218,7 @@ export function Settings() {
     );
   };
 
-  const activeMeta = SETTINGS_SECTIONS.find((section) => section.id === activeSection) || SETTINGS_SECTIONS[0];
+  const activeMeta = visibleSettingsSections.find((section) => section.id === activeSection) || SETTINGS_SECTIONS[0];
   const ActiveIcon = activeMeta.icon;
   const tr = (key: string) => t(key as never);
 
@@ -215,7 +232,7 @@ export function Settings() {
       <div className="grid gap-5 lg:grid-cols-[15rem_minmax(0,1fr)]">
         <aside className="h-fit rounded-lg border border-[hsl(var(--border-subtle))] bg-surface-1 p-2 shadow-xs">
           <nav className="grid gap-1 sm:grid-cols-2 lg:grid-cols-1" aria-label={t("settings.title")}>
-            {SETTINGS_SECTIONS.map(({ id, icon: Icon, labelKey, descKey }) => (
+            {visibleSettingsSections.map(({ id, icon: Icon, labelKey, descKey }) => (
               <button
                 key={id}
                 type="button"

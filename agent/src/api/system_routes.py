@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from typing import Optional
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Security, status
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Security, status
 from fastapi.responses import PlainTextResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
@@ -66,6 +66,7 @@ def register_system_routes(
 
     _security = host._security
     _require_shutdown_authorization = host._require_shutdown_authorization
+    _require_platform_admin_or_auth = host.require_platform_admin_or_auth
     _app_version = app_version if app_version is not None else host.APP_VERSION
 
     def _get_terminate_process():
@@ -88,7 +89,7 @@ def register_system_routes(
             timestamp=datetime.now().isoformat()
         )
 
-    @app.get("/metrics", response_class=PlainTextResponse)
+    @app.get("/metrics", response_class=PlainTextResponse, dependencies=[Depends(_require_platform_admin_or_auth)])
     async def metrics():
         """Minimal Prometheus-compatible metrics endpoint."""
         lines = [

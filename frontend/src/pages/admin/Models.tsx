@@ -18,7 +18,7 @@ import {
 
 export function Models() {
   const { t } = useTranslation();
-  const [settings, setSettings] = useState<LLMSettings | null>(null);
+  const [providerOptions, setProviderOptions] = useState<LLMProviderOption[]>([]);
   const [providers, setProviders] = useState<CommercialModelProvider[]>([]);
   const [form, setForm] = useState<ModelProviderFormState>(() => toForm(null));
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -30,13 +30,13 @@ export function Models() {
 
   const load = async () => {
     setError("");
-    const [nextSettings, nextProviders] = await Promise.all([
-      api.getLLMSettings(),
+    const [nextProviders, nextProviderOptions] = await Promise.all([
       api.listCommercialModelProviders(),
+      api.listCommercialModelCatalog(),
     ]);
-    setSettings(nextSettings);
     setProviders(nextProviders);
-    if (!editingId) setForm(toForm(nextSettings));
+    setProviderOptions(nextProviderOptions);
+    if (!editingId) setForm(toForm(null, nextProviderOptions[0]));
   };
 
   useEffect(() => {
@@ -49,7 +49,7 @@ export function Models() {
 
   const reset = () => {
     setEditingId(null);
-    setForm(toForm(settings));
+    setForm(toForm(null, providerOptions[0]));
   };
 
   const edit = (provider: CommercialModelProvider) => {
@@ -121,7 +121,7 @@ export function Models() {
     }
   };
 
-  const options = settings?.providers || [];
+  const options = providerOptions;
 
   if (loading) return <div className="grid gap-4"><Skeleton className="h-20" /><Skeleton className="h-[520px]" /></div>;
   if (error) return <InlineError title={t("adminCenter.models.loadFailed")} message={error} retryLabel={t("adminCenter.retry")} onRetry={() => void load()} />;

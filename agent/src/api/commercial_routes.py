@@ -496,6 +496,14 @@ def register_commercial_routes(app: FastAPI) -> None:
     async def list_model_providers(principal: Principal = Depends(_principal_from_cookie)):
         return _store().list_model_providers(principal)
 
+    @app.get("/models/catalog")
+    async def list_model_catalog(principal: Principal = Depends(_principal_from_cookie)):
+        """Return provider/model presets without disclosing process settings."""
+        del principal
+        from src.api.settings_routes import LLM_PROVIDERS
+
+        return [provider.model_dump() for provider in LLM_PROVIDERS]
+
     @app.post("/models/providers")
     async def create_model_provider(
         payload: ModelProviderCreateRequest,

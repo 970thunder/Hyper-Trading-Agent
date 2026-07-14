@@ -371,6 +371,19 @@ def _is_browser_document_request(request: Request) -> bool:
     return request.method.upper() == "GET" and "text/html" in request.headers.get("accept", "")
 
 
+def _has_machine_api_key(request: Request) -> bool:
+    """Validate the operator bearer key without granting a browser session."""
+    configured_key = _configured_api_key()
+    authorization = request.headers.get("authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    return bool(
+        configured_key
+        and scheme.lower() == "bearer"
+        and token
+        and hmac.compare_digest(token, configured_key)
+    )
+
+
 @app.middleware("http")
 async def _require_commercial_login(request: Request, call_next):
     """Keep commercial workspace data behind an organization session."""
@@ -380,6 +393,12 @@ async def _require_commercial_login(request: Request, call_next):
     path = request.url.path
     registration_path_is_public = path == "/auth/register" and commercial_self_registration_enabled()
     if request.method.upper() == "OPTIONS" or path in _COMMERCIAL_PUBLIC_PATHS or registration_path_is_public or _is_commercial_static_asset(path):
+        return await call_next(request)
+
+    # Metrics are not a user workspace API. Permit only an explicit operator
+    # Bearer key so Prometheus can scrape it without acquiring a browser
+    # session; every other commercial endpoint remains session-only.
+    if path == "/metrics" and _has_machine_api_key(request):
         return await call_next(request)
 
     if _commercial_principal_from_request(request) is not None:
@@ -661,6 +680,17 @@ def _has_commercial_role(request: Request, allowed: set[str] | None = None) -> b
     return allowed is None or principal.role in allowed
 
 
+def _is_commercial_platform_admin(principal: Any) -> bool:
+    """Return whether a signed-in principal may use process-wide controls."""
+    try:
+        from src.commercial.store import CommercialStore
+
+        return CommercialStore().is_platform_admin(principal)
+    except Exception as exc:  # noqa: BLE001 - fail closed around global access
+        logger.warning("Unable to resolve platform administrator access: %s", exc)
+        return False
+
+
 def _is_local_client(request: Request) -> bool:
     """Return whether the request originates from a loopback client."""
     host = request.client.host if request.client else ""
@@ -741,7 +771,7 @@ async def require_local_or_auth(
     credential reads or writes in dev mode.
     """
     if _env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
-        await require_auth(request, cred)
+        await require_platform_admin_or_auth(request, cred)
         return
     if request.method.upper() not in _SAFE_BROWSER_METHODS:
         _reject_cross_site_browser_request(request)
@@ -790,6 +820,35 @@ async def require_commercial_admin_or_auth(
     return principal
 
 
+async def require_platform_admin_or_auth(
+    request: Request,
+    cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
+):
+    """Authorize process-wide administration without crossing tenant boundaries.
+
+    Legacy settings, IM channels, scheduled work, and Prometheus metrics are
+    process-wide resources. They are not organization-scoped and therefore
+    must never be exposed to a normal organization Owner/Admin in commercial
+    mode. A configured machine API key remains available for operators and
+    monitoring agents that do not have a browser session.
+    """
+    if _env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
+        if request.method.upper() not in _SAFE_BROWSER_METHODS:
+            _reject_cross_site_browser_request(request)
+        principal = _commercial_principal_from_request(request)
+        if principal is not None:
+            if _is_commercial_platform_admin(principal):
+                return principal
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Platform administrator access required")
+        api_key = _configured_api_key()
+        token = _auth_credential_from_header_or_query(cred, None, allow_query=False)
+        if api_key and token and hmac.compare_digest(token, api_key):
+            return None
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    await require_local_or_auth(request, cred)
+    return None
+
+
 async def require_settings_write_auth(
     request: Request,
     cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
@@ -804,15 +863,8 @@ async def require_settings_write_auth(
     api_key = _configured_api_key()
     _reject_cross_site_browser_request(request)
     if _env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
-        principal = _commercial_principal_from_request(request)
-        if principal is not None:
-            if principal.role in {"owner", "admin"}:
-                return
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
-        token = _auth_credential_from_header_or_query(cred, None, allow_query=False)
-        if api_key and token and hmac.compare_digest(token, api_key):
-            return
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+        await require_platform_admin_or_auth(request, cred)
+        return
     if _is_local_client(request):
         return
     if api_key:
@@ -1205,7 +1257,7 @@ register_alpha_routes(app)
 
 from src.api.scheduled_routes import register_scheduled_routes  # noqa: E402
 
-register_scheduled_routes(app)
+register_scheduled_routes(app, require_auth=require_platform_admin_or_auth)
 
 # Re-exported for backward-compatibility / external consumers
 from src.api.scheduled_routes import (  # noqa: E402, F401

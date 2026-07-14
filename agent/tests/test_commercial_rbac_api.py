@@ -199,12 +199,36 @@ def test_commercial_governance_routes_require_admin_even_from_loopback(tmp_path:
     assert anonymous_client.get("/sessions").status_code == 401
     assert anonymous_client.get("/settings/llm").status_code == 401
     assert member_client.get("/sessions").status_code == 200
-    assert member_client.get("/settings/llm").status_code == 200
+    assert member_client.get("/settings/llm").status_code == 403
     assert member_client.put("/settings/llm", json={"provider": "siliconflow"}).status_code == 403
 
     # Admin requests pass the role guard and reach the underlying resource lookup.
     assert admin_client.post("/swarm/presets/missing/agents", json={"id": "allowed"}).status_code == 404
     assert admin_client.get("/runtime/jobs").status_code == 200
+
+
+def test_commercial_mode_reserves_process_wide_legacy_resources_for_platform_admins(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_DB", str(tmp_path / "commercial.db"))
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_MODE", "1")
+    monkeypatch.setenv("HYPER_TRADING_ALLOW_SELF_REGISTRATION", "1")
+    monkeypatch.setenv("HYPER_TRADING_PLATFORM_ADMIN_EMAILS", "platform@example.com")
+    monkeypatch.setenv("API_AUTH_KEY", "platform-operator-key")
+    monkeypatch.setattr(api_server, "_API_KEY", "platform-operator-key")
+
+    platform_client = TestClient(api_server.app, client=("127.0.0.1", 50311))
+    owner_client = TestClient(api_server.app, client=("127.0.0.1", 50312))
+    api_client = TestClient(api_server.app, client=("203.0.113.10", 50313))
+    _register_owner(platform_client, email="platform@example.com")
+    _register_owner(owner_client, email="organization-owner@example.com")
+
+    for path in ("/settings/llm", "/settings/data-sources", "/knowledge/stats", "/knowledge/documents", "/channels/status", "/scheduled-runs", "/metrics"):
+        assert owner_client.get(path).status_code == 403, path
+
+    assert platform_client.get("/settings/llm").status_code == 200
+    assert platform_client.get("/knowledge/stats").status_code == 200
+    assert platform_client.get("/scheduled-runs").status_code == 200
+    assert platform_client.get("/metrics").status_code == 200
+    assert api_client.get("/metrics", headers={"Authorization": "Bearer platform-operator-key"}).status_code == 200
 
 
 def test_commercial_mode_blocks_anonymous_self_registration(tmp_path: Path, monkeypatch) -> None:

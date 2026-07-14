@@ -226,6 +226,7 @@ export const api = {
   getAuthStatus: () => request<CommercialAuthStatus>("/auth/status"),
   getCommercialMe: () => request<CommercialPrincipal>("/auth/me"),
   getCurrentOrganization: () => request<CommercialOrganization>("/organizations/current"),
+  listCommercialModelCatalog: () => request<LLMProviderOption[]>("/models/catalog"),
   listAvailableOrganizations: () => request<CommercialOrganizationMembership[]>("/organizations"),
   switchOrganization: (organizationId: string) =>
     request<CommercialPrincipal>("/organizations/switch", {

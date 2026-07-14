@@ -45,6 +45,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Add a separate platform-admin identity, bootstrap allowlist, global operations API, and `/platform` console.
 - [x] Keep platform administration distinct from organization Owner/Admin roles; allow global user/org suspension and knowledge-base governance.
 - [x] Expand the global platform console with tenant-bound runtime jobs, generated artifacts, repository/storage health, and audited maintenance actions.
+- [x] Reserve legacy process-wide settings, IM channels, scheduled jobs, and metrics for Platform Admin; permit machine-key access only for `/metrics` monitoring.
 - [x] Bind commercial sessions to `organization_id` and deny cross-organization list/read/message/SSE access.
 - [x] Bind commercial browser uploads to `organization_id` and reject cross-organization knowledge imports.
 - [x] Bind Agent session runs to `organization_id` and deny cross-organization Run list/detail/code access.

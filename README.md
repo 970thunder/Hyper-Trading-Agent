@@ -126,6 +126,12 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec api py
 
 Commercial mode exposes only the sign-in screen to anonymous visitors. Public self-registration is disabled by default; create additional users through the organization administration console after signing in. Set `HYPER_TRADING_ALLOW_SELF_REGISTRATION=1` only for a controlled local development environment.
 
+Organization Owner/Admin permissions apply only to their organization. The
+process-wide settings, IM channels, scheduled jobs, and platform metrics are
+reserved for Platform Admin users. Prometheus may scrape `GET /metrics` with
+`Authorization: Bearer $API_AUTH_KEY`; this is the only operational data
+endpoint that accepts a machine key instead of a signed-in session.
+
 Stop:
 
 ```powershell
