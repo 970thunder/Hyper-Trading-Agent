@@ -73,7 +73,15 @@ export function CorrelationMatrix({ labels, matrix, height = 500 }: Props) {
         top: "center",
         textStyle: { color: t.textColor, fontSize: 11 },
         inRange: {
-          color: ["#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7", "#fddbc7", "#f4a582", "#d6604d", "#b2182b"],
+          color: [
+            t.accentDeepColor,
+            t.accentColor,
+            t.primaryPaleColor,
+            "#f5f5f5",
+            t.primaryPaleColor,
+            t.primarySoftColor,
+            t.primaryColor,
+          ],
         },
       },
       series: [
