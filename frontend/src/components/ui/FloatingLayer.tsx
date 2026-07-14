@@ -138,6 +138,7 @@ export function FloatingLayer({
   const fallbackRef = useMemo(() => createRef<HTMLElement>(), []);
   const reducedMotion = usePrefersReducedMotion();
   const presence = usePresence(open, { exitDuration: 90, reducedMotion });
+  const modalContext = Boolean(triggerRef.current?.closest("[data-drawer-content], [data-dialog-content]"));
   const [position, setPosition] = useState<LayerPosition>({ top: -9999, left: -9999, side, ready: false });
 
   const updatePosition = () => {
@@ -242,6 +243,7 @@ export function FloatingLayer({
       data-floating-layer
       data-state={presence.state}
       data-side={position.side}
+      data-modal-context={modalContext || undefined}
       className={cn(
         "fixed z-menu max-h-[min(28rem,calc(100vh-1rem))] max-w-[calc(100vw-1rem)] overflow-auto rounded-md border border-border bg-surface-elevated p-1.5 text-ink-strong shadow-overlay outline-none",
         className,
@@ -252,6 +254,7 @@ export function FloatingLayer({
         left: position.left,
         minWidth: position.minWidth,
         visibility: position.ready ? "visible" : "hidden",
+        zIndex: modalContext ? "var(--layer-modal-menu)" : undefined,
         "--floating-transform-origin": transformOrigin,
       } as CSSProperties}
     >

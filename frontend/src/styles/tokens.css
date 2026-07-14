@@ -90,6 +90,8 @@
   --layer-menu: 40;
   --layer-drawer: 50;
   --layer-dialog: 60;
+  /* Menus rendered from inside a drawer/dialog portal above that modal. */
+  --layer-modal-menu: 61;
   --layer-toast: 70;
 
   /* Typography. */

@@ -22,6 +22,22 @@ function Harness({ matchTriggerWidth = false }: { matchTriggerWidth?: boolean })
   );
 }
 
+function DrawerHarness() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div data-drawer-content="">
+      <FloatingLayer
+        open={open}
+        onOpenChange={setOpen}
+        trigger={<button type="button">Drawer models</button>}
+        contentLabel="Choose drawer model"
+      >
+        <button type="button" role="menuitem">Drawer model A</button>
+      </FloatingLayer>
+    </div>
+  );
+}
+
 describe("FloatingLayer", () => {
   it("renders through a portal and closes after an outside pointer interaction", async () => {
     const user = userEvent.setup();
@@ -70,5 +86,16 @@ describe("FloatingLayer", () => {
     await user.click(trigger);
     const menu = await screen.findByRole("menu", { name: "Choose model" });
     await waitFor(() => expect(menu).toHaveStyle({ minWidth: "180px" }));
+  });
+
+  it("places menus triggered inside a drawer above the modal layer", async () => {
+    const user = userEvent.setup();
+    render(<DrawerHarness />);
+
+    await user.click(screen.getByRole("button", { name: "Drawer models" }));
+    const menu = await screen.findByRole("menu", { name: "Choose drawer model" });
+
+    expect(menu).toHaveAttribute("data-modal-context", "true");
+    expect(menu).toHaveStyle({ zIndex: "var(--layer-modal-menu)" });
   });
 });
