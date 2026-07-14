@@ -2,6 +2,11 @@
 
 This runbook is for private Docker Compose deployments of Hyper Trading Agent.
 
+The supported scripts are [`scripts/backup-production.ps1`](../scripts/backup-production.ps1)
+and [`scripts/restore-production.ps1`](../scripts/restore-production.ps1). Run
+restores in staging first; the restore script requires `-ConfirmRestore` and
+validates archive checksums before it touches a volume.
+
 ## What Must Be Backed Up
 
 - PostgreSQL database: pgvector chunks and the staged commercial schema.
