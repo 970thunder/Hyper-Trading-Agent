@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Security, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
@@ -320,6 +320,58 @@ async def _spa_html_deep_link_fallback(request: Request, call_next):
                     headers={"Cache-Control": "no-store, max-age=0"},
                 )
     return await call_next(request)
+
+
+# ---------------------------------------------------------------------------
+# Commercial authentication boundary
+# ---------------------------------------------------------------------------
+# In commercial mode the web application is an authenticated workspace, not a
+# local tool with an optional sign-in.  Keep the login bootstrap and static
+# assets public, but never let anonymous users call a business API or load an
+# authenticated SPA route.  The browser redirect gives direct deep links a
+# predictable sign-in experience; non-browser clients receive a normal 401.
+_COMMERCIAL_PUBLIC_PATHS = frozenset({
+    "/auth/status",
+    "/auth/login",
+    "/auth/register",
+    "/health",
+    "/login",
+})
+_COMMERCIAL_STATIC_PATH_PREFIXES = ("/assets/",)
+_COMMERCIAL_STATIC_PATHS = frozenset({
+    "/favicon.ico",
+    "/favicon.svg",
+    "/manifest.webmanifest",
+    "/robots.txt",
+})
+
+
+def _is_commercial_static_asset(path: str) -> bool:
+    """Return whether ``path`` is a frontend asset needed to render login."""
+    return path.startswith(_COMMERCIAL_STATIC_PATH_PREFIXES) or path in _COMMERCIAL_STATIC_PATHS
+
+
+def _is_browser_document_request(request: Request) -> bool:
+    return request.method.upper() == "GET" and "text/html" in request.headers.get("accept", "")
+
+
+@app.middleware("http")
+async def _require_commercial_login(request: Request, call_next):
+    """Keep commercial workspace data behind an organization session."""
+    if not _env_flag_enabled("VIBE_TRADING_COMMERCIAL_MODE"):
+        return await call_next(request)
+
+    path = request.url.path
+    if request.method.upper() == "OPTIONS" or path in _COMMERCIAL_PUBLIC_PATHS or _is_commercial_static_asset(path):
+        return await call_next(request)
+
+    if _commercial_principal_from_request(request) is not None:
+        return await call_next(request)
+
+    if _is_browser_document_request(request):
+        return RedirectResponse(url="/login", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
+    return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Authentication required"})
 
 
 # ============================================================================

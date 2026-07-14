@@ -26,18 +26,20 @@ function renderGuard(roles: Array<"owner" | "admin" | "member" | "viewer"> = ["o
 describe("RequireRole", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("redirects anonymous commercial users to login", async () => {
+  it("redirects anonymous users to login before rendering the workspace", async () => {
     apiMock.getAuthStatus.mockResolvedValue({ commercial_mode: true });
     apiMock.getCommercialMe.mockRejectedValue(new Error("Authentication required"));
     renderGuard();
     expect(await screen.findByText("login page")).toBeInTheDocument();
+    expect(screen.queryByText("secure page")).not.toBeInTheDocument();
   });
 
-  it("preserves the local single-user workspace without a commercial session", async () => {
+  it("does not render the workspace when a local runtime has no user session", async () => {
     apiMock.getAuthStatus.mockResolvedValue({ commercial_mode: false });
     apiMock.getCommercialMe.mockRejectedValue(new Error("Authentication required"));
     renderGuard(["owner", "admin"]);
-    expect(await screen.findByText("secure page")).toBeInTheDocument();
+    expect(await screen.findByText("login page")).toBeInTheDocument();
+    expect(screen.queryByText("secure page")).not.toBeInTheDocument();
   });
 
   it("enforces role restrictions in commercial mode", async () => {

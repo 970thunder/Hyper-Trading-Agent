@@ -1,4 +1,65 @@
 @layer components {
+  .auth-shell,
+  .auth-gate-shell {
+    position: relative;
+    display: flex;
+    min-height: 100dvh;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background:
+      linear-gradient(145deg, hsl(var(--canvas)) 0%, hsl(var(--surface-2)) 52%, hsl(var(--canvas)) 100%);
+  }
+
+  .auth-shell::before {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    content: "";
+    opacity: 0.48;
+    background-image:
+      linear-gradient(hsl(var(--border-subtle) / 0.38) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border-subtle) / 0.38) 1px, transparent 1px);
+    background-size: 34px 34px;
+    mask-image: linear-gradient(to bottom, transparent, black 18%, black 82%, transparent);
+  }
+
+  .auth-card {
+    position: relative;
+    z-index: 1;
+    width: min(100% - 2rem, 28rem);
+    border: 1px solid hsl(var(--border-default));
+    border-radius: var(--radius-panel);
+    background: hsl(var(--surface-1) / 0.96);
+    padding: 2rem;
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(14px);
+  }
+
+  .auth-brand-mark {
+    display: grid;
+    width: 2.75rem;
+    height: 2.75rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid hsl(var(--interactive-primary) / 0.32);
+    border-radius: var(--radius-panel);
+    color: hsl(var(--interactive-primary));
+    background: linear-gradient(145deg, hsl(var(--interactive-primary) / 0.14), hsl(var(--interactive-accent) / 0.08));
+    box-shadow: 0 8px 22px hsl(var(--interactive-primary) / 0.12);
+  }
+
+  .auth-gate-shell {
+    gap: 0.625rem;
+    color: hsl(var(--text-muted));
+    font-size: 0.875rem;
+  }
+
+  .dark .auth-shell::before {
+    opacity: 0.24;
+  }
+
   .workspace-shell {
     position: relative;
     isolation: isolate;

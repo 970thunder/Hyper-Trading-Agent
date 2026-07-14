@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { ShieldAlert } from "lucide-react";
+import { Loader2, ShieldAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api, type CommercialPrincipal } from "@/lib/api";
 
@@ -28,7 +28,12 @@ export function RequirePlatformAdmin({ children }: { children: ReactNode }) {
   }, []);
 
   if (loading) {
-    return <div className="flex h-[60vh] items-center justify-center text-sm text-ink-muted">{t("settings.loading")}</div>;
+    return (
+      <div className="auth-gate-shell" role="status" aria-live="polite">
+        <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" />
+        <span>{t("settings.loading")}</span>
+      </div>
+    );
   }
   if (!principal) {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;

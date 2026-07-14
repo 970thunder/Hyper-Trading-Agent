@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Navigate, useLocation } from "react-router-dom";
-import { ShieldCheck } from "lucide-react";
+import { Loader2, ShieldCheck } from "lucide-react";
 import { api, type CommercialPrincipal, type CommercialRole } from "@/lib/api";
 
 interface RequireRoleProps {
@@ -35,8 +35,9 @@ export function RequireRole({ children, roles }: RequireRoleProps) {
 
   if (loading) {
     return (
-      <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground">
-        {t("settings.loading")}
+      <div className="auth-gate-shell" role="status" aria-live="polite">
+        <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" />
+        <span>{t("settings.loading")}</span>
       </div>
     );
   }
