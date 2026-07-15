@@ -694,7 +694,12 @@ export interface PlatformSummary {
   commercial_db_path: string;
 }
 
-export type PlatformMaintenanceAction = "expire_sessions" | "sqlite_checkpoint" | "sqlite_vacuum";
+export type PlatformMaintenanceAction =
+  | "expire_sessions"
+  | "sqlite_checkpoint"
+  | "sqlite_vacuum"
+  | "postgres_analyze"
+  | "postgres_vacuum";
 
 export interface PlatformOperations {
   database: {

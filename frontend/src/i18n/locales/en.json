@@ -657,6 +657,12 @@
     "jobsTitle": "Ingestion jobs",
     "auditTitle": "System audit log",
     "usageTitle": "Organization usage and cost",
+    "usageTrend": {
+      "title": "30-day platform activity",
+      "description": "Daily token volume and average model latency across all organizations in UTC.",
+      "tokens": "Tokens",
+      "latency": "Average latency"
+    },
     "emptyUsage": "No organization model usage has been recorded for the current month.",
     "budgetHealthy": "Within budget",
     "budgetSoft": "Soft limit reached",
@@ -695,7 +701,9 @@
     "maintenance": {
       "expire_sessions": "Expire stale sessions",
       "sqlite_checkpoint": "Checkpoint WAL",
-      "sqlite_vacuum": "Vacuum database"
+      "sqlite_vacuum": "Vacuum database",
+      "postgres_analyze": "Analyze PostgreSQL tables",
+      "postgres_vacuum": "Vacuum and analyze PostgreSQL"
     },
     "unavailable": "Unavailable",
     "cancel": "Cancel",

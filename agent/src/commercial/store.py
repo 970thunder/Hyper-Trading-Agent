@@ -28,7 +28,7 @@ from .postgres_governance import PostgresGovernanceRepository
 from .postgres_knowledge import PostgresKnowledgeRepository
 from .postgres_workspace import PostgresWorkspaceRepository
 
-DEFAULT_DB_PATH = Path.home() / ".vibe-trading" / "commercial" / "commercial.db"
+DEFAULT_DB_PATH = Path.home() / ".hyper-trading-agent" / "commercial" / "commercial.db"
 SESSION_TTL_DAYS = 14
 ROLES = {"owner", "admin", "member", "viewer"}
 JOB_STATUSES = {"pending", "running", "completed", "failed", "cancelled"}
@@ -4339,7 +4339,13 @@ class CommercialStore:
     def run_platform_maintenance(self, actor: Principal, action: str) -> dict[str, Any]:
         """Run an explicitly allowlisted maintenance action and audit it."""
         normalized = str(action or "").strip().lower()
-        if normalized not in {"expire_sessions", "sqlite_checkpoint", "sqlite_vacuum"}:
+        if normalized not in {
+            "expire_sessions",
+            "sqlite_checkpoint",
+            "sqlite_vacuum",
+            "postgres_analyze",
+            "postgres_vacuum",
+        }:
             raise ValueError("unsupported maintenance action")
 
         details: dict[str, Any] = {"action": normalized}
@@ -4349,6 +4355,11 @@ class CommercialStore:
             details["records_affected"] = max(0, int(cursor.rowcount or 0))
             if self._primary_identity is not None:
                 details["identity_records_affected"] = self._primary_identity.expire_sessions()
+        elif normalized in {"postgres_analyze", "postgres_vacuum"}:
+            if self._primary_identity is None:
+                raise ValueError("PostgreSQL primary storage is not enabled")
+            details["postgres"] = self._primary_identity.run_maintenance(normalized)
+            details["records_affected"] = 0
         elif normalized == "sqlite_checkpoint":
             with self._connect() as conn:
                 row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()

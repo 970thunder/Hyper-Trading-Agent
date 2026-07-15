@@ -651,8 +651,7 @@
     "knowledgeTitle": "全部知识库",
     "jobsTitle": "入库任务",
     "auditTitle": "系统审计日志",
-    "usageTitle": "全部组织用量与成本",
-    "emptyUsage": "当前月没有组织模型用量记录。",
+    "usageTitle": "全部组织用量与成本", "usageTrend": { "title": "30-day platform activity", "description": "Daily token volume and average model latency across all organizations in UTC.", "tokens": "Tokens", "latency": "Average latency" }, "emptyUsage": "当前月没有组织模型用量记录。",
     "budgetHealthy": "预算正常",
     "budgetSoft": "已达到软限额",
     "budgetHard": "已达到硬限额",
@@ -690,7 +689,9 @@
     "maintenance": {
       "expire_sessions": "清理过期会话",
       "sqlite_checkpoint": "执行 WAL 检查点",
-      "sqlite_vacuum": "压缩数据库"
+      "sqlite_vacuum": "压缩数据库",
+      "postgres_analyze": "分析 PostgreSQL 表统计信息",
+      "postgres_vacuum": "清理并分析 PostgreSQL"
     },
     "unavailable": "不可用",
     "cancel": "取消",

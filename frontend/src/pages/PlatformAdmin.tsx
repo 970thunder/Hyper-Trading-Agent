@@ -215,6 +215,9 @@ export function PlatformAdmin() {
   };
 
   const maintenanceLabel = (action: PlatformMaintenanceAction) => t(`platformAdmin.maintenance.${action}`);
+  const maintenanceActions: PlatformMaintenanceAction[] = operations.database.engine === "postgresql"
+    ? ["expire_sessions", "postgres_analyze", "postgres_vacuum"]
+    : ["expire_sessions", "sqlite_checkpoint", "sqlite_vacuum"];
 
   const runMaintenance = async () => {
     if (!maintenanceAction) return;
@@ -298,7 +301,7 @@ export function PlatformAdmin() {
           </div>
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <section className="surface-panel p-4"><div className="flex items-center gap-2"><HardDrive className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-ink-strong">{t("platformAdmin.storageTitle")}</h2></div><div className="mt-4 grid gap-3 sm:grid-cols-3"><StorageMetric label={t("platformAdmin.storageUploads")} value={operations.storage.uploads_bytes} /><StorageMetric label={t("platformAdmin.storageRuns")} value={operations.storage.runs_bytes} /><StorageMetric label={t("platformAdmin.storageSessions")} value={operations.storage.sessions_bytes} /></div></section>
-            <section className="surface-panel p-4"><div className="flex items-center gap-2"><Wrench className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-ink-strong">{t("platformAdmin.maintenanceTitle")}</h2></div><p className="mt-2 text-sm leading-6 text-ink-muted">{t("platformAdmin.maintenanceDescription")}</p><div className="mt-4 flex flex-wrap gap-2">{(["expire_sessions", "sqlite_checkpoint", "sqlite_vacuum"] as PlatformMaintenanceAction[]).map((action) => <Button key={action} size="sm" variant={action === "sqlite_vacuum" ? "outline" : "secondary"} onClick={() => setMaintenanceAction(action)}>{maintenanceLabel(action)}</Button>)}</div></section>
+            <section className="surface-panel p-4"><div className="flex items-center gap-2"><Wrench className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-ink-strong">{t("platformAdmin.maintenanceTitle")}</h2></div><p className="mt-2 text-sm leading-6 text-ink-muted">{t("platformAdmin.maintenanceDescription")}</p><div className="mt-4 flex flex-wrap gap-2">{maintenanceActions.map((action) => <Button key={action} size="sm" variant={action.endsWith("vacuum") ? "outline" : "secondary"} onClick={() => setMaintenanceAction(action)}>{maintenanceLabel(action)}</Button>)}</div></section>
           </div>
         </TabPanel>
 

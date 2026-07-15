@@ -369,6 +369,29 @@ class PostgresIdentityRepository:
             "table_counts": counts,
         }
 
+    def run_maintenance(self, action: str) -> dict[str, Any]:
+        """Run one bounded, non-destructive PostgreSQL maintenance operation.
+
+        The platform console deliberately exposes no arbitrary SQL execution.
+        ``VACUUM`` requires autocommit in PostgreSQL, while ``ANALYZE`` can use
+        a normal transaction. Both operations cover the complete commercial
+        schema because the repositories share this database.
+        """
+        statements = {
+            "postgres_analyze": "ANALYZE",
+            "postgres_vacuum": "VACUUM (ANALYZE)",
+        }
+        statement = statements.get(action)
+        if statement is None:
+            raise ValueError("unsupported PostgreSQL maintenance action")
+
+        with self._connect() as connection:
+            if action == "postgres_vacuum":
+                connection.autocommit = True
+            with connection.cursor() as cursor:
+                cursor.execute(statement)
+        return {"operation": action, "statement": statement}
+
     def list_platform_users(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
         clauses: list[str] = []
         params: list[Any] = []
