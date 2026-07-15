@@ -1150,6 +1150,7 @@
     "uploaded": "已上传：{{filename}}",
     "uploadFailed": "上传失败：{{error}}",
     "failedToSend": "发送消息失败，请重试。",
+    "readOnlyWorkspace": "当前角色仅可查看，无法发起或修改任务。",
     "failedToContinue": "继续目标失败，请重试。",
     "runtimeBadge": "运行时",
     "activeResearchGoal": "活跃的研究目标",

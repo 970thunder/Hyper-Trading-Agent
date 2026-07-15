@@ -1058,6 +1058,7 @@
     "uploaded": "تم الرفع: {{filename}}",
     "uploadFailed": "فشل الرفع: {{error}}",
     "failedToSend": "فشل إرسال الرسالة، يُرجى المحاولة مرة أخرى.",
+    "readOnlyWorkspace": "This workspace is read-only for your role.",
     "failedToContinue": "فشل متابعة الهدف، يُرجى المحاولة مرة أخرى.",
     "runtimeBadge": "وقت التشغيل",
     "activeResearchGoal": "هدف بحث نشط",

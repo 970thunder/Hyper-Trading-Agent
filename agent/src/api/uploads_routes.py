@@ -152,6 +152,8 @@ def register_uploads_routes(
             )
 
         context = _commercial_upload_context(request)
+        if context is not None and context[1].role == "viewer":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Viewer role is read-only")
         uploads_dir = _host_uploads_dir()
         tenant_dir = uploads_dir / context[1].organization_id if context is not None else uploads_dir
         max_size = _host_max_upload_size()

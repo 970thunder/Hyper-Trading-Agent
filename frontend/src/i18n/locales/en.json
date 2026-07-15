@@ -1155,6 +1155,7 @@
     "uploaded": "Uploaded: {{filename}}",
     "uploadFailed": "Upload failed: {{error}}",
     "failedToSend": "Failed to send message, please retry.",
+    "readOnlyWorkspace": "This workspace is read-only for your role.",
     "failedToContinue": "Failed to continue goal, please retry.",
     "runtimeBadge": "RUNTIME",
     "activeResearchGoal": "Active research goal",

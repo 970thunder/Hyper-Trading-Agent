@@ -1034,7 +1034,7 @@ def register_commercial_routes(app: FastAPI) -> None:
     @app.post("/feedback")
     async def create_feedback(
         payload: FeedbackCreateRequest,
-        principal: Principal = Depends(_principal_from_cookie),
+        principal: Principal = Depends(_require_role("owner", "admin", "member")),
     ):
         try:
             return _store().record_feedback(principal, payload.model_dump())

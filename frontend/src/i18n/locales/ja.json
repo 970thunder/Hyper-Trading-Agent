@@ -1058,6 +1058,7 @@
     "uploaded": "アップロードしました: {{filename}}",
     "uploadFailed": "アップロードに失敗しました: {{error}}",
     "failedToSend": "メッセージ送信に失敗しました。再試行してください。",
+    "readOnlyWorkspace": "This workspace is read-only for your role.",
     "failedToContinue": "目標の続行に失敗しました。再試行してください。",
     "runtimeBadge": "ランタイム",
     "activeResearchGoal": "アクティブなリサーチ目標",

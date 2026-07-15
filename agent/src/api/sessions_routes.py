@@ -362,6 +362,12 @@ def register_sessions_routes(app: FastAPI) -> None:
             # Return 404 rather than 403 so a foreign session id is not disclosed.
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
+    def _require_workspace_write_access(request: Request) -> None:
+        """Disallow Viewer mutations even when a workspace resource is readable."""
+        context = _commercial_workspace_context(request)
+        if context is not None and context[1].role == "viewer":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Viewer role is read-only")
+
     # -----------------------------------------------------------------------
     # Session CRUD routes
     # -----------------------------------------------------------------------
@@ -392,7 +398,7 @@ def register_sessions_routes(app: FastAPI) -> None:
             results = [item for item in results if str(item.get("session_id") or "") in session_ids]
         return {"query": q, "count": len(results), "results": results}
 
-    @app.post("/sessions", response_model=SessionResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_auth)])
+    @app.post("/sessions", response_model=SessionResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_auth), Depends(_require_workspace_write_access)])
     async def create_session(payload: CreateSessionRequest, request: Request):
         """Create a chat session."""
         svc = _host_get_session_service()
@@ -465,7 +471,7 @@ def register_sessions_routes(app: FastAPI) -> None:
         "/sessions/{session_id}/goal",
         response_model=GoalSnapshotResponse,
         status_code=status.HTTP_201_CREATED,
-        dependencies=[Depends(require_auth), Depends(_require_workspace_session_access)],
+        dependencies=[Depends(require_auth), Depends(_require_workspace_session_access), Depends(_require_workspace_write_access)],
     )
     async def create_session_goal(session_id: str, req: CreateGoalRequest):
         """Create or replace the current finance research goal for a session."""
@@ -523,7 +529,7 @@ def register_sessions_routes(app: FastAPI) -> None:
     @app.patch(
         "/sessions/{session_id}/goal",
         response_model=UpdateGoalResponse,
-        dependencies=[Depends(require_auth), Depends(_require_workspace_session_access)],
+        dependencies=[Depends(require_auth), Depends(_require_workspace_session_access), Depends(_require_workspace_write_access)],
     )
     async def update_session_goal(session_id: str, req: UpdateGoalRequest):
         """Edit the current finance research goal without replacing the session."""
@@ -558,7 +564,7 @@ def register_sessions_routes(app: FastAPI) -> None:
         "/sessions/{session_id}/goal/evidence",
         response_model=AddGoalEvidenceResponse,
         status_code=status.HTTP_201_CREATED,
-        dependencies=[Depends(require_auth), Depends(_require_workspace_session_access)],
+        dependencies=[Depends(require_auth), Depends(_require_workspace_session_access), Depends(_require_workspace_write_access)],
     )
     async def add_session_goal_evidence(session_id: str, req: AddGoalEvidenceRequest):
         """Append traceable evidence to the current finance research goal."""
@@ -614,7 +620,7 @@ def register_sessions_routes(app: FastAPI) -> None:
     @app.patch(
         "/sessions/{session_id}/goal/status",
         response_model=UpdateGoalStatusResponse,
-        dependencies=[Depends(require_auth), Depends(_require_workspace_session_access)],
+        dependencies=[Depends(require_auth), Depends(_require_workspace_session_access), Depends(_require_workspace_write_access)],
     )
     async def update_session_goal_status(session_id: str, req: UpdateGoalStatusRequest):
         """Update the current finance research goal status."""
@@ -660,7 +666,7 @@ def register_sessions_routes(app: FastAPI) -> None:
     # Session action routes
     # -----------------------------------------------------------------------
 
-    @app.delete("/sessions/{session_id}", dependencies=[Depends(require_auth), Depends(_require_workspace_session_access)])
+    @app.delete("/sessions/{session_id}", dependencies=[Depends(require_auth), Depends(_require_workspace_session_access), Depends(_require_workspace_write_access)])
     async def delete_session(session_id: str, request: Request):
         """Delete a session."""
         _host_validate_path_param(session_id, "session_id")
@@ -676,7 +682,7 @@ def register_sessions_routes(app: FastAPI) -> None:
             context[0].delete_workspace_session(context[1], session_id)
         return {"status": "deleted", "session_id": session_id}
 
-    @app.patch("/sessions/{session_id}", dependencies=[Depends(require_auth), Depends(_require_workspace_session_access)])
+    @app.patch("/sessions/{session_id}", dependencies=[Depends(require_auth), Depends(_require_workspace_session_access), Depends(_require_workspace_write_access)])
     async def update_session(session_id: str, req: UpdateSessionRequest):
         """Update session fields (e.g. title)."""
         _host_validate_path_param(session_id, "session_id")
@@ -693,7 +699,7 @@ def register_sessions_routes(app: FastAPI) -> None:
         svc.store.update_session(session)
         return {"status": "updated", "session_id": session_id}
 
-    @app.post("/sessions/{session_id}/messages", dependencies=[Depends(require_auth), Depends(_require_workspace_session_access)])
+    @app.post("/sessions/{session_id}/messages", dependencies=[Depends(require_auth), Depends(_require_workspace_session_access), Depends(_require_workspace_write_access)])
     async def send_message(session_id: str, payload: SendMessageRequest, http_request: Request):
         """Send a user message and start the agent loop (natural language strategy)."""
         _host_validate_path_param(session_id, "session_id")
@@ -767,7 +773,7 @@ def register_sessions_routes(app: FastAPI) -> None:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
 
-    @app.post("/sessions/{session_id}/cancel", dependencies=[Depends(require_auth), Depends(_require_workspace_session_access)])
+    @app.post("/sessions/{session_id}/cancel", dependencies=[Depends(require_auth), Depends(_require_workspace_session_access), Depends(_require_workspace_write_access)])
     async def cancel_session(session_id: str):
         """Cancel the in-flight agent loop for this session."""
         _host_validate_path_param(session_id, "session_id")
@@ -793,7 +799,7 @@ def register_sessions_routes(app: FastAPI) -> None:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail="attempt not found") from exc
 
-    @app.post("/sessions/{session_id}/attempts/{attempt_id}/pause", dependencies=[Depends(require_auth), Depends(_require_workspace_session_access)])
+    @app.post("/sessions/{session_id}/attempts/{attempt_id}/pause", dependencies=[Depends(require_auth), Depends(_require_workspace_session_access), Depends(_require_workspace_write_access)])
     async def pause_attempt(session_id: str, attempt_id: str):
         _host_validate_path_param(session_id, "session_id")
         _host_validate_path_param(attempt_id, "attempt_id")
@@ -806,7 +812,7 @@ def register_sessions_routes(app: FastAPI) -> None:
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    @app.post("/sessions/{session_id}/attempts/{attempt_id}/resume", dependencies=[Depends(require_auth), Depends(_require_workspace_session_access)])
+    @app.post("/sessions/{session_id}/attempts/{attempt_id}/resume", dependencies=[Depends(require_auth), Depends(_require_workspace_session_access), Depends(_require_workspace_write_access)])
     async def resume_attempt(session_id: str, attempt_id: str):
         _host_validate_path_param(session_id, "session_id")
         _host_validate_path_param(attempt_id, "attempt_id")

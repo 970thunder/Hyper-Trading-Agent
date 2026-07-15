@@ -5,7 +5,7 @@ import { Send, Loader2, ArrowDown, Square, Download, Plus, Paperclip, X, Users, 
 import { toast } from "sonner";
 import { useAgentStore } from "@/stores/agent";
 import { useSSE } from "@/hooks/useSSE";
-import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type ApprovalRecord, type CommercialModelProvider, type ExecutionMode, type ExecutionPlanStep, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted, type LiveStatus } from "@/lib/api";
+import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type ApprovalRecord, type CommercialModelProvider, type CommercialPrincipal, type ExecutionMode, type ExecutionPlanStep, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted, type LiveStatus } from "@/lib/api";
 import { extractKnowledgeCitations } from "@/lib/citations";
 import { isReportWorthyRun } from "@/lib/runReports";
 import type { AgentMessage, ToolCallEntry } from "@/types/agent";
@@ -331,6 +331,7 @@ export function Agent() {
   const setSelectedModelProviderId = useAgentStore(s => s.setSelectedModelProviderId);
   const [modelProviders, setModelProviders] = useState<CommercialModelProvider[]>([]);
   const [modelProviderOrgId, setModelProviderOrgId] = useState<string | null>(null);
+  const [principal, setPrincipal] = useState<CommercialPrincipal | null>(null);
 
   const { connect, disconnect, onStatusChange } = useSSE();
 
@@ -1070,6 +1071,7 @@ export function Agent() {
         const preferred = preferredId ? enabled.find((provider) => provider.id === preferredId) : undefined;
         const fallback = enabled.find((provider) => Boolean(provider.is_default)) ?? enabled[0];
         const nextId = preferred?.id ?? fallback?.id ?? null;
+        setPrincipal(me);
         setModelProviderOrgId(me.organization_id);
         setModelProviders(providers);
         setSelectedModelProviderId(nextId);
@@ -1081,6 +1083,7 @@ export function Agent() {
         }
       } catch {
         if (!alive) return;
+        setPrincipal(null);
         setModelProviderOrgId(null);
         setModelProviders([]);
         setSelectedModelProviderId(null);
@@ -1140,9 +1143,14 @@ export function Agent() {
     [t],
   );
   const controlsLocked = status === "streaming" || attemptStatus === "waiting_approval";
+  const workspaceReadOnly = principal?.role === "viewer";
 
   const runPrompt = async (prompt: string) => {
     if (!prompt.trim() || status === "streaming") return;
+    if (workspaceReadOnly) {
+      toast.error(t("agent.readOnlyWorkspace"));
+      return;
+    }
 
     if (goalComposerActive) {
       setInput("");
@@ -1351,7 +1359,7 @@ export function Agent() {
 
   const handleSaveGoalEdit = useCallback(async () => {
     const objective = goalEditValue.trim();
-    if (!sessionId || !goalSnapshot || !objective) return;
+    if (workspaceReadOnly || !sessionId || !goalSnapshot || !objective) return;
     try {
       const response = await api.updateGoal(sessionId, {
         goal_id: goalSnapshot.goal.goal_id,
@@ -1364,10 +1372,10 @@ export function Agent() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('agent.failedToUpdateGoal'));
     }
-  }, [goalEditValue, goalSnapshot, sessionId]);
+  }, [goalEditValue, goalSnapshot, sessionId, workspaceReadOnly]);
 
   const handleContinueGoal = useCallback(async () => {
-    if (!sessionId || !goalSnapshot || status === "streaming") return;
+    if (workspaceReadOnly || !sessionId || !goalSnapshot || status === "streaming") return;
     const prompt = goalContinuePrompt(goalSnapshot);
     act().addMessage({ id: "", type: "user", content: prompt, timestamp: Date.now() });
     setAttemptStartedAt(Date.now());
@@ -1388,7 +1396,7 @@ export function Agent() {
       toast.error(message);
       act().addMessage({ id: "", type: "error", content: message, timestamp: Date.now() });
     }
-  }, [forceScrollToBottom, goalSnapshot, selectedModelProviderIdForRequest, sessionId, setupSSE, status, syncCompletedAttempt]);
+  }, [forceScrollToBottom, goalSnapshot, selectedModelProviderIdForRequest, sessionId, setupSSE, status, syncCompletedAttempt, workspaceReadOnly]);
 
   const handleRetry = useCallback((errorMsg: AgentMessage) => {
     if (status === "streaming") return;
@@ -1436,6 +1444,11 @@ export function Agent() {
   };
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (workspaceReadOnly) {
+      e.target.value = "";
+      toast.error(t("agent.readOnlyWorkspace"));
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
@@ -1464,7 +1477,7 @@ export function Agent() {
     } finally {
       setUploading(false);
     }
-  }, []);
+  }, [t, workspaceReadOnly]);
 
   const groups = useMemo(() => groupMessages(messages), [messages]);
   const goalProgress = useMemo(() => getGoalProgress(goalSnapshot), [goalSnapshot]);
@@ -1722,7 +1735,7 @@ export function Agent() {
                         <button
                           type="button"
                           onClick={handleSaveGoalEdit}
-                          disabled={!goalEditValue.trim()}
+                          disabled={workspaceReadOnly || !goalEditValue.trim()}
                           className="inline-flex items-center gap-1 rounded-lg bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground transition-opacity disabled:opacity-40"
                         >
                           <Check className="h-3 w-3" />
@@ -1802,7 +1815,7 @@ export function Agent() {
                     <button
                       type="button"
                       onClick={handleContinueGoal}
-                      disabled={status === "streaming"}
+                      disabled={workspaceReadOnly || status === "streaming"}
                       className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
                     >
                       <Play className="h-3 w-3" />
@@ -1811,7 +1824,7 @@ export function Agent() {
                     <button
                       type="button"
                       onClick={handleStartGoalEdit}
-                      disabled={goalEditActive}
+                      disabled={workspaceReadOnly || goalEditActive}
                       className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
                     >
                       <Pencil className="h-3 w-3" />
@@ -1880,7 +1893,7 @@ export function Agent() {
               trigger={(
                 <button
                   type="button"
-                  disabled={status === "streaming" || uploading}
+                  disabled={workspaceReadOnly || status === "streaming" || uploading}
                   className="icon-button shrink-0"
                   aria-label={t("agent.moreOptions")}
                   title={t("agent.moreOptions")}
@@ -1999,12 +2012,14 @@ export function Agent() {
                 }
               }}
               placeholder={
-                goalComposerActive
+                workspaceReadOnly
+                  ? t("agent.readOnlyWorkspace")
+                  : goalComposerActive
                   ? t("agent.describeGoal")
                   : t("agent.placeholder")
               }
               className="max-h-28 flex-1 resize-none overflow-y-auto rounded-md border bg-background px-4 py-2.5 text-sm transition-shadow focus:outline-none focus:ring-2 focus:ring-primary/40"
-              disabled={status === "streaming"}
+              disabled={workspaceReadOnly || status === "streaming"}
             />
             {messages.length > 0 && (
               <button
@@ -2020,7 +2035,8 @@ export function Agent() {
               <button
                 type="button"
                 onClick={handleCancel}
-                className="inline-flex h-9 items-center justify-center rounded-md bg-destructive px-4 text-sm font-medium text-destructive-foreground transition-opacity hover:opacity-90"
+                disabled={workspaceReadOnly}
+                className="inline-flex h-9 items-center justify-center rounded-md bg-destructive px-4 text-sm font-medium text-destructive-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                 title={t('agent.stopGeneration')}
               >
                 <Square className="h-4 w-4" />
@@ -2028,7 +2044,7 @@ export function Agent() {
             ) : (
               <button
                 type="submit"
-                disabled={goalComposerActive ? !input.trim() : (!input.trim() && !attachment)}
+                disabled={workspaceReadOnly || (goalComposerActive ? !input.trim() : (!input.trim() && !attachment))}
                 className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
               >
                 <Send className="h-4 w-4" />

@@ -113,6 +113,12 @@ def register_swarm_routes(
         if run_id and not context[0].workspace_artifact_belongs_to_organization(context[1], "swarm_run", run_id):
             raise HTTPException(status_code=404, detail="Swarm run not found")
 
+    def _require_workspace_swarm_write_access(request: Request) -> None:
+        """Preserve Viewer access to reports while preventing workload mutations."""
+        context = _commercial_swarm_context(request)
+        if context is not None and context[1].role == "viewer":
+            raise HTTPException(status_code=403, detail="Viewer role is read-only")
+
     def _bind_workspace_swarm_run(request: Request, runtime: Any, run: Any) -> None:
         context = _commercial_swarm_context(request)
         if context is None:
@@ -286,7 +292,7 @@ def register_swarm_routes(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    @app.post("/swarm/runs", dependencies=[Depends(require_auth)])
+    @app.post("/swarm/runs", dependencies=[Depends(require_auth), Depends(_require_workspace_swarm_write_access)])
     async def create_swarm_run(payload: dict, http_request: Request):
         """Start a swarm run: body must include preset_name and user_vars."""
         runtime = _get_swarm_runtime()
@@ -404,7 +410,7 @@ def register_swarm_routes(
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
-    @app.post("/swarm/runs/{run_id}/cancel", dependencies=[Depends(require_auth), Depends(_require_workspace_swarm_run_access)])
+    @app.post("/swarm/runs/{run_id}/cancel", dependencies=[Depends(require_auth), Depends(_require_workspace_swarm_run_access), Depends(_require_workspace_swarm_write_access)])
     async def cancel_swarm_run(run_id: str):
         """Cancel an active swarm run."""
         _host_validate_path_param(run_id, "run_id")
@@ -414,7 +420,7 @@ def register_swarm_routes(
             raise HTTPException(status_code=404, detail=f"No active run {run_id}")
         return {"status": "cancelled"}
 
-    @app.post("/swarm/runs/{run_id}/retry", dependencies=[Depends(require_auth), Depends(_require_workspace_swarm_run_access)])
+    @app.post("/swarm/runs/{run_id}/retry", dependencies=[Depends(require_auth), Depends(_require_workspace_swarm_run_access), Depends(_require_workspace_swarm_write_access)])
     async def retry_swarm_run(run_id: str, http_request: Request):
         """Retry a failed, stale, or cancelled swarm run.
 
