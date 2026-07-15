@@ -694,6 +694,7 @@
       "postgres_vacuum": "清理并分析 PostgreSQL"
     },
     "unavailable": "不可用",
+    "retry": "重试",
     "cancel": "取消",
     "close": "关闭",
     "confirm": "执行操作",

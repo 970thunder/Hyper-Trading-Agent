@@ -605,6 +605,22 @@ class PostgresKnowledgeRepository:
             rows = cursor.fetchall()
         return [_row(row) or {} for row in rows]
 
+    def get_platform_ingestion_job(self, job_id: str) -> dict[str, Any] | None:
+        """Load a job's tenant context for a Platform Admin action."""
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, organization_id, knowledge_base_id, COALESCE(document_id, '') AS document_id,
+                       status, progress, error, metadata_json, created_at, updated_at,
+                       COALESCE(started_at::text, '') AS started_at, COALESCE(completed_at::text, '') AS completed_at
+                FROM knowledge_ingestion_jobs
+                WHERE id = %s
+                """,
+                (job_id,),
+            )
+            row = cursor.fetchone()
+        return self._job(row) if row is not None else None
+
     def delete_platform_knowledge_base(self, knowledge_base_id: str) -> dict[str, Any] | None:
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute("SELECT organization_id, name FROM knowledge_bases WHERE id = %s", (knowledge_base_id,))

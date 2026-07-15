@@ -34,6 +34,29 @@ def test_register_rejects_weak_password(tmp_path):
         )
 
 
+def test_cancelled_ingestion_job_keeps_its_terminal_status(tmp_path):
+    store = CommercialStore(tmp_path / "commercial.db")
+    principal, _ = store.register_owner(
+        email="owner@example.com",
+        password="password123",
+        organization_name="Acme Research",
+    )
+    knowledge_base = store.create_knowledge_base(principal, "Research")
+    job = store.create_pending_url_ingestion_job(
+        principal,
+        knowledge_base["id"],
+        url="https://example.com/research",
+        title="Research",
+    )
+
+    cancelled = store.cancel_ingestion_job(principal, knowledge_base["id"], job["id"])
+    late_worker_failure = store.fail_ingestion_job(principal, knowledge_base["id"], job["id"], "worker was late")
+
+    assert cancelled["status"] == "cancelled"
+    assert late_worker_failure["status"] == "cancelled"
+    assert late_worker_failure["error"] == ""
+
+
 def test_model_provider_hides_raw_key_and_audits(tmp_path):
     store = CommercialStore(tmp_path / "commercial.db")
     principal, _ = store.register_owner(

@@ -86,6 +86,29 @@ def test_worker_run_once_marks_unknown_job_failed(tmp_path: Path, monkeypatch) -
     assert "unsupported runtime job kind" in job["error"]
 
 
+def test_worker_skips_a_cancelled_durable_job(tmp_path: Path, monkeypatch) -> None:
+    redis_client = FakeRedisClient()
+    monkeypatch.setenv("VIBE_TRADING_RUNTIME_JOBS_DB", str(tmp_path / "runtime_jobs.db"))
+    monkeypatch.setenv("HYPER_TRADING_RUNTIME_JOB_BACKEND", "redis-postgres")
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://vibe:secret@postgres:5432/vibe_trading")
+
+    backend = build_runtime_job_backend(redis_client=redis_client)
+    backend.enqueue(
+        kind="noop",
+        source="other",
+        title="Cancelled job",
+        payload={"message": "should not run"},
+        job_id="job_cancelled_1",
+    )
+    DurableRuntimeJobStore().cancel_job("job_cancelled_1")
+
+    result = run_once(redis_client=redis_client)
+
+    assert result == {"status": "cancelled", "job_id": "job_cancelled_1", "kind": "noop"}
+    assert DurableRuntimeJobStore().get_job("job_cancelled_1")["status"] == "cancelled"
+
+
 def test_worker_run_once_ingests_knowledge_url(tmp_path: Path, monkeypatch) -> None:
     redis_client = FakeRedisClient()
     monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_DB", str(tmp_path / "commercial.db"))

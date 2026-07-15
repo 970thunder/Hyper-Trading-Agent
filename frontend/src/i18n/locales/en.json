@@ -706,6 +706,7 @@
       "postgres_vacuum": "Vacuum and analyze PostgreSQL"
     },
     "unavailable": "Unavailable",
+    "retry": "Retry",
     "cancel": "Cancel",
     "close": "Close",
     "confirm": "Run action",

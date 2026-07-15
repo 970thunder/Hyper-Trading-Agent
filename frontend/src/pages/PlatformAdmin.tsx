@@ -214,6 +214,32 @@ export function PlatformAdmin() {
     }
   };
 
+  const retryPlatformIngestionJob = async (job: PlatformIngestionJob) => {
+    setActionId(`job-retry-${job.id}`);
+    setError("");
+    try {
+      await api.retryPlatformIngestionJob(job.id);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t("platformAdmin.actionError"));
+    } finally {
+      setActionId("");
+    }
+  };
+
+  const cancelPlatformIngestionJob = async (job: PlatformIngestionJob) => {
+    setActionId(`job-cancel-${job.id}`);
+    setError("");
+    try {
+      await api.cancelPlatformIngestionJob(job.id);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t("platformAdmin.actionError"));
+    } finally {
+      setActionId("");
+    }
+  };
+
   const maintenanceLabel = (action: PlatformMaintenanceAction) => t(`platformAdmin.maintenance.${action}`);
   const maintenanceActions: PlatformMaintenanceAction[] = operations.database.engine === "postgresql"
     ? ["expire_sessions", "postgres_analyze", "postgres_vacuum"]
@@ -288,7 +314,7 @@ export function PlatformAdmin() {
 
         <TabPanel value="knowledge" className="mt-5"><section className="surface-panel overflow-hidden"><TableHeader title={t("platformAdmin.knowledgeTitle")} count={knowledgeBases.length} /><div className="overflow-x-auto"><table className="w-full min-w-[820px] text-sm"><thead><tr>{["knowledgeBase", "organization", "documents", "chunks", "jobs", "actions"].map((key) => <th key={key} className="border-b border-border px-4 py-3 text-start text-xs font-medium text-ink-muted">{t(`platformAdmin.columns.${key}`)}</th>)}</tr></thead><tbody>{knowledgeBases.map((knowledgeBase) => <tr key={knowledgeBase.id} className="border-b border-border/70 last:border-0 hover:bg-surface-2/70"><td className="px-4 py-3"><div className="font-medium text-ink-strong">{knowledgeBase.name}</div><div className="max-w-[270px] truncate text-xs text-ink-muted">{knowledgeBase.description || "-"}</div></td><td className="px-4 py-3 text-ink-muted">{knowledgeBase.organization_name}</td><td className="px-4 py-3 text-ink-muted">{knowledgeBase.document_count}</td><td className="px-4 py-3 text-ink-muted">{knowledgeBase.chunk_count}</td><td className="px-4 py-3"><StatusIndicator label={t("platformAdmin.failedJobs", { count: knowledgeBase.failed_job_count || 0 })} tone={knowledgeBase.failed_job_count ? "danger" : "success"} /></td><td className="px-4 py-3"><Button size="sm" variant="ghost" loading={actionId === `knowledge-${knowledgeBase.id}`} onClick={() => void removeKnowledgeBase(knowledgeBase)} leftIcon={<Trash2 className="h-3.5 w-3.5" />}>{t("platformAdmin.delete")}</Button></td></tr>)}</tbody></table></div></section></TabPanel>
 
-        <TabPanel value="jobs" className="mt-5"><section className="surface-panel overflow-hidden"><TableHeader title={t("platformAdmin.jobsTitle")} count={jobs.length} /><div className="overflow-x-auto"><table className="w-full min-w-[840px] text-sm"><thead><tr>{["job", "organization", "knowledgeBase", "status", "progress", "updated"].map((key) => <th key={key} className="border-b border-border px-4 py-3 text-start text-xs font-medium text-ink-muted">{t(`platformAdmin.columns.${key}`)}</th>)}</tr></thead><tbody>{jobs.map((job) => <tr key={job.id} className="border-b border-border/70 last:border-0 hover:bg-surface-2/70"><td className="px-4 py-3"><div className="font-medium text-ink-strong">{job.document_title || job.id}</div>{job.error ? <div className="max-w-[260px] truncate text-xs text-danger">{job.error}</div> : null}</td><td className="px-4 py-3 text-ink-muted">{job.organization_name || "-"}</td><td className="px-4 py-3 text-ink-muted">{job.knowledge_base_name || "-"}</td><td className="px-4 py-3"><StatusIndicator label={job.status} tone={statusTone(job.status)} /></td><td className="px-4 py-3"><div className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-3"><div className="h-full bg-primary transition-[width] duration-base" style={{ width: `${Math.max(0, Math.min(100, job.progress))}%` }} /></div><span className="mt-1 block text-xs text-ink-muted">{job.progress}%</span></td><td className="px-4 py-3 text-xs text-ink-muted">{date(job.updated_at)}</td></tr>)}</tbody></table></div></section></TabPanel>
+        <TabPanel value="jobs" className="mt-5"><section className="surface-panel overflow-hidden"><TableHeader title={t("platformAdmin.jobsTitle")} count={jobs.length} /><div className="overflow-x-auto"><table className="w-full min-w-[960px] text-sm"><thead><tr>{["job", "organization", "knowledgeBase", "status", "progress", "updated", "actions"].map((key) => <th key={key} className="border-b border-border px-4 py-3 text-start text-xs font-medium text-ink-muted">{t(`platformAdmin.columns.${key}`)}</th>)}</tr></thead><tbody>{jobs.map((job) => <tr key={job.id} className="border-b border-border/70 last:border-0 hover:bg-surface-2/70"><td className="px-4 py-3"><div className="font-medium text-ink-strong">{job.document_title || job.id}</div>{job.error ? <div className="max-w-[260px] truncate text-xs text-danger">{job.error}</div> : null}</td><td className="px-4 py-3 text-ink-muted">{job.organization_name || "-"}</td><td className="px-4 py-3 text-ink-muted">{job.knowledge_base_name || "-"}</td><td className="px-4 py-3"><StatusIndicator label={job.status} tone={statusTone(job.status)} /></td><td className="px-4 py-3"><div className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-3"><div className="h-full bg-primary transition-[width] duration-base" style={{ width: `${Math.max(0, Math.min(100, job.progress))}%` }} /></div><span className="mt-1 block text-xs text-ink-muted">{job.progress}%</span></td><td className="px-4 py-3 text-xs text-ink-muted">{date(job.updated_at)}</td><td className="px-4 py-3"><div className="flex gap-2">{job.status === "failed" ? <Button size="sm" variant="secondary" loading={actionId === `job-retry-${job.id}`} onClick={() => void retryPlatformIngestionJob(job)}>{t("platformAdmin.retry")}</Button> : null}{["pending", "running"].includes(job.status) ? <Button size="sm" variant="ghost" loading={actionId === `job-cancel-${job.id}`} onClick={() => void cancelPlatformIngestionJob(job)}>{t("platformAdmin.cancel")}</Button> : null}</div></td></tr>)}</tbody></table></div></section></TabPanel>
 
         <TabPanel value="runtime" className="mt-5"><PlatformRuntimeJobsTable rows={runtimeJobs} date={date} t={t} statusTone={statusTone} /></TabPanel>
 

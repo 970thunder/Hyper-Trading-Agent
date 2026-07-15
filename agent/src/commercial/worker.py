@@ -85,6 +85,8 @@ def _execute_knowledge_url_ingest(payload: dict[str, Any]) -> dict[str, Any]:
         parsed = json.loads(raw)
         if parsed.get("status") != "ok":
             raise ValueError(str(parsed.get("error") or "failed to read URL"))
+        if ingestion_job_id and str(store.get_ingestion_job(principal, kb_id, ingestion_job_id).get("status") or "") == "cancelled":
+            return {"status": "cancelled", "knowledge_base_id": kb_id, "ingestion_job_id": ingestion_job_id}
         document = store.add_knowledge_document(
             principal,
             kb_id,
@@ -137,6 +139,8 @@ def _execute_knowledge_file_ingest(payload: dict[str, Any]) -> dict[str, Any]:
         text = str(parsed.get("text") or "").strip()
         if not text:
             raise ValueError("document produced no readable text")
+        if ingestion_job_id and str(store.get_ingestion_job(principal, kb_id, ingestion_job_id).get("status") or "") == "cancelled":
+            return {"status": "cancelled", "knowledge_base_id": kb_id, "ingestion_job_id": ingestion_job_id}
         metadata = {key: value for key, value in parsed.items() if key not in {"status", "text"}}
         document = store.add_knowledge_document(
             principal,
@@ -284,8 +288,13 @@ def run_once(*, redis_client: Any | None = None, queue_name: str | None = None) 
         return {"status": "failed", "job_id": "", "kind": kind, "error": "queue payload missing job_id"}
 
     try:
+        current = store.get_job(job_id)
+        if str(current.get("status") or "") == "cancelled":
+            return {"status": "cancelled", "job_id": job_id, "kind": kind}
         store.update_job(job_id, status="running", progress=5, cancelable=True)
         result = _execute_runtime_job(payload)
+        if str(store.get_job(job_id).get("status") or "") == "cancelled":
+            return {"status": "cancelled", "job_id": job_id, "kind": kind}
         store.update_job(
             job_id,
             status="completed",

@@ -3176,6 +3176,11 @@ class CommercialStore:
     ) -> dict[str, Any]:
         self._ensure_kb(principal, kb_id, write=True)
         job = self.get_ingestion_job(principal, kb_id, job_id)
+        if str(job.get("status") or "") == "cancelled":
+            # A worker can observe cancellation between dequeuing and parsing.
+            # Preserve the explicit terminal decision rather than converting it
+            # into a misleading parser failure.
+            return job
         metadata = {**(job.get("metadata") or {}), "stage": "failed"}
         now = utcnow()
         if self._primary_knowledge is not None:
@@ -4146,6 +4151,16 @@ class CommercialStore:
         job = self.get_ingestion_job(principal, kb_id, job_id)
         if str(job.get("status")) not in {"pending", "running"}:
             raise ValueError("only pending or running jobs can be cancelled")
+        runtime_job_id = str((job.get("metadata") or {}).get("runtime_job_id") or "")
+        if runtime_job_id:
+            try:
+                from src.runtime_jobs.store import DurableRuntimeJobStore
+
+                DurableRuntimeJobStore().cancel_job(runtime_job_id)
+            except (KeyError, ValueError):
+                # A completed/failed durable envelope must not prevent the
+                # knowledge lifecycle from retaining its own cancellation.
+                pass
         now = utcnow()
         if self._primary_knowledge is not None:
             if not self._primary_knowledge.update_job(
@@ -4587,6 +4602,28 @@ class CommercialStore:
                 tuple(params),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def get_platform_ingestion_job(self, job_id: str) -> dict[str, Any]:
+        """Resolve a job across tenants for an authorized platform action."""
+        if self._primary_knowledge is not None:
+            item = self._primary_knowledge.get_platform_ingestion_job(job_id)
+            if item is None:
+                raise KeyError(job_id)
+            return item
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, organization_id, knowledge_base_id, COALESCE(document_id, '') AS document_id,
+                       status, progress, error, metadata_json, created_at, updated_at, started_at, completed_at
+                FROM knowledge_ingestion_jobs WHERE id = ?
+                """,
+                (job_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(job_id)
+        item = dict(row)
+        item["metadata"] = _json_object(item.pop("metadata_json", "{}"))
+        return item
 
     def list_platform_audit_logs(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
         if self._primary_governance is not None:

@@ -374,6 +374,35 @@ def test_failed_url_ingestion_can_retry_before_a_document_exists(tmp_path: Path,
     assert queued_envelope["payload"]["ingestion_job_id"] == failed["id"]
 
 
+def test_platform_admin_can_cancel_another_organizations_ingestion_job(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_DB", str(tmp_path / "commercial.db"))
+    monkeypatch.setenv("HYPER_TRADING_PLATFORM_ADMIN_EMAILS", "platform@example.com")
+    platform_client = TestClient(api_server.app, client=("127.0.0.1", 50520))
+    _register_owner(platform_client, email="platform@example.com")
+
+    from src.commercial.store import CommercialStore
+
+    store = CommercialStore(tmp_path / "commercial.db")
+    tenant_principal, _ = store.register_owner(
+        email="tenant-owner@example.com",
+        password=PASSWORD,
+        organization_name="Tenant Organization",
+    )
+    knowledge_base = store.create_knowledge_base(tenant_principal, "Tenant Knowledge")
+    job = store.create_pending_url_ingestion_job(
+        tenant_principal,
+        knowledge_base["id"],
+        url="https://example.com/research",
+        title="Tenant research",
+    )
+
+    response = platform_client.post(f"/platform-admin/ingestion-jobs/{job['id']}/cancel")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+    assert store.get_ingestion_job(tenant_principal, knowledge_base["id"], job["id"])["status"] == "cancelled"
+
+
 def test_swarm_agent_management_writes_commercial_audit_event(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_DB", str(tmp_path / "commercial.db"))
     monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_MODE", "1")

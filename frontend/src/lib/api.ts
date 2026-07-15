@@ -436,6 +436,10 @@ export const api = {
     request<{ status: string; knowledge_base_id: string }>(`/platform-admin/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}`, { method: "DELETE" }),
   listPlatformIngestionJobs: (status?: string) =>
     request<PlatformIngestionJob[]>(`/platform-admin/ingestion-jobs${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  retryPlatformIngestionJob: (jobId: string) =>
+    request<PlatformIngestionJob>(`/platform-admin/ingestion-jobs/${encodeURIComponent(jobId)}/retry`, { method: "POST" }),
+  cancelPlatformIngestionJob: (jobId: string) =>
+    request<PlatformIngestionJob>(`/platform-admin/ingestion-jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" }),
   listPlatformAuditLogs: (query = "") =>
     request<PlatformAuditLog[]>(`/platform-admin/audit-logs${query ? `?query=${encodeURIComponent(query)}` : ""}`),
   getChannelStatus: () => request<ChannelRuntimeStatus>("/channels/status"),

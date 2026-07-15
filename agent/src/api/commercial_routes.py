@@ -340,6 +340,64 @@ def _platform_operations(store: CommercialStore) -> dict[str, Any]:
     }
 
 
+def _retry_ingestion_job(
+    store: CommercialStore,
+    principal: Principal,
+    knowledge_base_id: str,
+    job_id: str,
+) -> tuple[dict[str, Any], bool]:
+    """Retry an ingestion job and report whether work was queued.
+
+    Both organization administrators and platform administrators use this
+    function. The supplied principal remains organization-scoped, so all
+    storage mutations retain their tenant condition while the caller records
+    its own audit event separately.
+    """
+    job = store.get_ingestion_job(principal, knowledge_base_id, job_id)
+    if job.get("document_id"):
+        return store.retry_ingestion_job(principal, knowledge_base_id, job_id), False
+
+    metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
+    source_type = str(metadata.get("source_type") or "")
+    if source_type not in {"url", "file"}:
+        raise ValueError("ingestion source cannot be retried")
+    backend = build_runtime_job_backend(redis_client=_runtime_redis_client())
+    if backend.status().get("configured") != REDIS_POSTGRES_RUNTIME_BACKEND or backend.name != REDIS_POSTGRES_RUNTIME_BACKEND:
+        raise ValueError("background worker is required to retry this ingestion")
+
+    retried = store.reset_ingestion_job_for_retry(principal, knowledge_base_id, job_id)
+    source_value = str(metadata.get("url") if source_type == "url" else metadata.get("path") or "")
+    if not source_value:
+        raise ValueError("ingestion source is missing")
+    runtime_payload = {
+        "principal": principal.__dict__,
+        "knowledge_base_id": knowledge_base_id,
+        "ingestion_job_id": job_id,
+        "title": str(metadata.get("title") or ""),
+        "chunk_size": metadata.get("chunk_size"),
+        "chunk_overlap": metadata.get("chunk_overlap"),
+        "url" if source_type == "url" else "path": source_value,
+    }
+    try:
+        runtime_job = backend.enqueue(
+            kind=f"knowledge_{source_type}_ingest",
+            source="rag",
+            title=f"Knowledge {source_type} retry {metadata.get('title') or source_value}",
+            payload=runtime_payload,
+            metadata={"knowledge_base_id": knowledge_base_id, "ingestion_job_id": job_id},
+        )
+        retried = store.attach_ingestion_runtime_job(
+            principal,
+            knowledge_base_id,
+            job_id,
+            str(runtime_job["job_id"]),
+        )
+    except Exception as exc:
+        store.fail_ingestion_job(principal, knowledge_base_id, job_id, str(exc))
+        raise RuntimeError("failed to queue ingestion retry") from exc
+    return retried, True
+
+
 def _principal_from_cookie(vibe_session: str | None = Cookie(default=None)) -> Principal:
     principal = _store().principal_from_token(vibe_session or "")
     if principal is None:
@@ -942,54 +1000,16 @@ def register_commercial_routes(app: FastAPI) -> None:
     ):
         try:
             store = _store()
-            job = store.get_ingestion_job(principal, knowledge_base_id, job_id)
-            if job.get("document_id"):
-                return store.retry_ingestion_job(principal, knowledge_base_id, job_id)
-
-            metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
-            source_type = str(metadata.get("source_type") or "")
-            if source_type not in {"url", "file"}:
-                raise ValueError("ingestion source cannot be retried")
-            backend = build_runtime_job_backend(redis_client=_runtime_redis_client())
-            if backend.status().get("configured") != REDIS_POSTGRES_RUNTIME_BACKEND or backend.name != REDIS_POSTGRES_RUNTIME_BACKEND:
-                raise ValueError("background worker is required to retry this ingestion")
-
-            retried = store.reset_ingestion_job_for_retry(principal, knowledge_base_id, job_id)
-            source_value = str(metadata.get("url") if source_type == "url" else metadata.get("path") or "")
-            if not source_value:
-                raise ValueError("ingestion source is missing")
-            runtime_payload = {
-                "principal": principal.__dict__,
-                "knowledge_base_id": knowledge_base_id,
-                "ingestion_job_id": job_id,
-                "title": str(metadata.get("title") or ""),
-                "chunk_size": metadata.get("chunk_size"),
-                "chunk_overlap": metadata.get("chunk_overlap"),
-                "url" if source_type == "url" else "path": source_value,
-            }
-            try:
-                runtime_job = backend.enqueue(
-                    kind=f"knowledge_{source_type}_ingest",
-                    source="rag",
-                    title=f"Knowledge {source_type} retry {metadata.get('title') or source_value}",
-                    payload=runtime_payload,
-                    metadata={"knowledge_base_id": knowledge_base_id, "ingestion_job_id": job_id},
-                )
-                retried = store.attach_ingestion_runtime_job(
-                    principal,
-                    knowledge_base_id,
-                    job_id,
-                    str(runtime_job["job_id"]),
-                )
-            except Exception as exc:
-                store.fail_ingestion_job(principal, knowledge_base_id, job_id, str(exc))
-                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="failed to queue ingestion retry") from exc
-            response.status_code = status.HTTP_202_ACCEPTED
+            retried, queued = _retry_ingestion_job(store, principal, knowledge_base_id, job_id)
+            if queued:
+                response.status_code = status.HTTP_202_ACCEPTED
             return retried
         except KeyError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ingestion job not found") from exc
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
     @app.post("/knowledge-bases/{knowledge_base_id}/ingestion-jobs/{job_id}/cancel")
     async def cancel_ingestion_job(
@@ -1345,6 +1365,63 @@ def register_commercial_routes(app: FastAPI) -> None:
         principal: Principal = Depends(_require_platform_admin),
     ):
         return _store().list_platform_ingestion_jobs(job_status=status_filter, limit=limit)
+
+    @app.post("/platform-admin/ingestion-jobs/{job_id}/retry")
+    async def retry_platform_ingestion_job(
+        job_id: str,
+        response: Response,
+        principal: Principal = Depends(_require_platform_admin),
+    ):
+        store = _store()
+        try:
+            job = store.get_platform_ingestion_job(job_id)
+            target_principal = Principal(
+                user_id=principal.user_id,
+                organization_id=str(job["organization_id"]),
+                email=principal.email,
+                role="owner",
+                is_platform_admin=True,
+            )
+            retried, queued = _retry_ingestion_job(store, target_principal, str(job["knowledge_base_id"]), job_id)
+            store.audit(principal, "platform.knowledge_ingestion.retry", "knowledge_ingestion_job", job_id, {
+                "organization_id": target_principal.organization_id,
+                "knowledge_base_id": str(job["knowledge_base_id"]),
+            })
+            if queued:
+                response.status_code = status.HTTP_202_ACCEPTED
+            return retried
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ingestion job not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    @app.post("/platform-admin/ingestion-jobs/{job_id}/cancel")
+    async def cancel_platform_ingestion_job(
+        job_id: str,
+        principal: Principal = Depends(_require_platform_admin),
+    ):
+        store = _store()
+        try:
+            job = store.get_platform_ingestion_job(job_id)
+            target_principal = Principal(
+                user_id=principal.user_id,
+                organization_id=str(job["organization_id"]),
+                email=principal.email,
+                role="owner",
+                is_platform_admin=True,
+            )
+            cancelled = store.cancel_ingestion_job(target_principal, str(job["knowledge_base_id"]), job_id)
+            store.audit(principal, "platform.knowledge_ingestion.cancel", "knowledge_ingestion_job", job_id, {
+                "organization_id": target_principal.organization_id,
+                "knowledge_base_id": str(job["knowledge_base_id"]),
+            })
+            return cancelled
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ingestion job not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     @app.get("/platform-admin/audit-logs")
     async def platform_audit_logs(
