@@ -66,6 +66,7 @@ def register_system_routes(
 
     _security = host._security
     _require_shutdown_authorization = host._require_shutdown_authorization
+    _require_commercial_writer_or_auth = host.require_commercial_writer_or_auth
     _require_platform_admin_or_auth = host.require_platform_admin_or_auth
     _app_version = app_version if app_version is not None else host.APP_VERSION
 
@@ -154,7 +155,7 @@ def register_system_routes(
             lines.append("vibe_trading_commercial_tool_call_errors 0")
         return "\n".join(lines) + "\n"
 
-    @app.get("/correlation")
+    @app.get("/correlation", dependencies=[Depends(_require_commercial_writer_or_auth)])
     async def get_correlation_matrix(
         codes: str = Query(..., description="Comma-separated asset codes, e.g. BTC-USDT,ETH-USDT,SPY"),
         days: int = Query(90, description="Lookback window in days", ge=7, le=365),
@@ -183,7 +184,7 @@ def register_system_routes(
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Correlation computation failed: {exc}")
 
-    @app.post("/system/shutdown")
+    @app.post("/system/shutdown", dependencies=[Depends(_require_platform_admin_or_auth)])
     async def shutdown_local_api(
         background_tasks: BackgroundTasks,
         request: Request,

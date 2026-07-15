@@ -201,6 +201,10 @@ def test_commercial_governance_routes_require_admin_even_from_loopback(tmp_path:
     assert member_client.get("/sessions").status_code == 200
     assert member_client.get("/settings/llm").status_code == 403
     assert member_client.put("/settings/llm", json={"provider": "siliconflow"}).status_code == 403
+    assert viewer_client.get(
+        "/correlation?codes=BTC-USDT,ETH-USDT",
+        headers={"accept": "application/json"},
+    ).status_code == 403
 
     # Admin requests pass the role guard and reach the underlying resource lookup.
     assert admin_client.post("/swarm/presets/missing/agents", json={"id": "allowed"}).status_code == 404
@@ -230,6 +234,7 @@ def test_commercial_mode_reserves_process_wide_legacy_resources_for_platform_adm
     assert platform_client.get("/live/status").status_code == 200
     assert platform_client.get("/metrics").status_code == 200
     assert api_client.get("/metrics", headers={"Authorization": "Bearer platform-operator-key"}).status_code == 200
+    assert owner_client.post("/system/shutdown").status_code == 403
 
 
 def test_commercial_mode_blocks_anonymous_self_registration(tmp_path: Path, monkeypatch) -> None:

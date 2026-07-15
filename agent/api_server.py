@@ -809,6 +809,22 @@ async def require_commercial_user_or_auth(
     return None
 
 
+async def require_commercial_writer_or_auth(
+    request: Request,
+    cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
+):
+    """Require a commercial role that may start compute or mutate workspace state.
+
+    Viewers can inspect reports and other read-only organization resources, but
+    cannot initiate data fetches, backtests, or other workload-bearing actions.
+    Local single-user deployments retain the existing API-key behavior.
+    """
+    principal = await require_commercial_user_or_auth(request, cred)
+    if principal is not None and principal.role == "viewer":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Viewer role is read-only")
+    return principal
+
+
 async def require_commercial_admin_or_auth(
     request: Request,
     cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
@@ -898,7 +914,7 @@ async def require_settings_write_auth(
 def _ensure_agent_env_file() -> Path:
     """Ensure the project-local agent/.env exists."""
     if not ENV_PATH.exists():
-        ENV_PATH.write_text("# Created by Vibe-Trading Web UI settings.\n", encoding="utf-8")
+        ENV_PATH.write_text("# Created by Hyper-Trading-Agent Web UI settings.\n", encoding="utf-8")
     return ENV_PATH
 
 

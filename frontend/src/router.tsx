@@ -77,7 +77,7 @@ export const router = createBrowserRouter([
       { path: "/settings", element: requireRole(Settings) },
       { path: "/runs/:runId", element: requireRole(RunDetail) },
       { path: "/compare", element: requireRole(Compare) },
-      { path: "/correlation", element: requireRole(Correlation) },
+      { path: "/correlation", element: requireRole(Correlation, ["owner", "admin", "member"]) },
       { path: "/alpha-zoo", element: requireRole(AlphaZoo) },
       { path: "/alpha-zoo/bench", element: requireRole(AlphaZoo) },
       { path: "/alpha-zoo/compare", element: requireRole(AlphaZoo) },

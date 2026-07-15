@@ -171,7 +171,7 @@ export function Layout() {
         items: [
           { to: "/knowledge", icon: Database, label: t("settings.nav.knowledge"), roles: ["owner", "admin", "member", "viewer"] },
           { to: "/alpha-zoo", icon: Layers, label: t("layout.alphaZoo") },
-          { to: "/correlation", icon: BarChart3, label: t("layout.correlation") },
+          { to: "/correlation", icon: BarChart3, label: t("layout.correlation"), roles: ["owner", "admin", "member"] },
         ],
       },
       {
