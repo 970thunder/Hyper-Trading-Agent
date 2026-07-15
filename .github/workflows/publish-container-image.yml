@@ -1,0 +1,54 @@
+name: Publish Container Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Tested main commit SHA or main
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMAGE_NAME: ghcr.io/970thunder/hyper-trading-agent
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Verify requested commit belongs to main
+        id: revision
+        run: |
+          git fetch --no-tags origin main
+          commit="$(git rev-parse HEAD)"
+          git merge-base --is-ancestor "$commit" origin/main
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish selected main image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:sha-${{ steps.revision.outputs.commit }}
+            ${{ env.IMAGE_NAME }}:main
+          labels: |
+            org.opencontainers.image.revision=${{ steps.revision.outputs.commit }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

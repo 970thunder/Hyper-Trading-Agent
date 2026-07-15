@@ -47,7 +47,9 @@ ghcr.io/970thunder/hyper-trading-agent:main
 
 自动部署始终使用 `sha-<40 位提交 SHA>`，可精确知道生产运行的是哪个版本，也能回滚。`main` 仅适合首次手工验证或受控更新。
 
-首次将本功能合并到 `main` 后，等待 GitHub Actions 中的 `CI` 成功，确认其 `Publish production image` job 成功，再在 GitHub 仓库的 Packages 页面确认镜像已经出现。
+正常发布时，等待 GitHub Actions 中的 `CI` 成功，确认其 `Publish production image` job 成功，再在 GitHub 仓库的 Packages 页面确认镜像已经出现。
+
+首次部署或需要重建既有 `main` 版本时，可在 GitHub `Actions -> Publish Container Image -> Run workflow` 中输入 `main` 或历史 main 提交 SHA。这个工作流只允许构建属于 `main` 历史的提交，并会发布相同的 SHA 标签和 `main` 标签；它适用于管理员受控的初始化或应急镜像构建，不触发自动生产部署。
 
 ## 4. 在宝塔创建 Docker Compose 项目
 
