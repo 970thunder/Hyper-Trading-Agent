@@ -19,12 +19,28 @@ platform and materially improve research correctness or operator choice.
 
 ## Deferred For Isolated Migration
 
+- `d00834b` Tushare fallbacks for A-share fund-flow, margin, northbound, and
+  Dragon-Tiger data: useful resilience work, but direct adoption would read
+  process-wide credentials. It must first use the organization data-source
+  boundary instead of weakening tenant isolation.
 - Longbridge historical loader and its credentials: valuable for HK/China
   market coverage, but it adds an optional SDK and requires deployment and
   credential UX work.
+- `045d0f9` chart and screenshot vision analysis: useful for research charts,
+  but it must consume the selected organization model runtime and preserve
+  upload access controls before it is exposed as an Agent tool.
 - Strategy Development Manager and artifact-decay monitoring: overlaps with
   Hyper Trading Agent's existing Plan-Execute, RAG, audit, and report domains;
   adapt its governance ideas only after the structured report bundle work.
+
+## Already Covered Or Not Applicable
+
+- `a6fe3fc` Streamable HTTP MCP transport is already supported by
+  `src.tools.mcp` alongside stdio and SSE transports.
+- `8eca49a` dotenv cache invalidation relies on upstream's `EnvConfig` cache.
+  Hyper Trading Agent resolves runtime provider values from the current
+  environment and organization provider record, so importing that cache reset
+  would add a dependency without fixing a local behavior.
 
 ## Integration Rule
 
