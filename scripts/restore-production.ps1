@@ -10,10 +10,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Invoke-Compose {
-    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
-    & docker compose --env-file $EnvFile -f docker-compose.prod.yml @Arguments
+    param([Parameter(Mandatory = $true)][string[]]$ComposeArgs)
+    & docker compose --env-file $EnvFile -f docker-compose.prod.yml @ComposeArgs
     if ($LASTEXITCODE -ne 0) {
-        throw "docker compose failed: $($Arguments -join ' ')"
+        throw "docker compose failed: $($ComposeArgs -join ' ')"
     }
 }
 
@@ -53,10 +53,10 @@ foreach ($volume in $manifest.volumes) {
 }
 
 Write-Host "Stopping application services"
-Invoke-Compose stop api worker
+Invoke-Compose -ComposeArgs @("stop", "api", "worker")
 
 Write-Host "Restoring PostgreSQL"
-Invoke-Compose exec -T postgres psql -v ON_ERROR_STOP=1 -U vibe -d vibe_trading -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+Invoke-Compose -ComposeArgs @("exec", "-T", "postgres", "psql", "-v", "ON_ERROR_STOP=1", "-U", "vibe", "-d", "vibe_trading", "-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
 Get-Content -Raw -LiteralPath $postgresDump | & docker compose --env-file $EnvFile -f docker-compose.prod.yml exec -T postgres psql -v ON_ERROR_STOP=1 -U vibe -d vibe_trading
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to restore PostgreSQL dump"
@@ -76,5 +76,5 @@ foreach ($volume in $manifest.volumes) {
 }
 
 Write-Host "Starting production services"
-Invoke-Compose up -d
+Invoke-Compose -ComposeArgs @("up", "-d")
 Write-Host "Restore completed. Verify the health endpoint, Owner login, RAG retrieval, and historical workspace data."

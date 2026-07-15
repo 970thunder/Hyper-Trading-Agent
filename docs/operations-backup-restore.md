@@ -71,6 +71,23 @@ For MinIO/S3-compatible storage:
 
 Run restores into a clean staging environment first.
 
+Use the repeatable isolated drill script to restore a checksum-validated backup
+without stopping or modifying the production Compose project. It creates a
+separate Docker project and separate volumes, validates restored organization,
+user, and pgvector records, then removes the temporary environment by default:
+
+```powershell
+.\scripts\restore-drill.ps1 -BackupDirectory backups -Timestamp YYYYMMDD-HHMMSS
+```
+
+Pass `-KeepStaging` only when an operator needs to inspect the restored volume
+contents. Never set `-StagingProjectName` to `hyper-trading-agent`.
+
+The drill was last verified against a schema-version 2 backup on 2026-07-15:
+the restored database contained the expected organization and user records,
+the `vector` extension was available, and all temporary containers and volumes
+were removed after verification.
+
 1. Stop application services:
 
 ```powershell

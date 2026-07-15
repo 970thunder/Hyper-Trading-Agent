@@ -8,10 +8,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Invoke-Compose {
-    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
-    & docker compose --env-file $EnvFile -f docker-compose.prod.yml @Arguments
+    param([Parameter(Mandatory = $true)][string[]]$ComposeArgs)
+    & docker compose --env-file $EnvFile -f docker-compose.prod.yml @ComposeArgs
     if ($LASTEXITCODE -ne 0) {
-        throw "docker compose failed: $($Arguments -join ' ')"
+        throw "docker compose failed: $($ComposeArgs -join ' ')"
     }
 }
 
@@ -25,7 +25,8 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $postgresDump = Join-Path $backupPath "postgres-$stamp.sql"
 
 Write-Host "Backing up PostgreSQL to $postgresDump"
-Invoke-Compose exec -T postgres pg_dump -U vibe vibe_trading | Set-Content -Encoding utf8 -Path $postgresDump
+Invoke-Compose -ComposeArgs @("exec", "-T", "postgres", "pg_dump", "-U", "vibe", "vibe_trading") |
+    Set-Content -Encoding utf8 -Path $postgresDump
 if (-not (Test-Path -LiteralPath $postgresDump) -or (Get-Item -LiteralPath $postgresDump).Length -eq 0) {
     throw "PostgreSQL backup is empty"
 }
