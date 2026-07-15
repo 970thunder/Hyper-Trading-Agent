@@ -575,6 +575,31 @@ def test_loopback_shutdown_rejects_cross_site_browser_request(
     assert called == []
 
 
+def test_public_host_rejects_loopback_origin_for_unsafe_browser_request(
+) -> None:
+    """A public deployment must not trust a localhost page as same-site."""
+    from starlette.requests import Request
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "scheme": "https",
+            "path": "/organizations/switch",
+            "query_string": b"",
+            "headers": [
+                (b"host", b"agent.example.com"),
+                (b"origin", b"http://127.0.0.1:5899"),
+            ],
+            "client": ("203.0.113.10", 50123),
+            "server": ("agent.example.com", 443),
+        }
+    )
+
+    with pytest.raises(api_server.HTTPException, match="Cross-site request denied"):
+        api_server._reject_cross_site_browser_request(request)
+
+
 def test_loopback_shutdown_accepts_valid_bearer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

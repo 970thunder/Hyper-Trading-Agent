@@ -574,7 +574,15 @@ def _reject_cross_site_browser_request(request: Request) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-site request denied")
 
     origin = request.headers.get("origin")
-    if origin and not (_is_loopback_origin(origin) or _origin_matches_request_host(origin, request)):
+    request_is_loopback = _is_allowed_loopback_host(request.headers.get("host", ""))
+    origin_is_permitted = _origin_matches_request_host(origin, request) if origin else True
+
+    # A separate local frontend port (for example Vite on :5899) is valid only
+    # when the API itself is bound to a loopback host. Treating every
+    # localhost Origin as trusted for a public domain would let a local web
+    # server bypass this CSRF boundary in deployments that opt into
+    # SameSite=None cookies.
+    if origin and not origin_is_permitted and not (request_is_loopback and _is_loopback_origin(origin)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-site request denied")
 
 
