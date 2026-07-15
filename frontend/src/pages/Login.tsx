@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2, LogIn, ShieldCheck } from "lucide-react";
@@ -12,6 +12,14 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  const destination = useCallback(() => {
+    const requestedPath = (location.state as { from?: string } | null)?.from;
+    return requestedPath?.startsWith("/") && !requestedPath.startsWith("/login")
+      ? requestedPath
+      : "/agent";
+  }, [location.state]);
 
   useEffect(() => {
     document.body.classList.add("auth-active");
@@ -20,6 +28,20 @@ export function Login() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    api.getCommercialMe()
+      .then(() => {
+        if (!cancelled) navigate(destination(), { replace: true });
+      })
+      .catch(() => {
+        if (!cancelled) setCheckingSession(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [destination, navigate]);
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (loading) return;
@@ -27,17 +49,24 @@ export function Login() {
     setError("");
     try {
       await api.loginCommercial({ email: email.trim(), password });
-      const requestedPath = (location.state as { from?: string } | null)?.from;
-      const destination = requestedPath?.startsWith("/") && !requestedPath.startsWith("/login")
-        ? requestedPath
-        : "/agent";
-      navigate(destination, { replace: true });
+      navigate(destination(), { replace: true });
       window.location.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("login.failed"));
       setLoading(false);
     }
   };
+
+  if (checkingSession) {
+    return (
+      <main className="auth-shell text-ink-strong" data-auth-screen>
+        <div className="auth-gate-shell" role="status" aria-live="polite">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" />
+          <span>{t("settings.loading")}</span>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="auth-shell text-ink-strong" data-auth-screen>
