@@ -957,6 +957,8 @@ export interface CommercialKnowledgeBaseConfig {
   chunk_overlap: number;
   retrieval_mode: CommercialKnowledgeRetrievalMode;
   top_k: number;
+  rerank_enabled?: boolean;
+  rerank_candidate_limit?: number;
 }
 
 export interface CommercialKnowledgeBaseAccess {

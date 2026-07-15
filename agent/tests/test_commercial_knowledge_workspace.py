@@ -14,6 +14,39 @@ from src.commercial.store import CommercialStore, Principal
 PASSWORD = "password123"
 
 
+def test_local_reranker_promotes_title_and_content_match() -> None:
+    rows = [
+        {
+            "chunk_id": "generic",
+            "title": "Portfolio overview",
+            "text": "A broad overview of portfolio construction.",
+            "score": 1.0,
+        },
+        {
+            "chunk_id": "targeted",
+            "title": "Drawdown control policy",
+            "text": "Drawdown control thresholds and escalation procedures.",
+            "score": 0.5,
+        },
+    ]
+
+    reranked = commercial_store_module._rerank_retrieval_rows(
+        "drawdown control",
+        rows,
+        enabled=True,
+        limit=2,
+    )
+    disabled = commercial_store_module._rerank_retrieval_rows(
+        "drawdown control",
+        rows,
+        enabled=False,
+        limit=2,
+    )
+
+    assert reranked[0]["chunk_id"] == "targeted"
+    assert disabled[0]["chunk_id"] == "generic"
+
+
 def test_knowledge_base_configuration_drives_chunking_and_chunk_inspection(tmp_path: Path) -> None:
     store = CommercialStore(tmp_path / "commercial.db")
     owner, _ = store.register_owner(
@@ -29,6 +62,8 @@ def test_knowledge_base_configuration_drives_chunking_and_chunk_inspection(tmp_p
         "chunk_overlap": 180,
         "retrieval_mode": "hybrid",
         "top_k": 8,
+        "rerank_enabled": False,
+        "rerank_candidate_limit": 24,
     }
     assert knowledge_base["access"]["read_roles"] == ["owner", "admin", "member", "viewer"]
 

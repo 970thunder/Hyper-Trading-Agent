@@ -80,6 +80,26 @@ export function KnowledgeConfiguration({ config, backendStatus, saving, onSave }
               onChange={(event) => setForm((current) => ({ ...current, top_k: Number(event.target.value) }))}
             />
           </Field>
+          <Field label={t("knowledgeWorkspace.rerankEnabled")} hint={t("knowledgeWorkspace.rerankEnabledHint")}>
+            <label className="flex h-9 items-center gap-2 rounded-md border border-border bg-surface-1 px-3 text-sm text-ink-strong">
+              <input
+                type="checkbox"
+                checked={Boolean(form.rerank_enabled)}
+                onChange={(event) => setForm((current) => ({ ...current, rerank_enabled: event.target.checked }))}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
+              />
+              <span>{t("knowledgeWorkspace.rerankEnabled")}</span>
+            </label>
+          </Field>
+          <Field label={t("knowledgeWorkspace.rerankCandidates")} hint={t("knowledgeWorkspace.rerankCandidatesHint")}>
+            <NumberInput
+              min={form.top_k}
+              max={50}
+              disabled={!form.rerank_enabled}
+              value={form.rerank_candidate_limit ?? 24}
+              onChange={(event) => setForm((current) => ({ ...current, rerank_candidate_limit: Number(event.target.value) }))}
+            />
+          </Field>
         </div>
         <div className="flex justify-end border-t border-[hsl(var(--border-subtle))] pt-4">
           <Button type="submit" variant="primary" loading={saving} disabled={overlapInvalid} leftIcon={<Save className="h-4 w-4" />}>

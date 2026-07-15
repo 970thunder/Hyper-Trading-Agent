@@ -84,6 +84,8 @@ class KnowledgeBaseConfigPatch(BaseModel):
     chunk_overlap: int | None = Field(None, ge=0, le=7999)
     retrieval_mode: str | None = None
     top_k: int | None = Field(None, ge=1, le=20)
+    rerank_enabled: bool | None = None
+    rerank_candidate_limit: int | None = Field(None, ge=1, le=50)
 
 
 class KnowledgeBaseAccessPatch(BaseModel):

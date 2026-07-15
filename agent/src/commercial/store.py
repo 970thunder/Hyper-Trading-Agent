@@ -50,6 +50,8 @@ DEFAULT_KNOWLEDGE_CONFIG: dict[str, Any] = {
     "chunk_overlap": 180,
     "retrieval_mode": "hybrid",
     "top_k": 8,
+    "rerank_enabled": False,
+    "rerank_candidate_limit": 24,
 }
 DEFAULT_KNOWLEDGE_ACCESS: dict[str, list[str]] = {
     "read_roles": ["owner", "admin", "member", "viewer"],
@@ -181,12 +183,57 @@ def _normalize_knowledge_config(
     retrieval_mode = str(merged.get("retrieval_mode") or "hybrid").strip().lower()
     if retrieval_mode not in KNOWLEDGE_RETRIEVAL_MODES:
         raise ValueError("retrieval mode must be hybrid, vector, or keyword")
+    raw_rerank_enabled = merged.get("rerank_enabled", False)
+    rerank_enabled = (
+        raw_rerank_enabled.strip().lower() in {"1", "true", "yes", "on"}
+        if isinstance(raw_rerank_enabled, str)
+        else bool(raw_rerank_enabled)
+    )
+    try:
+        rerank_candidate_limit = max(top_k, min(50, int(merged.get("rerank_candidate_limit") or 24)))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("rerank candidate limit must be numeric") from exc
     return {
         "chunk_size": chunk_size,
         "chunk_overlap": chunk_overlap,
         "retrieval_mode": retrieval_mode,
         "top_k": top_k,
+        "rerank_enabled": rerank_enabled,
+        "rerank_candidate_limit": rerank_candidate_limit,
     }
+
+
+def _rerank_retrieval_rows(
+    query: str,
+    rows: list[dict[str, Any]],
+    *,
+    enabled: bool,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Apply a deterministic second-stage relevance score to retrieved rows.
+
+    This lightweight reranker is deliberately local and auditable: it blends
+    the first-stage retrieval score with query-token coverage in the title and
+    chunk text. It is a safe default for private deployments and keeps a clear
+    integration boundary for a hosted cross-encoder reranker later.
+    """
+    ordered = sorted(rows, key=lambda item: float(item.get("score") or 0.0), reverse=True)
+    if not enabled or not ordered:
+        return ordered[:limit]
+    query_tokens = {token.lower() for token in _TOKEN_RE.findall(query) if token.strip()}
+    if not query_tokens:
+        return ordered[:limit]
+    score_ceiling = max(float(item.get("score") or 0.0) for item in ordered) or 1.0
+    ranked: list[dict[str, Any]] = []
+    for item in ordered:
+        text_tokens = {token.lower() for token in _TOKEN_RE.findall(f"{item.get('title') or ''} {item.get('text') or ''}")}
+        title_tokens = {token.lower() for token in _TOKEN_RE.findall(str(item.get("title") or ""))}
+        coverage = len(query_tokens & text_tokens) / len(query_tokens)
+        title_coverage = len(query_tokens & title_tokens) / len(query_tokens)
+        first_stage = max(0.0, float(item.get("score") or 0.0)) / score_ceiling
+        rerank_score = (first_stage * 0.55) + (coverage * 0.35) + (title_coverage * 0.10)
+        ranked.append({**item, "score": rerank_score})
+    return sorted(ranked, key=lambda item: float(item["score"]), reverse=True)[:limit]
 
 
 def _normalize_knowledge_access(
@@ -3823,6 +3870,8 @@ class CommercialStore:
         retrieval_mode = str(knowledge_base["config"].get("retrieval_mode") or "hybrid")
         configured_limit = int(knowledge_base["config"].get("top_k") or 8)
         capped = max(1, min(int(limit if limit is not None else configured_limit), 20))
+        rerank_enabled = bool(knowledge_base["config"].get("rerank_enabled", False))
+        candidate_limit = max(capped, min(50, int(knowledge_base["config"].get("rerank_candidate_limit") or capped * 2)))
         query_embedding: list[float] = []
         query_embedding_source = ""
         pgvector_rows: list[dict[str, Any]] = []
@@ -3834,7 +3883,7 @@ class CommercialStore:
                 knowledge_base_id=kb_id,
                 embedding=query_embedding,
                 embedding_source=query_embedding_source,
-                limit=capped * 2,
+                limit=candidate_limit,
             )
         if self._primary_knowledge is not None:
             scored: dict[str, dict[str, Any]] = {}
@@ -3843,7 +3892,7 @@ class CommercialStore:
                     principal.organization_id,
                     kb_id,
                     query,
-                    capped * 2,
+                    candidate_limit,
                 ):
                     chunk_id = str(row.get("chunk_id") or "")
                     if not chunk_id:
@@ -3874,7 +3923,7 @@ class CommercialStore:
                 item["score"] = float(item["score"]) + max(0.0, float(row.get("score") or 0.0)) * (
                     0.35 if retrieval_mode == "hybrid" else 1.0
                 )
-            rows = sorted(scored.values(), key=lambda item: float(item["score"]), reverse=True)[:capped]
+            rows = _rerank_retrieval_rows(query, list(scored.values()), enabled=rerank_enabled, limit=capped)
             self._primary_knowledge.log_retrieval(
                 retrieval_id=_new_id("ret"),
                 organization_id=principal.organization_id,
@@ -3894,6 +3943,7 @@ class CommercialStore:
                     "result_count": len(rows),
                     "embedding_source": query_embedding_source,
                     "retrieval_mode": retrieval_mode,
+                    "rerank_enabled": rerank_enabled,
                 },
             )
             return [
@@ -3922,7 +3972,7 @@ class CommercialStore:
                         ORDER BY rank
                         LIMIT ?
                         """,
-                        (_fts_query(query), principal.organization_id, kb_id, capped * 2),
+                        (_fts_query(query), principal.organization_id, kb_id, candidate_limit),
                     ).fetchall()
                 except sqlite3.Error:
                     fts_rows = []
@@ -4002,7 +4052,7 @@ class CommercialStore:
                 item["score"] = float(item["score"]) + max(0.0, float(row.get("score") or 0.0)) * (
                     0.35 if retrieval_mode == "hybrid" else 1.0
                 )
-            rows = sorted(scored.values(), key=lambda item: float(item["score"]), reverse=True)[:capped]
+            rows = _rerank_retrieval_rows(query, list(scored.values()), enabled=rerank_enabled, limit=capped)
             conn.execute(
                 "INSERT INTO knowledge_retrieval_logs(id, organization_id, user_id, knowledge_base_id, query, result_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (_new_id("ret"), principal.organization_id, principal.user_id, kb_id, query, len(rows), utcnow()),
@@ -4026,6 +4076,7 @@ class CommercialStore:
                                 "result_count": len(rows),
                                 "embedding_source": query_embedding_source,
                                 "retrieval_mode": retrieval_mode,
+                                "rerank_enabled": rerank_enabled,
                             },
                             ensure_ascii=False,
                         ),
