@@ -550,6 +550,22 @@ class PostgresGovernanceRepository:
             rows = cursor.fetchall()
         return [_row(row) or {} for row in rows]
 
+    def status(self) -> dict[str, int]:
+        """Return global governance counts used by the platform console."""
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    (SELECT count(*) FROM model_providers) AS model_providers,
+                    (SELECT count(*) FROM model_call_usage) AS model_calls,
+                    (SELECT count(*) FROM audit_logs) AS audit_events,
+                    (SELECT count(*) FROM feedback_events) AS feedback_events,
+                    (SELECT count(*) FROM tool_policies) AS tool_policies
+                """
+            )
+            row = _row(cursor.fetchone()) or {}
+        return {key: int(value or 0) for key, value in row.items()}
+
     def list_platform_audit_logs(self, query: str, limit: int) -> list[dict[str, Any]]:
         where = ""
         params: list[Any] = []

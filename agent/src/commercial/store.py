@@ -4140,19 +4140,57 @@ class CommercialStore:
                 """
             ).fetchone()
         payload = {str(key): int(row[key] or 0) for key in row.keys()}
+        if self._primary_identity is not None:
+            payload.update(self._primary_identity.status())
+        if self._primary_governance is not None:
+            payload.update(self._primary_governance.status())
         if self._primary_knowledge is not None:
             payload.update(self._primary_knowledge.status())
         if self._primary_workspace is not None:
             payload.update(self._primary_workspace.status())
+        primary_database = self._primary_identity.database_status() if self._primary_identity is not None else None
         try:
             payload["commercial_db_bytes"] = int(self.path.stat().st_size)
         except OSError:
             payload["commercial_db_bytes"] = 0
         payload["commercial_db_path"] = str(self.path)
+        if primary_database is not None:
+            payload["commercial_db_bytes"] = int(primary_database["database_bytes"])
+            payload["commercial_db_path"] = "postgres-primary"
         return payload
 
     def platform_database_status(self) -> dict[str, Any]:
         """Return non-secret primary and compatibility repository health."""
+        if self._primary_identity is not None:
+            primary = self._primary_identity.database_status()
+            payload: dict[str, Any] = {
+                "engine": "postgresql",
+                "file_bytes": int(primary["database_bytes"]),
+                "page_count": 0,
+                "page_size": 0,
+                "free_pages": 0,
+                "journal_mode": "managed",
+                "table_counts": dict(primary["table_counts"]),
+                "postgres_configured": True,
+                "identity_storage": "postgres-primary",
+                "database_name": primary["database_name"],
+                "server_version": primary["server_version"],
+                "identity_primary_counts": self._primary_identity.status(),
+            }
+            if self._primary_governance is not None:
+                payload["governance_storage"] = "postgres-primary"
+                payload["governance_primary_counts"] = self._primary_governance.status()
+            if self._primary_knowledge is not None:
+                payload["knowledge_storage"] = "postgres-primary"
+                payload["knowledge_primary_counts"] = self._primary_knowledge.status()
+            else:
+                payload["knowledge_storage"] = "sqlite-compatibility"
+            if self._primary_workspace is not None:
+                payload["workspace_storage"] = "postgres-primary"
+                payload["workspace_primary_counts"] = self._primary_workspace.status()
+            else:
+                payload["workspace_storage"] = "sqlite-compatibility"
+            return payload
         with self._connect() as conn:
             page_count = int(conn.execute("PRAGMA page_count").fetchone()[0] or 0)
             page_size = int(conn.execute("PRAGMA page_size").fetchone()[0] or 0)
@@ -4273,6 +4311,8 @@ class CommercialStore:
         return details
 
     def list_platform_users(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        if self._primary_identity is not None:
+            return self._primary_identity.list_platform_users(query=query, limit=limit)
         filters = []
         params: list[Any] = []
         if query.strip():
@@ -4302,6 +4342,8 @@ class CommercialStore:
         return [dict(row) for row in rows]
 
     def list_platform_organizations(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        if self._primary_identity is not None:
+            return self._primary_identity.list_platform_organizations(query=query, limit=limit)
         filters = []
         params: list[Any] = []
         if query.strip():

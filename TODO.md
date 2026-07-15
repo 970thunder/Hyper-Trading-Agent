@@ -58,6 +58,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Add an organization switcher for users with multiple memberships.
 - [x] Add dedicated localized Unauthorized and Forbidden routes.
 - [x] Move commercial identity, organization membership, browser sessions, and platform-admin grants to PostgreSQL primary storage in production Compose.
+- [x] Read platform user, organization, summary, and database-health views from PostgreSQL primary storage in production Compose.
 
 ## P1 Knowledge / RAG Productization
 
@@ -75,7 +76,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Add per-knowledge-base read/write role ACL controls.
 - [x] Add search evaluation with stable source citations and scores.
 - [x] Implement pgvector runtime write/search methods with tenant-scoped dual writes and SQLite fallback.
-- [ ] Migrate knowledge metadata, documents, jobs, chunks, and retrieval logs to PostgreSQL repositories.
+- [x] Migrate knowledge metadata, documents, jobs, chunks, and retrieval logs to PostgreSQL repositories.
 - [ ] Add configurable reranking and RAG evaluation datasets.
 - [ ] Add object-storage lifecycle for original documents.
 

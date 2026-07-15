@@ -319,7 +319,9 @@ class PostgresIdentityRepository:
                 """
                 SELECT
                     (SELECT count(*) FROM organizations) AS organizations,
+                    (SELECT count(*) FROM organizations WHERE is_active = true) AS active_organizations,
                     (SELECT count(*) FROM users) AS users,
+                    (SELECT count(*) FROM users WHERE is_active = true) AS active_users,
                     (SELECT count(*) FROM memberships) AS memberships,
                     (SELECT count(*) FROM auth_sessions) AS auth_sessions,
                     (SELECT count(*) FROM platform_admins) AS platform_admins
@@ -327,3 +329,100 @@ class PostgresIdentityRepository:
             )
             row = _plain_row(cursor.fetchone()) or {}
         return {key: int(value or 0) for key, value in row.items()}
+
+    def database_status(self) -> dict[str, Any]:
+        """Return non-secret PostgreSQL health and core table counts."""
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    current_database() AS database_name,
+                    current_setting('server_version') AS server_version,
+                    pg_database_size(current_database()) AS database_bytes,
+                    (SELECT count(*) FROM users) AS users,
+                    (SELECT count(*) FROM organizations) AS organizations,
+                    (SELECT count(*) FROM knowledge_bases) AS knowledge_bases,
+                    (SELECT count(*) FROM knowledge_documents) AS knowledge_documents,
+                    (SELECT count(*) FROM knowledge_chunks) AS knowledge_chunks,
+                    (SELECT count(*) FROM workspace_artifacts) AS workspace_artifacts,
+                    (SELECT count(*) FROM audit_logs) AS audit_logs
+                """
+            )
+            row = _plain_row(cursor.fetchone()) or {}
+        counts = {
+            key: int(row.get(key) or 0)
+            for key in (
+                "users",
+                "organizations",
+                "knowledge_bases",
+                "knowledge_documents",
+                "knowledge_chunks",
+                "workspace_artifacts",
+                "audit_logs",
+            )
+        }
+        return {
+            "engine": "postgresql",
+            "database_name": str(row.get("database_name") or ""),
+            "server_version": str(row.get("server_version") or ""),
+            "database_bytes": int(row.get("database_bytes") or 0),
+            "table_counts": counts,
+        }
+
+    def list_platform_users(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if query.strip():
+            clauses.append("(u.email ILIKE %s OR u.display_name ILIKE %s)")
+            term = f"%{query.strip()}%"
+            params.extend([term, term])
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(max(1, min(limit, 500)))
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT u.id AS user_id, u.email, u.display_name, u.is_active, u.created_at,
+                       COUNT(DISTINCT m.organization_id) AS organization_count,
+                       COALESCE(string_agg(DISTINCT o.name, ' | '), '') AS organization_names,
+                       EXISTS(SELECT 1 FROM platform_admins pa WHERE pa.user_id = u.id) AS is_platform_admin
+                FROM users u
+                LEFT JOIN memberships m ON m.user_id = u.id
+                LEFT JOIN organizations o ON o.id = m.organization_id
+                {where}
+                GROUP BY u.id, u.email, u.display_name, u.is_active, u.created_at
+                ORDER BY u.created_at DESC
+                LIMIT %s
+                """,
+                tuple(params),
+            )
+            rows = cursor.fetchall()
+        return [_plain_row(row) or {} for row in rows]
+
+    def list_platform_organizations(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if query.strip():
+            clauses.append("o.name ILIKE %s")
+            params.append(f"%{query.strip()}%")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(max(1, min(limit, 500)))
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT o.id, o.name, o.is_active, o.created_at,
+                       COUNT(DISTINCT m.user_id) AS member_count,
+                       COUNT(DISTINCT kb.id) AS knowledge_base_count,
+                       COUNT(DISTINCT mp.id) AS model_provider_count
+                FROM organizations o
+                LEFT JOIN memberships m ON m.organization_id = o.id
+                LEFT JOIN knowledge_bases kb ON kb.organization_id = o.id
+                LEFT JOIN model_providers mp ON mp.organization_id = o.id
+                {where}
+                GROUP BY o.id, o.name, o.is_active, o.created_at
+                ORDER BY o.created_at DESC
+                LIMIT %s
+                """,
+                tuple(params),
+            )
+            rows = cursor.fetchall()
+        return [_plain_row(row) or {} for row in rows]
