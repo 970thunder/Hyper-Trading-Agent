@@ -376,16 +376,21 @@ def _read_document_text(path_value: str) -> tuple[str, str, dict[str, Any]]:
 
 
 def _require_owned_upload(principal: Principal, path_value: str) -> None:
-    """Require browser upload handles to belong to the current organization."""
+    """Keep commercial file ingestion inside the caller's tenant boundary."""
     normalized = path_value.replace("\\", "/").lstrip("./")
     parts = normalized.split("/")
-    # Legacy local imports use uploads/<file>; new commercial browser uploads
-    # always use uploads/<organization_id>/<file> and are tenant-bound.
-    if len(parts) < 3 or parts[0] != "uploads" or not parts[1].startswith("org_"):
-        return
-    if not _store().uploaded_file_belongs_to_organization(principal, normalized):
+    if len(parts) >= 3 and parts[0] == "uploads" and parts[1].startswith("org_"):
+        if _store().uploaded_file_belongs_to_organization(principal, normalized):
+            return
         # Match the resource-not-found behavior used for other tenant records.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="file not found")
+
+    # A commercial user must not turn the server-side path feature into an
+    # oracle for shared uploads, runs, or configured import roots. Platform
+    # administrators retain this controlled support/import capability.
+    if _store().is_platform_admin(principal):
+        return
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="file not found")
 
 
 def register_commercial_routes(app: FastAPI) -> None:

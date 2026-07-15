@@ -995,6 +995,8 @@ export interface CommercialKnowledgeDocumentVectorization {
   progress: number;
   embedded_chunks: number;
   total_chunks: number;
+  backend?: string;
+  reason?: string;
 }
 
 export interface CommercialKnowledgeDocumentDetail extends CommercialKnowledgeDocument {

@@ -16,6 +16,7 @@ import os
 import re
 import secrets
 import sqlite3
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -24,6 +25,7 @@ from typing import Any
 
 from .postgres_identity import PostgresIdentityRepository
 from .postgres_governance import PostgresGovernanceRepository
+from .postgres_knowledge import PostgresKnowledgeRepository
 
 DEFAULT_DB_PATH = Path.home() / ".vibe-trading" / "commercial" / "commercial.db"
 SESSION_TTL_DAYS = 14
@@ -37,6 +39,9 @@ USAGE_POLICY_FIELDS = {
     "monthly_cost_hard_limit",
 }
 EMBEDDING_DIMENSIONS = int(os.getenv("VIBE_TRADING_LOCAL_EMBEDDING_DIMENSIONS", "64"))
+EMBEDDING_FAILURE_BACKOFF_SECONDS = 60.0
+_embedding_provider_retry_after = 0.0
+_embedding_provider_last_error = ""
 _TOKEN_RE = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
 KNOWLEDGE_RETRIEVAL_MODES = {"hybrid", "vector", "keyword"}
 DEFAULT_KNOWLEDGE_CONFIG: dict[str, Any] = {
@@ -397,8 +402,23 @@ def _provider_embedding(text: str) -> tuple[list[float], str]:
 
 
 def _embedding_for_text(text: str) -> tuple[list[float], dict[str, Any]]:
+    global _embedding_provider_retry_after, _embedding_provider_last_error
+    now = time.monotonic()
+    if now < _embedding_provider_retry_after:
+        vector = _local_embedding(text)
+        return vector, {
+            "embedding_source": f"local:hashing-{len(vector)}",
+            "embedding_provider": "local",
+            "embedding_model": f"hashing-{len(vector)}",
+            "embedding_dimensions": len(vector),
+            "embedding_fallback": True,
+            "embedding_error": _embedding_provider_last_error or "embedding provider is temporarily unavailable",
+            "embedding_retry_after_seconds": max(1, int(_embedding_provider_retry_after - now)),
+        }
     try:
         vector, source = _provider_embedding(text)
+        _embedding_provider_retry_after = 0.0
+        _embedding_provider_last_error = ""
         return vector, {
             "embedding_source": source,
             "embedding_provider": source.split(":", 1)[0],
@@ -407,6 +427,8 @@ def _embedding_for_text(text: str) -> tuple[list[float], dict[str, Any]]:
             "embedding_fallback": False,
         }
     except RuntimeError as exc:
+        _embedding_provider_retry_after = time.monotonic() + EMBEDDING_FAILURE_BACKOFF_SECONDS
+        _embedding_provider_last_error = str(exc)
         vector = _local_embedding(text)
         return vector, {
             "embedding_source": f"local:hashing-{len(vector)}",
@@ -462,6 +484,7 @@ class CommercialStore:
         # the SQLite compatibility repository.
         self._primary_identity = None if path is not None else PostgresIdentityRepository.from_environment()
         self._primary_governance = None if path is not None else PostgresGovernanceRepository.from_environment()
+        self._primary_knowledge = None if path is not None else PostgresKnowledgeRepository.from_environment()
         self._init()
         if self._primary_identity is not None:
             self._primary_identity.ensure_available()
@@ -471,6 +494,10 @@ class CommercialStore:
             self._primary_governance.ensure_available()
             if self._primary_governance.needs_initial_sync():
                 self._sync_primary_governance_from_sqlite()
+        if self._primary_knowledge is not None:
+            self._primary_knowledge.ensure_available()
+            if self._primary_knowledge.needs_initial_sync():
+                self._sync_primary_knowledge_from_sqlite()
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.path))
@@ -793,6 +820,12 @@ class CommercialStore:
             return
         with self._connect() as conn:
             self._primary_governance.sync_from_sqlite(conn)
+
+    def _sync_primary_knowledge_from_sqlite(self) -> None:
+        if self._primary_knowledge is None:
+            return
+        with self._connect() as conn:
+            self._primary_knowledge.sync_from_sqlite(conn)
 
     # --- auth / orgs ---
 
@@ -2413,6 +2446,12 @@ class CommercialStore:
     # --- knowledge base ---
 
     def list_knowledge_bases(self, principal: Principal) -> list[dict[str, Any]]:
+        if self._primary_knowledge is not None:
+            items = [
+                _knowledge_base_payload(item)
+                for item in self._primary_knowledge.list_knowledge_bases(principal.organization_id)
+            ]
+            return [item for item in items if principal.role in item["access"]["read_roles"]]
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -2431,6 +2470,18 @@ class CommercialStore:
         kb_id = _new_id("kb")
         config = _normalize_knowledge_config(None)
         access = _normalize_knowledge_access(None)
+        if self._primary_knowledge is not None:
+            item = self._primary_knowledge.create_knowledge_base(
+                knowledge_base_id=kb_id,
+                organization_id=principal.organization_id,
+                name=name.strip() or "Knowledge Base",
+                description=description.strip(),
+                config=config,
+                access=access,
+                now=now,
+            )
+            self.audit(principal, "knowledge_base.create", "knowledge_base", kb_id, {"name": name})
+            return _knowledge_base_payload(item)
         with self._connect() as conn:
             conn.execute(
                 """
@@ -2461,6 +2512,15 @@ class CommercialStore:
         }
 
     def get_knowledge_base(self, principal: Principal, kb_id: str, *, write: bool = False) -> dict[str, Any]:
+        if self._primary_knowledge is not None:
+            row = self._primary_knowledge.get_knowledge_base(principal.organization_id, kb_id)
+            if row is None:
+                raise KeyError(kb_id)
+            item = _knowledge_base_payload(row)
+            allowed_roles = item["access"]["write_roles" if write else "read_roles"]
+            if principal.role not in allowed_roles:
+                raise KeyError(kb_id)
+            return item
         with self._connect() as conn:
             row = conn.execute(
                 """
@@ -2503,6 +2563,25 @@ class CommercialStore:
             base=current["access"],
         )
         now = utcnow()
+        if self._primary_knowledge is not None:
+            if not self._primary_knowledge.update_knowledge_base(
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                name=name,
+                description=description,
+                config=config,
+                access=access,
+                now=now,
+            ):
+                raise KeyError(kb_id)
+            self.audit(
+                principal,
+                "knowledge_base.update",
+                "knowledge_base",
+                kb_id,
+                {"config": config, "access": access},
+            )
+            return self.get_knowledge_base(principal, kb_id)
         with self._connect() as conn:
             conn.execute(
                 """
@@ -2544,6 +2623,22 @@ class CommercialStore:
         ingestion_job_id: str = "",
     ) -> dict[str, Any]:
         from src.knowledge.store import _chunk_text, _normalize_text
+
+        if self._primary_knowledge is not None:
+            return self._add_knowledge_document_primary(
+                principal,
+                kb_id,
+                title=title,
+                source_uri=source_uri,
+                source_type=source_type,
+                text=text,
+                metadata=metadata,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                ingestion_job_id=ingestion_job_id,
+                chunk_text=_chunk_text,
+                normalize_text=_normalize_text,
+            )
 
         knowledge_base = self._ensure_kb(principal, kb_id, write=True)
         config_override: dict[str, Any] = {}
@@ -2744,6 +2839,26 @@ class CommercialStore:
             "chunk_size": ingestion_config["chunk_size"],
             "chunk_overlap": ingestion_config["chunk_overlap"],
         }
+        if self._primary_knowledge is not None:
+            self._primary_knowledge.create_job(
+                job_id=job_id,
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                document_id=None,
+                status="pending",
+                progress=0,
+                error="",
+                metadata=metadata,
+                now=now,
+            )
+            self.audit(
+                principal,
+                "knowledge_url.queue",
+                "knowledge_ingestion_job",
+                job_id,
+                {"knowledge_base_id": kb_id, "url": url, "runtime_job_id": runtime_job_id},
+            )
+            return self.get_ingestion_job(principal, kb_id, job_id)
         with self._connect() as conn:
             conn.execute(
                 """
@@ -2792,6 +2907,26 @@ class CommercialStore:
             "chunk_size": ingestion_config["chunk_size"],
             "chunk_overlap": ingestion_config["chunk_overlap"],
         }
+        if self._primary_knowledge is not None:
+            self._primary_knowledge.create_job(
+                job_id=job_id,
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                document_id=None,
+                status="pending",
+                progress=0,
+                error="",
+                metadata=metadata,
+                now=now,
+            )
+            self.audit(
+                principal,
+                "knowledge_file.queue",
+                "knowledge_ingestion_job",
+                job_id,
+                {"knowledge_base_id": kb_id, "path": path, "runtime_job_id": runtime_job_id},
+            )
+            return self.get_ingestion_job(principal, kb_id, job_id)
         with self._connect() as conn:
             conn.execute(
                 """
@@ -2822,6 +2957,16 @@ class CommercialStore:
         job = self.get_ingestion_job(principal, kb_id, job_id)
         metadata = {**(job.get("metadata") or {}), "runtime_job_id": runtime_job_id}
         now = utcnow()
+        if self._primary_knowledge is not None:
+            if not self._primary_knowledge.update_job(
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                job_id=job_id,
+                metadata=metadata,
+                now=now,
+            ):
+                raise KeyError(job_id)
+            return self.get_ingestion_job(principal, kb_id, job_id)
         with self._connect() as conn:
             conn.execute(
                 "UPDATE knowledge_ingestion_jobs SET metadata_json = ?, updated_at = ? WHERE id = ? AND organization_id = ? AND knowledge_base_id = ?",
@@ -2844,6 +2989,20 @@ class CommercialStore:
             raise ValueError("ingestion job was cancelled")
         metadata = {**(job.get("metadata") or {}), "stage": stage}
         now = utcnow()
+        if self._primary_knowledge is not None:
+            if not self._primary_knowledge.update_job(
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                job_id=job_id,
+                status="running",
+                progress=_clamp_progress(progress),
+                error="",
+                metadata=metadata,
+                now=now,
+                mark_started=True,
+            ):
+                raise KeyError(job_id)
+            return self.get_ingestion_job(principal, kb_id, job_id)
         with self._connect() as conn:
             conn.execute(
                 """
@@ -2875,6 +3034,19 @@ class CommercialStore:
         job = self.get_ingestion_job(principal, kb_id, job_id)
         metadata = {**(job.get("metadata") or {}), "stage": "failed"}
         now = utcnow()
+        if self._primary_knowledge is not None:
+            if not self._primary_knowledge.update_job(
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                job_id=job_id,
+                status="failed",
+                error=error,
+                metadata=metadata,
+                now=now,
+                mark_completed=True,
+            ):
+                raise KeyError(job_id)
+            return self.get_ingestion_job(principal, kb_id, job_id)
         with self._connect() as conn:
             conn.execute(
                 """
@@ -2885,6 +3057,173 @@ class CommercialStore:
                 (error[:2000], json.dumps(metadata, ensure_ascii=False), now, now, job_id, principal.organization_id, kb_id),
             )
         return self.get_ingestion_job(principal, kb_id, job_id)
+
+    def _add_knowledge_document_primary(
+        self,
+        principal: Principal,
+        kb_id: str,
+        *,
+        title: str,
+        source_uri: str,
+        source_type: str,
+        text: str,
+        metadata: dict[str, Any] | None,
+        chunk_size: int | None,
+        chunk_overlap: int | None,
+        ingestion_job_id: str,
+        chunk_text: Any,
+        normalize_text: Any,
+    ) -> dict[str, Any]:
+        """Run the document lifecycle against PostgreSQL without a SQLite side write."""
+        assert self._primary_knowledge is not None
+        knowledge_base = self._ensure_kb(principal, kb_id, write=True)
+        overrides: dict[str, Any] = {}
+        if chunk_size is not None:
+            overrides["chunk_size"] = chunk_size
+        if chunk_overlap is not None:
+            overrides["chunk_overlap"] = chunk_overlap
+        ingestion_config = _normalize_knowledge_config(overrides, base=knowledge_base["config"])
+        existing_job = self.get_ingestion_job(principal, kb_id, ingestion_job_id) if ingestion_job_id else None
+        if existing_job is not None and str(existing_job.get("status") or "") not in {"pending", "running", "failed"}:
+            raise ValueError("ingestion job is not executable")
+
+        document_id = str((existing_job or {}).get("document_id") or "") or _new_id("doc")
+        job_id = str((existing_job or {}).get("id") or "") or _new_id("job")
+        now = utcnow()
+        job_metadata = {
+            **((existing_job or {}).get("metadata") or {}),
+            "stage": "parsing",
+            "source_type": source_type,
+            "chunk_size": ingestion_config["chunk_size"],
+            "chunk_overlap": ingestion_config["chunk_overlap"],
+        }
+        if existing_job is None:
+            self._primary_knowledge.create_job(
+                job_id=job_id,
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                document_id=None,
+                status="running",
+                progress=2,
+                error="",
+                metadata=job_metadata,
+                now=now,
+            )
+        else:
+            self._primary_knowledge.update_job(
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                job_id=job_id,
+                status="running",
+                progress=2,
+                error="",
+                metadata=job_metadata,
+                now=now,
+                mark_started=True,
+            )
+
+        vector_chunks: list[dict[str, Any]] = []
+        try:
+            normalized = normalize_text(text)
+            if not normalized:
+                raise ValueError("document text is empty")
+            chunks = chunk_text(
+                normalized,
+                chunk_chars=ingestion_config["chunk_size"],
+                overlap=ingestion_config["chunk_overlap"],
+            )
+            self._primary_knowledge.update_job(
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                job_id=job_id,
+                status="running",
+                progress=10,
+                error="",
+                metadata={**job_metadata, "stage": "embedding"},
+                now=utcnow(),
+                mark_started=True,
+            )
+            stored_chunks: list[dict[str, Any]] = []
+            total = max(1, len(chunks))
+            for index, chunk in enumerate(chunks):
+                embedding, embedding_metadata = _embedding_for_text(chunk)
+                chunk_metadata = {"source_type": source_type, **embedding_metadata}
+                chunk_id = _new_id("chk")
+                stored_chunks.append({
+                    "id": chunk_id,
+                    "chunk_index": index,
+                    "text": chunk,
+                    "metadata": chunk_metadata,
+                })
+                vector_chunks.append({
+                    "chunk_id": chunk_id,
+                    "title": title,
+                    "source_uri": source_uri,
+                    "text": chunk,
+                    "embedding": embedding,
+                    "embedding_source": str(embedding_metadata.get("embedding_source") or ""),
+                    "metadata": chunk_metadata,
+                })
+                if index == len(chunks) - 1 or index % 4 == 0:
+                    self._primary_knowledge.update_job(
+                        organization_id=principal.organization_id,
+                        knowledge_base_id=kb_id,
+                        job_id=job_id,
+                        progress=10 + int(((index + 1) / total) * 85),
+                        now=utcnow(),
+                    )
+
+            document_metadata = {
+                **(metadata or {}),
+                "chunk_size": ingestion_config["chunk_size"],
+                "chunk_overlap": ingestion_config["chunk_overlap"],
+                "retrieval_mode": ingestion_config["retrieval_mode"],
+            }
+            completed_at = utcnow()
+            self._primary_knowledge.replace_document_contents(
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                document_id=document_id,
+                job_id=job_id,
+                title=title,
+                source_uri=source_uri,
+                source_type=source_type,
+                source_hash=hashlib.sha256(normalized.encode("utf-8")).hexdigest(),
+                document_metadata=document_metadata,
+                chunks=stored_chunks,
+                job_metadata={**job_metadata, "stage": "completed"},
+                now=completed_at,
+            )
+        except Exception as exc:
+            self._primary_knowledge.update_job(
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                job_id=job_id,
+                status="failed",
+                progress=100,
+                error=str(exc),
+                metadata={**job_metadata, "stage": "failed"},
+                now=utcnow(),
+                mark_completed=True,
+            )
+            raise
+
+        vector_storage = self._sync_pgvector_document(principal, kb_id, document_id, vector_chunks)
+        self._primary_knowledge.update_document_metadata(
+            organization_id=principal.organization_id,
+            knowledge_base_id=kb_id,
+            document_id=document_id,
+            metadata={**document_metadata, "vector_storage": vector_storage},
+            now=utcnow(),
+        )
+        self.audit(
+            principal,
+            "knowledge_document.ingest",
+            "knowledge_document",
+            document_id,
+            {"knowledge_base_id": kb_id, "source_type": source_type, "job_id": job_id, "vector_storage": vector_storage},
+        )
+        return self.get_knowledge_document(principal, kb_id, document_id) | {"ingestion_job_id": job_id}
 
     def _replace_document_chunks(
         self,
@@ -2981,6 +3320,42 @@ class CommercialStore:
         ingestion_config = _normalize_knowledge_config(None, base=knowledge_base["config"])
         now = utcnow()
         job_id = _new_id("job")
+        if self._primary_knowledge is not None:
+            source = self._primary_knowledge.document_for_reindex(principal.organization_id, kb_id, doc_id)
+            if source is None:
+                raise KeyError(doc_id)
+            self._primary_knowledge.create_job(
+                job_id=job_id,
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                document_id=doc_id,
+                status="pending",
+                progress=0,
+                error="",
+                metadata={
+                    "stage": "queued",
+                    "source_type": str(source.get("source_type") or "file"),
+                    "chunk_size": ingestion_config["chunk_size"],
+                    "chunk_overlap": ingestion_config["chunk_overlap"],
+                },
+                now=now,
+            )
+            result = self._add_knowledge_document_primary(
+                principal,
+                kb_id,
+                title=str(source.get("title") or ""),
+                source_uri=str(source.get("source_uri") or ""),
+                source_type=str(source.get("source_type") or "file"),
+                text=str(source.get("text") or ""),
+                metadata=source.get("metadata") if isinstance(source.get("metadata"), dict) else {},
+                chunk_size=None,
+                chunk_overlap=None,
+                ingestion_job_id=job_id,
+                chunk_text=_chunk_text,
+                normalize_text=_normalize_text,
+            )
+            self.audit(principal, "knowledge_document.reindex", "knowledge_document", doc_id, {"knowledge_base_id": kb_id, "job_id": job_id})
+            return result
         with self._connect() as conn:
             doc = conn.execute(
                 """
@@ -3099,6 +3474,8 @@ class CommercialStore:
 
     def list_knowledge_documents(self, principal: Principal, kb_id: str) -> list[dict[str, Any]]:
         self._ensure_kb(principal, kb_id)
+        if self._primary_knowledge is not None:
+            return self._primary_knowledge.list_documents(principal.organization_id, kb_id)
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -3149,6 +3526,14 @@ class CommercialStore:
         self.get_knowledge_document(principal, kb_id, doc_id)
         capped_limit = max(1, min(int(limit), 500))
         capped_offset = max(0, int(offset))
+        if self._primary_knowledge is not None:
+            return self._primary_knowledge.list_chunks(
+                principal.organization_id,
+                kb_id,
+                doc_id,
+                capped_limit,
+                capped_offset,
+            )
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -3188,6 +3573,35 @@ class CommercialStore:
         doc_id: str,
     ) -> dict[str, Any]:
         document = self.get_knowledge_document(principal, kb_id, doc_id)
+        if self._primary_knowledge is not None:
+            vector_row = self._primary_knowledge.document_vectorization(principal.organization_id, kb_id, doc_id)
+            history = [
+                job
+                for job in self.list_ingestion_jobs(principal, kb_id, limit=200)
+                if str(job.get("document_id") or "") == doc_id
+            ]
+            total_chunks = int(vector_row.get("total_chunks") or 0)
+            embedded_chunks = int(vector_row.get("embedded_chunks") or 0)
+            storage = document.get("metadata", {}).get("vector_storage") if isinstance(document.get("metadata"), dict) else {}
+            storage = storage if isinstance(storage, dict) else {}
+            written_chunks = max(0, int(storage.get("written") or 0))
+            vector_progress = round((written_chunks / total_chunks) * 100) if total_chunks else 0
+            stored = str(storage.get("status") or "") == "stored"
+            vector_status = "completed" if total_chunks > 0 and stored and written_chunks >= total_chunks else (
+                "degraded" if storage else "pending"
+            )
+            return {
+                **document,
+                "vectorization": {
+                    "status": vector_status,
+                    "progress": vector_progress,
+                    "embedded_chunks": written_chunks if storage else embedded_chunks,
+                    "total_chunks": total_chunks,
+                    "backend": str(storage.get("status") or "pending"),
+                    "reason": str(storage.get("reason") or ""),
+                },
+                "ingestion_history": history,
+            }
         with self._connect() as conn:
             vector_row = conn.execute(
                 """
@@ -3220,6 +3634,18 @@ class CommercialStore:
 
     def delete_knowledge_document(self, principal: Principal, kb_id: str, doc_id: str) -> None:
         self._ensure_kb(principal, kb_id, write=True)
+        if self._primary_knowledge is not None:
+            if not self._primary_knowledge.delete_document(principal.organization_id, kb_id, doc_id):
+                raise KeyError(doc_id)
+            vector_storage = self._delete_pgvector_document(principal, kb_id, doc_id)
+            self.audit(
+                principal,
+                "knowledge_document.delete",
+                "knowledge_document",
+                doc_id,
+                {"knowledge_base_id": kb_id, "vector_storage": vector_storage},
+            )
+            return
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT id FROM knowledge_documents WHERE id = ? AND organization_id = ? AND knowledge_base_id = ?",
@@ -3261,6 +3687,78 @@ class CommercialStore:
                 embedding_source=query_embedding_source,
                 limit=capped * 2,
             )
+        if self._primary_knowledge is not None:
+            scored: dict[str, dict[str, Any]] = {}
+            if retrieval_mode != "vector":
+                for row in self._primary_knowledge.lexical_search(
+                    principal.organization_id,
+                    kb_id,
+                    query,
+                    capped * 2,
+                ):
+                    chunk_id = str(row.get("chunk_id") or "")
+                    if not chunk_id:
+                        continue
+                    scored[chunk_id] = {
+                        "document_id": str(row.get("document_id") or ""),
+                        "chunk_id": chunk_id,
+                        "title": str(row.get("title") or ""),
+                        "source_uri": str(row.get("source_uri") or ""),
+                        "score": max(0.0, float(row.get("score") or 0.0)) * (0.65 if retrieval_mode == "hybrid" else 1.0),
+                        "text": str(row.get("text") or ""),
+                    }
+            for row in pgvector_rows:
+                chunk_id = str(row.get("chunk_id") or "")
+                if not chunk_id:
+                    continue
+                item = scored.setdefault(
+                    chunk_id,
+                    {
+                        "document_id": str(row.get("document_id") or ""),
+                        "chunk_id": chunk_id,
+                        "title": str(row.get("title") or ""),
+                        "source_uri": str(row.get("source_uri") or ""),
+                        "score": 0.0,
+                        "text": str(row.get("text") or ""),
+                    },
+                )
+                item["score"] = float(item["score"]) + max(0.0, float(row.get("score") or 0.0)) * (
+                    0.35 if retrieval_mode == "hybrid" else 1.0
+                )
+            rows = sorted(scored.values(), key=lambda item: float(item["score"]), reverse=True)[:capped]
+            self._primary_knowledge.log_retrieval(
+                retrieval_id=_new_id("ret"),
+                organization_id=principal.organization_id,
+                user_id=principal.user_id,
+                knowledge_base_id=kb_id,
+                query=query,
+                result_count=len(rows),
+                now=utcnow(),
+            )
+            self.audit(
+                principal,
+                "knowledge.search",
+                "knowledge_base",
+                kb_id,
+                {
+                    "query": query[:200],
+                    "result_count": len(rows),
+                    "embedding_source": query_embedding_source,
+                    "retrieval_mode": retrieval_mode,
+                },
+            )
+            return [
+                {
+                    "document_id": row["document_id"],
+                    "chunk_id": row["chunk_id"],
+                    "title": row["title"],
+                    "source_uri": row["source_uri"],
+                    "score": round(float(row["score"]), 6),
+                    "text": row["text"],
+                    "citation": f"{row['title']} ({row['source_uri']})",
+                }
+                for row in rows
+            ]
         with self._connect() as conn:
             fts_rows: list[Any] = []
             if retrieval_mode != "vector":
@@ -3403,6 +3901,11 @@ class CommercialStore:
 
     def get_ingestion_job(self, principal: Principal, kb_id: str, job_id: str) -> dict[str, Any]:
         self._ensure_kb(principal, kb_id)
+        if self._primary_knowledge is not None:
+            item = self._primary_knowledge.get_job(principal.organization_id, kb_id, job_id)
+            if item is None:
+                raise KeyError(job_id)
+            return item
         with self._connect() as conn:
             row = conn.execute(
                 """
@@ -3423,6 +3926,8 @@ class CommercialStore:
 
     def list_ingestion_jobs(self, principal: Principal, kb_id: str, limit: int = 50) -> list[dict[str, Any]]:
         self._ensure_kb(principal, kb_id)
+        if self._primary_knowledge is not None:
+            return self._primary_knowledge.list_jobs(principal.organization_id, kb_id, limit)
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -3459,6 +3964,20 @@ class CommercialStore:
             raise ValueError("only failed jobs can be retried")
         metadata = {**(job.get("metadata") or {}), "stage": "queued", "runtime_job_id": ""}
         now = utcnow()
+        if self._primary_knowledge is not None:
+            if not self._primary_knowledge.update_job(
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                job_id=job_id,
+                status="pending",
+                progress=0,
+                error="",
+                metadata=metadata,
+                now=now,
+            ):
+                raise KeyError(job_id)
+            self.audit(principal, "knowledge_ingestion.retry", "knowledge_ingestion_job", job_id, {"knowledge_base_id": kb_id})
+            return self.get_ingestion_job(principal, kb_id, job_id)
         with self._connect() as conn:
             conn.execute(
                 """
@@ -3484,6 +4003,19 @@ class CommercialStore:
         if str(job.get("status")) not in {"pending", "running"}:
             raise ValueError("only pending or running jobs can be cancelled")
         now = utcnow()
+        if self._primary_knowledge is not None:
+            if not self._primary_knowledge.update_job(
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                job_id=job_id,
+                status="cancelled",
+                progress=_clamp_progress(job.get("progress")),
+                now=now,
+                mark_completed=True,
+            ):
+                raise KeyError(job_id)
+            self.audit(principal, "knowledge_ingestion.cancel", "knowledge_ingestion_job", job_id, {"knowledge_base_id": kb_id})
+            return self.get_ingestion_job(principal, kb_id, job_id)
         with self._connect() as conn:
             conn.execute(
                 "UPDATE knowledge_ingestion_jobs SET status = 'cancelled', progress = ?, completed_at = ?, updated_at = ? WHERE id = ? AND organization_id = ?",
@@ -3519,6 +4051,8 @@ class CommercialStore:
                 """
             ).fetchone()
         payload = {str(key): int(row[key] or 0) for key in row.keys()}
+        if self._primary_knowledge is not None:
+            payload.update(self._primary_knowledge.status())
         try:
             payload["commercial_db_bytes"] = int(self.path.stat().st_size)
         except OSError:
@@ -3560,6 +4094,11 @@ class CommercialStore:
         if self._primary_identity is not None:
             payload["identity_storage"] = "postgres-primary"
             payload["identity_primary_counts"] = self._primary_identity.status()
+        if self._primary_knowledge is not None:
+            payload["knowledge_storage"] = "postgres-primary"
+            payload["knowledge_primary_counts"] = self._primary_knowledge.status()
+        else:
+            payload["knowledge_storage"] = "sqlite-compatibility"
         return payload
 
     def list_platform_workspace_artifacts(
@@ -3754,6 +4293,8 @@ class CommercialStore:
         return items
 
     def list_platform_knowledge_bases(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        if self._primary_knowledge is not None:
+            return self._primary_knowledge.list_platform_knowledge_bases(query, limit)
         filters = []
         params: list[Any] = []
         if query.strip():
@@ -3785,6 +4326,8 @@ class CommercialStore:
         return [dict(row) for row in rows]
 
     def list_platform_ingestion_jobs(self, *, job_status: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        if self._primary_knowledge is not None:
+            return self._primary_knowledge.list_platform_ingestion_jobs(job_status, limit)
         params: list[Any] = []
         where = ""
         if job_status.strip():
@@ -3918,6 +4461,24 @@ class CommercialStore:
         return next((user for user in self.list_platform_users(limit=500) if user["user_id"] == user_id), {})
 
     def delete_platform_knowledge_base(self, actor: Principal, knowledge_base_id: str) -> None:
+        if self._primary_knowledge is not None:
+            result = self._primary_knowledge.delete_platform_knowledge_base(knowledge_base_id)
+            if result is None:
+                raise KeyError(knowledge_base_id)
+            organization_id = str(result.get("organization_id") or "")
+            from src.commercial.vector_store import build_vector_store_adapter
+
+            for document_id in result.get("document_ids") or []:
+                build_vector_store_adapter().delete_document(
+                    organization_id=organization_id,
+                    knowledge_base_id=knowledge_base_id,
+                    document_id=str(document_id),
+                )
+            self.audit(actor, "platform.knowledge_base.delete", "knowledge_base", knowledge_base_id, {
+                "organization_id": organization_id,
+                "name": str(result.get("name") or ""),
+            })
+            return
         with self._connect() as conn:
             row = conn.execute("SELECT organization_id, name FROM knowledge_bases WHERE id = ?", (knowledge_base_id,)).fetchone()
             if row is None:
@@ -3932,6 +4493,7 @@ class CommercialStore:
         })
 
     def commercial_metrics(self) -> dict[str, int]:
+        primary_knowledge_metrics = self._primary_knowledge.status() if self._primary_knowledge is not None else None
         with self._connect() as conn:
             row = conn.execute(
                 """
@@ -3948,4 +4510,10 @@ class CommercialStore:
                     (SELECT COUNT(*) FROM audit_logs WHERE action = 'tool.call' AND metadata_json LIKE '%\"status\": \"error\"%') AS tool_call_errors
                 """
             ).fetchone()
-        return {str(key): int(row[key] or 0) for key in row.keys()}
+        payload = {str(key): int(row[key] or 0) for key in row.keys()}
+        if primary_knowledge_metrics is not None:
+            payload["knowledge_bases"] = primary_knowledge_metrics["knowledge_bases"]
+            payload["ingestion_jobs"] = primary_knowledge_metrics["ingestion_jobs"]
+            payload["ingestion_jobs_failed"] = primary_knowledge_metrics["ingestion_jobs_failed"]
+            payload["retrievals"] = primary_knowledge_metrics["retrievals"]
+        return payload

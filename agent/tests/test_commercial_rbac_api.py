@@ -300,9 +300,21 @@ def test_knowledge_file_ingestion_queues_parsing_and_vectorization_job(tmp_path:
     _register_owner(client, email="file-owner@example.com")
     kb_response = client.post("/knowledge-bases", json={"name": "File KB"})
 
+    from src.commercial.store import CommercialStore
+
+    commercial_store = CommercialStore(tmp_path / "commercial.db")
+    principal = commercial_store.login(email="file-owner@example.com", password=PASSWORD)[0]
+    storage_key = f"uploads/{principal.organization_id}/research.txt"
+    commercial_store.register_uploaded_file(
+        principal,
+        storage_key,
+        original_filename="research.txt",
+        size_bytes=len(source.read_bytes()),
+    )
+
     response = client.post(
         f"/knowledge-bases/{kb_response.json()['id']}/documents",
-        json={"path": "uploads/research.txt", "title": "Research", "chunk_size": 600, "chunk_overlap": 60},
+        json={"path": storage_key, "title": "Research", "chunk_size": 600, "chunk_overlap": 60},
     )
 
     assert response.status_code == 202

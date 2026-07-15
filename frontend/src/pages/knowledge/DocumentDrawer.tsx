@@ -64,11 +64,14 @@ export function DocumentDrawer({ open, onOpenChange, document, detail, chunks, l
                 </p>
               </div>
               <StatusIndicator
-                tone={detail.vectorization.progress === 100 ? "success" : "warning"}
+                tone={detail.vectorization.status === "completed" ? "success" : detail.vectorization.status === "degraded" ? "danger" : "warning"}
                 label={t("knowledgeWorkspace.vectorized", { progress: detail.vectorization.progress })}
               />
             </div>
             <Progress value={detail.vectorization.progress} label={t("knowledgeWorkspace.vectorizationProgress")} />
+            {detail.vectorization.reason ? (
+              <p className="mt-2 break-words text-xs leading-5 text-danger">{detail.vectorization.reason}</p>
+            ) : null}
             {chunks[0] ? (
               <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
                 <span>{t("knowledgeWorkspace.embeddingSource")}: <span className="font-mono text-ink">{chunks[0].embedding_source}</span></span>
