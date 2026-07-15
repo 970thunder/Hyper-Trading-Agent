@@ -5,12 +5,12 @@ This runbook is for private Docker Compose deployments of Hyper Trading Agent.
 The supported scripts are [`scripts/backup-production.ps1`](../scripts/backup-production.ps1)
 and [`scripts/restore-production.ps1`](../scripts/restore-production.ps1). Run
 restores in staging first; the restore script requires `-ConfirmRestore` and
-validates archive checksums before it touches a volume.
+validates PostgreSQL and volume archive checksums before it touches persistent data.
 
 ## What Must Be Backed Up
 
-- PostgreSQL database: pgvector chunks plus the primary commercial identity domain (organizations, users, memberships, browser sessions, and platform-admin grants).
-- Application SQLite volume (`vibe-home`): staged compatibility data for model-provider metadata, RAG lifecycle records, audit logs, usage, and workspace ownership. It also remains the migration source for legacy identity records during upgrades.
+- PostgreSQL database: the primary commercial identity, governance, knowledge lifecycle, workspace ownership, and pgvector records.
+- Application SQLite volume (`vibe-home`): compatibility mirror data plus local application state. Keep it during the staged migration period so rollback and legacy local workflows remain recoverable.
 - Object/file storage: uploaded source files, parsed documents, generated reports, run artifacts, sessions, and exports.
 - `.env.production`: deployment settings and bootstrap secrets. Store this separately in a secure password manager or secret manager.
 - Optional MinIO/S3 bucket: original documents and large artifacts if object storage is enabled.
@@ -36,7 +36,7 @@ Get-Item "backups/postgres-$stamp.sql" | Select-Object Name,Length
 ## Application Volume Backup
 
 The production Compose project is named `hyper-trading-agent`. Back up the
-commercial SQLite database and all application artifacts from named volumes in
+compatibility volume and all application artifacts from named volumes in
 addition to PostgreSQL:
 
 ```powershell
@@ -49,8 +49,8 @@ foreach ($volume in "vibe-home", "vibe-uploads", "vibe-runs", "vibe-sessions") {
 Get-ChildItem "backups/*-$stamp.tgz" | Select-Object Name,Length
 ```
 
-Do not omit `vibe-home`: it contains active commercial compatibility data while
-the remaining PostgreSQL repository migrations are in progress.
+Do not omit `vibe-home`: it contains compatibility data and local application
+state needed for rollback, legacy local workflows, and generated artifacts.
 
 ## File and Artifact Backup
 

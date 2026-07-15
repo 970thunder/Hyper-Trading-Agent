@@ -26,11 +26,21 @@ if (-not (Test-Path -LiteralPath $EnvFile)) {
 
 $backupPath = [System.IO.Path]::GetFullPath($BackupDirectory)
 $manifestPath = Join-Path $backupPath "manifest-$Timestamp.json"
-$postgresDump = Join-Path $backupPath "postgres-$Timestamp.sql"
-if (-not (Test-Path -LiteralPath $manifestPath) -or -not (Test-Path -LiteralPath $postgresDump)) {
-    throw "Backup manifest or PostgreSQL dump is missing for timestamp: $Timestamp"
+if (-not (Test-Path -LiteralPath $manifestPath)) {
+    throw "Backup manifest is missing for timestamp: $Timestamp"
 }
 $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+if ([int]$manifest.schema_version -lt 2 -or $manifest.postgres_dump -is [string]) {
+    throw "Backup manifest is too old to verify the PostgreSQL dump. Create a new backup before restoring."
+}
+$postgresDump = Join-Path $backupPath $manifest.postgres_dump.file
+if (-not (Test-Path -LiteralPath $postgresDump)) {
+    throw "PostgreSQL dump is missing for timestamp: $Timestamp"
+}
+$postgresHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $postgresDump).Hash.ToLowerInvariant()
+if ($postgresHash -ne $manifest.postgres_dump.sha256) {
+    throw "Checksum mismatch: $postgresDump"
+}
 foreach ($volume in $manifest.volumes) {
     $archivePath = Join-Path $backupPath $volume.archive
     if (-not (Test-Path -LiteralPath $archivePath)) {
@@ -46,8 +56,8 @@ Write-Host "Stopping application services"
 Invoke-Compose stop api worker
 
 Write-Host "Restoring PostgreSQL"
-Invoke-Compose exec -T postgres psql -U vibe -d vibe_trading -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-Get-Content -Raw -LiteralPath $postgresDump | & docker compose --env-file $EnvFile -f docker-compose.prod.yml exec -T postgres psql -U vibe -d vibe_trading
+Invoke-Compose exec -T postgres psql -v ON_ERROR_STOP=1 -U vibe -d vibe_trading -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+Get-Content -Raw -LiteralPath $postgresDump | & docker compose --env-file $EnvFile -f docker-compose.prod.yml exec -T postgres psql -v ON_ERROR_STOP=1 -U vibe -d vibe_trading
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to restore PostgreSQL dump"
 }

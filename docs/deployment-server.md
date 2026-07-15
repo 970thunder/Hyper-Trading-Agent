@@ -98,13 +98,12 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec api py
 
 The base production Compose file runs all idempotent SQL files in `migrations/` and initializes the application volumes before API and worker startup. Do not bypass these services with direct `docker run` commands; doing so can leave schema changes unapplied or create root-owned persistent files that the non-root application user cannot update.
 
-Production Compose explicitly selects PostgreSQL as the primary identity and
-authorization repository. Organizations, users, memberships, browser sessions,
-and platform administrator grants are mirrored from a pre-existing application
-volume during the first startup, then authenticated requests read PostgreSQL.
-Keep `vibe-home` mounted and backed up as well: knowledge lifecycle, provider
-configuration, audit, usage, and workspace metadata remain in the staged SQLite
-compatibility repository until their domain migrations are complete.
+Production Compose explicitly selects PostgreSQL as the primary commercial
+repository for identity, governance, knowledge lifecycle, and workspace
+ownership. Existing SQLite compatibility records are copied idempotently during
+first access, then production reads use PostgreSQL. Keep `vibe-home` mounted and
+backed up as a compatibility mirror and local application-state volume during
+the staged migration period.
 
 Verify without exposing operational endpoints publicly:
 

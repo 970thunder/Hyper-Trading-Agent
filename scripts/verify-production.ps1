@@ -56,4 +56,11 @@ if ([int](($migrationCount | Select-Object -Last 1).Trim()) -lt 1) {
     throw "schema_migrations has no applied migration records"
 }
 
+Write-Host "Checking PostgreSQL-primary commercial repositories"
+$repositoryStatus = Invoke-Compose exec -T api python -c "from src.commercial.store import CommercialStore; import json; print(json.dumps(CommercialStore().platform_database_status()))"
+$repositoryJson = ($repositoryStatus | Select-Object -Last 1) | ConvertFrom-Json
+if ($repositoryJson.engine -ne "postgresql" -or $repositoryJson.identity_storage -ne "postgres-primary" -or $repositoryJson.governance_storage -ne "postgres-primary" -or $repositoryJson.knowledge_storage -ne "postgres-primary" -or $repositoryJson.workspace_storage -ne "postgres-primary") {
+    throw "Commercial repository status is not PostgreSQL-primary: $($repositoryJson | ConvertTo-Json -Compress)"
+}
+
 Write-Host "Production readiness checks passed"

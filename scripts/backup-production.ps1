@@ -49,11 +49,16 @@ foreach ($volume in $volumes) {
     $archives += Get-Item -LiteralPath $archivePath
 }
 
+$postgresDumpItem = Get-Item -LiteralPath $postgresDump
 $manifest = [ordered]@{
-    schema_version = 1
+    schema_version = 2
     created_at = (Get-Date).ToUniversalTime().ToString("o")
     project_name = $ProjectName
-    postgres_dump = (Split-Path -Leaf $postgresDump)
+    postgres_dump = [ordered]@{
+        file = $postgresDumpItem.Name
+        bytes = $postgresDumpItem.Length
+        sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $postgresDumpItem.FullName).Hash.ToLowerInvariant()
+    }
     volumes = @($archives | ForEach-Object {
         [ordered]@{
             archive = $_.Name

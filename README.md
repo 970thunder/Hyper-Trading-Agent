@@ -101,20 +101,17 @@ HYPER_TRADING_VECTOR_STORAGE=postgres-pgvector
 HYPER_TRADING_PGVECTOR_DIMENSIONS=1024
 ```
 
-Knowledge chunks remain in the local compatibility repository during the
-metadata migration, while vectors are written to and retrieved from the
-tenant-scoped `rag_vector_chunks` pgvector table. If PostgreSQL, `psycopg`, or
-the configured embedding dimension is unavailable, retrieval falls back to the
-SQLite path without exposing the database error to users.
+Production knowledge metadata, documents, chunks, jobs, retrieval logs, and
+organization-scoped `rag_vector_chunks` live in PostgreSQL. Local development
+retains SQLite FTS and hashing embeddings as an explicit fallback when
+PostgreSQL, `psycopg`, or the configured embedding endpoint is unavailable.
 
 Commercial persistence is migrated by domain. Production Compose uses
-PostgreSQL as the primary source for organizations, users, memberships, browser
-sessions, and platform-administrator grants; an idempotent startup mirror
-migrates existing identity data from the compatibility store. Knowledge
-lifecycle records, audit data, model-provider settings, usage, and workspace
-ownership still use the `vibe-home` SQLite compatibility repository while their
-PostgreSQL repositories are completed. Production vectors are stored in
-PostgreSQL. Back up both persistence layers before every upgrade.
+PostgreSQL as the primary source for identity, governance, knowledge lifecycle,
+workspace ownership, and production vectors. An idempotent startup mirror
+imports legacy SQLite records when a primary domain is first enabled. Keep the
+`vibe-home` compatibility volume in backups during the migration period,
+together with PostgreSQL and object/file storage.
 
 For a single-machine deployment without Redis/Postgres workers, set `HYPER_TRADING_RUNTIME_JOB_BACKEND=sqlite-local`.
 
@@ -180,7 +177,7 @@ Operations runbooks:
 ## Current Limits
 
 - Runtime jobs have a SQLite durable store and a Redis/Postgres queue contract. The worker can consume queued envelopes and update job state, but full Agent run, web crawl, and long-backtest executors still need to be moved onto that worker path.
-- RAG supports local fallback, embedding status, ingestion lifecycle, hybrid-style retrieval surfaces, and pgvector adapter configuration. Full production Postgres repository parity and rerank tuning remain follow-up work.
+- RAG supports PostgreSQL lifecycle storage, pgvector retrieval, local fallback, embedding status, ingestion lifecycle, and hybrid retrieval surfaces. Configurable reranking and formal RAG evaluation datasets remain follow-up work.
 - CSRF protection, enterprise SSO, quota enforcement, and deeper observability hardening are still pending.
 
 ## Verification
@@ -194,7 +191,7 @@ npm run build
 ## Roadmap
 
 1. Move Agent run, web crawl, RAG ingestion, and long backtest executors onto the durable Redis/Postgres worker path.
-2. Complete PostgreSQL repository parity for knowledge lifecycle, audit, usage, model, and workspace data beyond the current compatibility store.
+2. Retire the SQLite compatibility mirror after a completed migration window, rollback drill, and data-retention review.
 3. Add rerank/evaluation loops for RAG and investment report quality.
 4. Add enterprise SSO, quota enforcement, and stronger observability hardening.
 5. Package private deployment runbooks, backup drills, and security review gates for commercial delivery.
