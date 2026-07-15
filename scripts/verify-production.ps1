@@ -22,9 +22,22 @@ Write-Host "Checking Docker service state"
 Invoke-Compose ps
 
 Write-Host "Checking API health"
-$health = Invoke-RestMethod -Uri "$ApiBaseUrl/health" -TimeoutSec 15
-if ($health.status -ne "healthy") {
-    throw "Health endpoint returned an unexpected status: $($health.status)"
+$health = $null
+$lastHealthError = ""
+for ($attempt = 1; $attempt -le 30; $attempt++) {
+    try {
+        $health = Invoke-RestMethod -Uri "$ApiBaseUrl/health" -TimeoutSec 5
+        if ($health.status -eq "healthy") {
+            break
+        }
+        $lastHealthError = "unexpected status: $($health.status)"
+    } catch {
+        $lastHealthError = $_.Exception.Message
+    }
+    Start-Sleep -Seconds 2
+}
+if ($null -eq $health -or $health.status -ne "healthy") {
+    throw "Health endpoint did not become ready: $lastHealthError"
 }
 
 Write-Host "Checking anonymous workspace access is denied"
