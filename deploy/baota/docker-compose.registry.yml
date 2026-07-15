@@ -1,0 +1,160 @@
+name: hyper-trading-agent
+
+# Registry-only production stack for Baota Docker Compose projects. The
+# frontend is served by the API image; Baota Nginx should reverse-proxy the
+# loopback API port and manage TLS certificates.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: vibe_trading
+      POSTGRES_USER: vibe
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - vibe-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vibe -d vibe_trading"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - vibe-redis:/data
+    restart: unless-stopped
+
+  migrations:
+    image: ${HYPER_TRADING_IMAGE:?set HYPER_TRADING_IMAGE}:${HYPER_TRADING_IMAGE_TAG:?set HYPER_TRADING_IMAGE_TAG}
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: vibe_trading
+      PGUSER: vibe
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    entrypoint: ["/bin/sh", "-ec"]
+    command: |
+      psql -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS schema_migrations (filename text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())"
+      for migration in /app/migrations/*.sql; do
+        filename="$$(basename "$$migration")"
+        checksum="$$(sha256sum "$$migration" | awk '{print $$1}')"
+        applied="$$(psql -tAc "SELECT checksum FROM schema_migrations WHERE filename = '$$filename'")"
+        if [ -n "$$applied" ]; then
+          if [ "$$applied" != "$$checksum" ]; then
+            echo "Migration checksum mismatch: $$filename" >&2
+            exit 1
+          fi
+          echo "Migration already applied: $$filename"
+          continue
+        fi
+        echo "Applying $$filename"
+        psql -v ON_ERROR_STOP=1 -f "$$migration"
+        psql -v ON_ERROR_STOP=1 -c "INSERT INTO schema_migrations(filename, checksum) VALUES ('$$filename', '$$checksum')"
+      done
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  volume-init:
+    image: alpine:3.20
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        mkdir -p /data/runs /data/sessions /data/home /data/uploads
+        chown -R 1000:1000 /data
+    volumes:
+      - vibe-runs:/data/runs
+      - vibe-sessions:/data/sessions
+      - vibe-home:/data/home
+      - vibe-uploads:/data/uploads
+    restart: "no"
+
+  api:
+    image: ${HYPER_TRADING_IMAGE:?set HYPER_TRADING_IMAGE}:${HYPER_TRADING_IMAGE_TAG:?set HYPER_TRADING_IMAGE_TAG}
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
+      REDIS_URL: redis://redis:6379/0
+      VIBE_TRADING_COMMERCIAL_MODE: "1"
+      HYPER_TRADING_COMMERCIAL_IDENTITY_STORAGE: postgres-primary
+      HYPER_TRADING_COMMERCIAL_PG_DSN: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
+      HYPER_TRADING_COMMERCIAL_GOVERNANCE_STORAGE: postgres-primary
+      HYPER_TRADING_COMMERCIAL_GOVERNANCE_PG_DSN: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
+      HYPER_TRADING_COMMERCIAL_KNOWLEDGE_STORAGE: postgres-primary
+      HYPER_TRADING_COMMERCIAL_KNOWLEDGE_PG_DSN: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
+      HYPER_TRADING_COMMERCIAL_WORKSPACE_STORAGE: postgres-primary
+      HYPER_TRADING_COMMERCIAL_WORKSPACE_PG_DSN: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
+      HYPER_TRADING_ALLOW_SELF_REGISTRATION: "${HYPER_TRADING_ALLOW_SELF_REGISTRATION:-0}"
+      HYPER_TRADING_VECTOR_STORAGE: "${HYPER_TRADING_VECTOR_STORAGE:-postgres-pgvector}"
+      HYPER_TRADING_PGVECTOR_DSN: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
+      HYPER_TRADING_PGVECTOR_DIMENSIONS: "${HYPER_TRADING_PGVECTOR_DIMENSIONS:-1024}"
+      HYPER_TRADING_RUNTIME_JOB_BACKEND: "${HYPER_TRADING_RUNTIME_JOB_BACKEND:-redis-postgres}"
+      HYPER_TRADING_RUNTIME_JOB_QUEUE: "${HYPER_TRADING_RUNTIME_JOB_QUEUE:-hyper:runtime:jobs}"
+      VIBE_TRADING_TRUST_DOCKER_LOOPBACK: "0"
+    ports:
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-8899}:8899"
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      volume-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    volumes:
+      - vibe-runs:/app/agent/runs
+      - vibe-sessions:/app/agent/sessions
+      - vibe-home:/home/vibe/.hyper-trading-agent
+      - vibe-uploads:/app/agent/uploads
+    restart: unless-stopped
+
+  worker:
+    image: ${HYPER_TRADING_IMAGE:?set HYPER_TRADING_IMAGE}:${HYPER_TRADING_IMAGE_TAG:?set HYPER_TRADING_IMAGE_TAG}
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
+      REDIS_URL: redis://redis:6379/0
+      VIBE_TRADING_COMMERCIAL_MODE: "1"
+      HYPER_TRADING_COMMERCIAL_IDENTITY_STORAGE: postgres-primary
+      HYPER_TRADING_COMMERCIAL_PG_DSN: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
+      HYPER_TRADING_COMMERCIAL_GOVERNANCE_STORAGE: postgres-primary
+      HYPER_TRADING_COMMERCIAL_GOVERNANCE_PG_DSN: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
+      HYPER_TRADING_COMMERCIAL_KNOWLEDGE_STORAGE: postgres-primary
+      HYPER_TRADING_COMMERCIAL_KNOWLEDGE_PG_DSN: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
+      HYPER_TRADING_COMMERCIAL_WORKSPACE_STORAGE: postgres-primary
+      HYPER_TRADING_COMMERCIAL_WORKSPACE_PG_DSN: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
+      HYPER_TRADING_ALLOW_SELF_REGISTRATION: "${HYPER_TRADING_ALLOW_SELF_REGISTRATION:-0}"
+      HYPER_TRADING_VECTOR_STORAGE: "${HYPER_TRADING_VECTOR_STORAGE:-postgres-pgvector}"
+      HYPER_TRADING_PGVECTOR_DSN: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe_trading
+      HYPER_TRADING_PGVECTOR_DIMENSIONS: "${HYPER_TRADING_PGVECTOR_DIMENSIONS:-1024}"
+      HYPER_TRADING_RUNTIME_JOB_BACKEND: "${HYPER_TRADING_RUNTIME_JOB_BACKEND:-redis-postgres}"
+      HYPER_TRADING_RUNTIME_JOB_QUEUE: "${HYPER_TRADING_RUNTIME_JOB_QUEUE:-hyper:runtime:jobs}"
+      VIBE_TRADING_SKIP_PREFLIGHT: "1"
+      VIBE_TRADING_TRUST_DOCKER_LOOPBACK: "0"
+    command: ["python", "-m", "src.commercial.worker"]
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      volume-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    volumes:
+      - vibe-runs:/app/agent/runs
+      - vibe-sessions:/app/agent/sessions
+      - vibe-home:/home/vibe/.hyper-trading-agent
+      - vibe-uploads:/app/agent/uploads
+    restart: unless-stopped
+
+volumes:
+  vibe-postgres:
+  vibe-redis:
+  vibe-runs:
+  vibe-sessions:
+  vibe-home:
+  vibe-uploads:

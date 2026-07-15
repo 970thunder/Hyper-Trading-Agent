@@ -1,4 +1,4 @@
-name: Deploy Production
+name: Deploy Registry Production
 
 on:
   workflow_run:
@@ -7,8 +7,8 @@ on:
     types: [completed]
   workflow_dispatch:
     inputs:
-      ref:
-        description: Commit SHA or main ref that has already passed CI
+      image_tag:
+        description: Published GHCR tag to deploy, such as sha-<commit> or main
         required: true
         default: main
         type: string
@@ -23,10 +23,10 @@ permissions:
 jobs:
   deploy:
     if: >-
-      vars.HYPER_TRADING_DEPLOY_MODE != 'registry' &&
-      (github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_repository.full_name == github.repository))
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      vars.HYPER_TRADING_DEPLOY_MODE == 'registry')
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 20
@@ -37,8 +37,8 @@ jobs:
       DEPLOY_PATH: ${{ secrets.HYPER_TRADING_DEPLOY_PATH }}
       DEPLOY_PRIVATE_KEY: ${{ secrets.HYPER_TRADING_DEPLOY_SSH_KEY }}
       DEPLOY_KNOWN_HOSTS: ${{ secrets.HYPER_TRADING_DEPLOY_KNOWN_HOSTS }}
-      DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.workflow_run.head_sha }}
-      DEPLOY_TLS: ${{ vars.HYPER_TRADING_DEPLOY_TLS || '1' }}
+      DEPLOY_IMAGE: ${{ vars.HYPER_TRADING_IMAGE || 'ghcr.io/970thunder/hyper-trading-agent' }}
+      DEPLOY_IMAGE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || format('sha-{0}', github.event.workflow_run.head_sha) }}
 
     steps:
       - name: Validate deployment configuration
@@ -49,7 +49,8 @@ jobs:
           test -n "$DEPLOY_PATH"
           test -n "$DEPLOY_PRIVATE_KEY"
           test -n "$DEPLOY_KNOWN_HOSTS"
-          test -n "$DEPLOY_REF"
+          test -n "$DEPLOY_IMAGE"
+          test -n "$DEPLOY_IMAGE_TAG"
 
       - name: Configure SSH trust
         run: |
@@ -59,11 +60,11 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Deploy tested main commit
+      - name: Pull and deploy verified image
         run: |
           ssh -i ~/.ssh/id_ed25519 \
             -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
             -p "$DEPLOY_PORT" \
             "$DEPLOY_USER@$DEPLOY_HOST" \
-            "cd '$DEPLOY_PATH' && HYPER_TRADING_DEPLOY_REF='$DEPLOY_REF' HYPER_TRADING_ENABLE_TLS='$DEPLOY_TLS' ./scripts/deploy-production.sh"
+            "cd '$DEPLOY_PATH' && HYPER_TRADING_IMAGE='$DEPLOY_IMAGE' HYPER_TRADING_IMAGE_TAG='$DEPLOY_IMAGE_TAG' ./scripts/deploy-registry-production.sh"

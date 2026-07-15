@@ -31,6 +31,7 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --fix-missing --no-install-recommends \
     build-essential \
+    postgresql-client \
     libpango-1.0-0 \
     libpangoft2-1.0-0 \
     libharfbuzz0b \
@@ -47,6 +48,9 @@ RUN pip install --no-cache-dir -r agent/requirements.txt
 # Copy project
 COPY pyproject.toml LICENSE README.md ./
 COPY agent/ agent/
+# Keep versioned schema migrations in the release image so registry-only
+# deployments do not need a checked-out repository on the server.
+COPY migrations/ migrations/
 
 # Copy built frontend
 COPY --from=frontend-build /app/frontend/dist frontend/dist
@@ -57,8 +61,8 @@ RUN pip install --no-cache-dir -e .
 # Runtime should not run as root. Keep writable app data directories owned by
 # the service user so named Docker volumes inherit usable permissions.
 RUN useradd --create-home --shell /usr/sbin/nologin vibe \
-    && mkdir -p agent/runs agent/sessions agent/uploads agent/.swarm/runs /home/vibe/.vibe-trading \
-    && chown -R vibe:vibe /app /home/vibe/.vibe-trading
+    && mkdir -p agent/runs agent/sessions agent/uploads agent/.swarm/runs /home/vibe/.hyper-trading-agent \
+    && chown -R vibe:vibe /app /home/vibe/.hyper-trading-agent
 USER vibe
 
 # Default port

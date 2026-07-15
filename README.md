@@ -170,6 +170,7 @@ Operations runbooks:
 - [Server deployment guide](docs/deployment-server.md)
 - [Automated server deployment](docs/deployment-automation.md)
 - [服务器部署与自动发布中文教程](docs/server-deployment-tutorial.zh-CN.md)
+- [宝塔面板镜像部署中文教程](docs/baota-image-deployment.zh-CN.md)
 - [Prometheus and Grafana overlay](docs/deployment-server.md#optional-observability)
 - [UI screenshot regression](docs/ui-screenshot-regression.md)
 
