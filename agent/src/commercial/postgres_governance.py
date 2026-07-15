@@ -399,6 +399,26 @@ class PostgresGovernanceRepository:
             )
             return _row(cursor.fetchone()) or {}
 
+    def usage_timeseries(self, *, organization_id: str, period_start: str) -> list[dict[str, Any]]:
+        """Aggregate one organization's model activity by UTC day."""
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date,
+                       COUNT(*) AS calls,
+                       COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                       COALESCE(SUM(estimated_cost), 0) AS estimated_cost,
+                       COALESCE(AVG(latency_ms), 0) AS average_latency_ms
+                FROM model_call_usage
+                WHERE organization_id = %s AND created_at >= %s
+                GROUP BY 1
+                ORDER BY 1
+                """,
+                (organization_id, period_start),
+            )
+            rows = cursor.fetchall()
+        return [_row(row) or {} for row in rows]
+
     def list_usage(self, organization_id: str, limit: int) -> list[dict[str, Any]]:
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(
@@ -546,6 +566,26 @@ class PostgresGovernanceRepository:
                 LIMIT %s
                 """,
                 (period_start, max(1, min(limit, 500))),
+            )
+            rows = cursor.fetchall()
+        return [_row(row) or {} for row in rows]
+
+    def platform_usage_timeseries(self, *, period_start: str) -> list[dict[str, Any]]:
+        """Aggregate all tenant model activity by UTC day for platform operations."""
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date,
+                       COUNT(*) AS calls,
+                       COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                       COALESCE(SUM(estimated_cost), 0) AS estimated_cost,
+                       COALESCE(AVG(latency_ms), 0) AS average_latency_ms
+                FROM model_call_usage
+                WHERE created_at >= %s
+                GROUP BY 1
+                ORDER BY 1
+                """,
+                (period_start,),
             )
             rows = cursor.fetchall()
         return [_row(row) or {} for row in rows]

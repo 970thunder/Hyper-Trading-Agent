@@ -79,6 +79,32 @@ def current_usage_period_start() -> str:
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
 
 
+def usage_timeseries_start(days: int) -> tuple[int, str]:
+    """Return a bounded UTC calendar window for usage analytics."""
+    window_days = max(1, min(int(days or 30), 90))
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    return window_days, (today - timedelta(days=window_days - 1)).isoformat()
+
+
+def normalize_usage_timeseries(rows: list[dict[str, Any]], days: int) -> list[dict[str, Any]]:
+    """Zero-fill inactive days so usage charts have a stable time axis."""
+    window_days, _ = usage_timeseries_start(days)
+    by_date = {str(row.get("date") or "")[:10]: row for row in rows}
+    today = datetime.now(timezone.utc).date()
+    result: list[dict[str, Any]] = []
+    for offset in range(window_days - 1, -1, -1):
+        date = (today - timedelta(days=offset)).isoformat()
+        row = by_date.get(date, {})
+        result.append({
+            "date": date,
+            "calls": max(0, int(row.get("calls") or 0)),
+            "total_tokens": max(0, int(row.get("total_tokens") or 0)),
+            "estimated_cost": round(max(0.0, float(row.get("estimated_cost") or 0.0)), 6),
+            "average_latency_ms": round(max(0.0, float(row.get("average_latency_ms") or 0.0)), 1),
+        })
+    return result
+
+
 def db_path() -> Path:
     raw = os.getenv("VIBE_TRADING_COMMERCIAL_DB", "").strip()
     return Path(raw).expanduser() if raw else DEFAULT_DB_PATH
@@ -2026,6 +2052,35 @@ class CommercialStore:
                 (principal.organization_id, max(1, min(limit, 500))),
             ).fetchall()
         return [dict(row) | {"metadata": json.loads(row["metadata_json"] or "{}")} for row in rows]
+
+    def usage_timeseries(self, principal: Principal, *, days: int = 30) -> list[dict[str, Any]]:
+        """Return organization-scoped daily model activity for governance charts."""
+        window_days, start = usage_timeseries_start(days)
+        if self._primary_governance is not None:
+            rows = self._primary_governance.usage_timeseries(
+                organization_id=principal.organization_id,
+                period_start=start,
+            )
+        else:
+            with self._connect() as conn:
+                rows = [
+                    dict(row)
+                    for row in conn.execute(
+                        """
+                        SELECT substr(created_at, 1, 10) AS date,
+                               COUNT(*) AS calls,
+                               COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                               COALESCE(SUM(estimated_cost), 0) AS estimated_cost,
+                               COALESCE(AVG(latency_ms), 0) AS average_latency_ms
+                        FROM model_call_usage
+                        WHERE organization_id = ? AND created_at >= ?
+                        GROUP BY 1
+                        ORDER BY 1
+                        """,
+                        (principal.organization_id, start),
+                    ).fetchall()
+                ]
+        return normalize_usage_timeseries(rows, window_days)
 
     def record_model_usage(
         self,
@@ -4435,6 +4490,32 @@ class CommercialStore:
             item["cost_soft_limit_reached"] = bool(item["monthly_cost_soft_limit"] and item["estimated_cost"] >= item["monthly_cost_soft_limit"])
             items.append(item)
         return items
+
+    def platform_usage_timeseries(self, *, days: int = 30) -> list[dict[str, Any]]:
+        """Return platform-wide daily activity without exposing tenant secrets."""
+        window_days, start = usage_timeseries_start(days)
+        if self._primary_governance is not None:
+            rows = self._primary_governance.platform_usage_timeseries(period_start=start)
+        else:
+            with self._connect() as conn:
+                rows = [
+                    dict(row)
+                    for row in conn.execute(
+                        """
+                        SELECT substr(created_at, 1, 10) AS date,
+                               COUNT(*) AS calls,
+                               COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                               COALESCE(SUM(estimated_cost), 0) AS estimated_cost,
+                               COALESCE(AVG(latency_ms), 0) AS average_latency_ms
+                        FROM model_call_usage
+                        WHERE created_at >= ?
+                        GROUP BY 1
+                        ORDER BY 1
+                        """,
+                        (start,),
+                    ).fetchall()
+                ]
+        return normalize_usage_timeseries(rows, window_days)
 
     def list_platform_knowledge_bases(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
         if self._primary_knowledge is not None:

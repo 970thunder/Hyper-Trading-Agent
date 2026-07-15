@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { BellRing, Check, Gauge } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { api, type CommercialPrincipal, type ModelUsage, type OrganizationUsagePolicy, type OrganizationUsageSummary, type UsageAlertEvent } from "@/lib/api";
+import { api, type CommercialPrincipal, type ModelUsage, type OrganizationUsagePolicy, type OrganizationUsageSummary, type UsageAlertEvent, type UsageTimeseriesPoint } from "@/lib/api";
 import { InlineError, Skeleton } from "@/components/ui/AsyncState";
 import { Button } from "@/components/ui/Button";
+import { UsageTrendChart } from "@/components/charts/UsageTrendChart";
 
 const EMPTY_POLICY: OrganizationUsagePolicy = {
   organization_id: "",
@@ -33,6 +34,7 @@ export function Usage() {
   const [monthlySummary, setMonthlySummary] = useState<OrganizationUsageSummary>(EMPTY_MONTHLY_SUMMARY);
   const [policy, setPolicy] = useState<OrganizationUsagePolicy>(EMPTY_POLICY);
   const [alerts, setAlerts] = useState<UsageAlertEvent[]>([]);
+  const [timeseries, setTimeseries] = useState<UsageTimeseriesPoint[]>([]);
   const [principal, setPrincipal] = useState<CommercialPrincipal | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -41,18 +43,20 @@ export function Usage() {
 
   const load = async () => {
     setError("");
-    const [records, summary, nextPolicy, currentPrincipal, nextAlerts] = await Promise.all([
+    const [records, summary, nextPolicy, currentPrincipal, nextAlerts, trend] = await Promise.all([
       api.listModelUsage(1000),
       api.getUsageSummary(),
       api.getUsagePolicy(),
       api.getCommercialMe(),
       api.listUsageAlerts({ limit: 50 }),
+      api.getUsageTimeseries(30),
     ]);
     setUsage(records);
     setMonthlySummary(summary);
     setPolicy(nextPolicy);
     setPrincipal(currentPrincipal);
     setAlerts(nextAlerts);
+    setTimeseries(trend.series);
   };
 
   useEffect(() => {
@@ -137,6 +141,13 @@ export function Usage() {
         <Metric label={t("adminCenter.usage.tokens")} value={formatNumber(summary.tokens)} />
         <Metric label={t("adminCenter.usage.estimatedCost")} value={formatCurrency(summary.cost)} />
         <Metric label={t("adminCenter.usage.averageLatency")} value={`${summary.calls ? Math.round(summary.latency / summary.calls) : 0} ms`} />
+      </section>
+      <section className="surface-panel p-4">
+        <div className="border-b border-[hsl(var(--border-subtle))] pb-3">
+          <h3 className="text-sm font-semibold text-ink-strong">{t("adminCenter.usage.title")}</h3>
+          <p className="mt-1 text-sm text-ink-muted">{t("adminCenter.usage.description")}</p>
+        </div>
+        <div className="mt-3"><UsageTrendChart points={timeseries} tokenLabel={t("adminCenter.usage.tokens")} latencyLabel={t("adminCenter.usage.averageLatency")} /></div>
       </section>
       <section className="surface-panel p-4">
         <div className="flex flex-col gap-3 border-b border-[hsl(var(--border-subtle))] pb-4 lg:flex-row lg:items-start lg:justify-between">

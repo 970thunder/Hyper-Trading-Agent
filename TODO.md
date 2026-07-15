@@ -94,7 +94,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [ ] Add complete audit links for Runtime retry/cancel and every remaining management action.
 - [x] Add provider token pricing, organization monthly budgets, and soft/hard quota enforcement.
 - [x] Add organization usage alert delivery for soft-limit and hard-limit events, acknowledgement, and audit records.
-- [ ] Add time-series usage and latency charts backed by aggregated usage endpoints.
+- [x] Add time-series usage and latency charts backed by aggregated usage endpoints.
 - [ ] Add secret-manager integration and key rotation workflows.
 
 ## P3 Agent Execution And Output

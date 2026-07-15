@@ -348,6 +348,7 @@ export const api = {
   },
   listModelUsage: (limit?: number) => request<ModelUsage[]>(`/usage/model-calls${limit ? `?limit=${encodeURIComponent(String(limit))}` : ""}`),
   getUsageSummary: () => request<OrganizationUsageSummary>("/usage/summary"),
+  getUsageTimeseries: (days = 30) => request<UsageTimeseriesResponse>(`/usage/timeseries?days=${encodeURIComponent(String(days))}`),
   listUsageAlerts: (options?: { limit?: number; includeAcknowledged?: boolean }) => {
     const q = new URLSearchParams();
     if (options?.limit) q.set("limit", String(options.limit));
@@ -405,6 +406,7 @@ export const api = {
   listPlatformOrganizations: (query = "") =>
     request<PlatformOrganization[]>(`/platform-admin/organizations${query ? `?query=${encodeURIComponent(query)}` : ""}`),
   listPlatformUsage: () => request<PlatformUsageSummary[]>("/platform-admin/usage"),
+  getPlatformUsageTimeseries: (days = 30) => request<UsageTimeseriesResponse>(`/platform-admin/usage/timeseries?days=${encodeURIComponent(String(days))}`),
   updatePlatformOrganization: (organizationId: string, body: PlatformOrganizationUpdateRequest) =>
     request<PlatformOrganization>(`/platform-admin/organizations/${encodeURIComponent(organizationId)}`, {
       method: "PATCH",
@@ -1158,6 +1160,19 @@ export interface OrganizationUsageSummary {
   token_hard_limit_reached: boolean;
   cost_soft_limit_reached: boolean;
   cost_hard_limit_reached: boolean;
+}
+
+export interface UsageTimeseriesPoint {
+  date: string;
+  calls: number;
+  total_tokens: number;
+  estimated_cost: number;
+  average_latency_ms: number;
+}
+
+export interface UsageTimeseriesResponse {
+  days: number;
+  series: UsageTimeseriesPoint[];
 }
 
 export interface UsageAlertEvent {

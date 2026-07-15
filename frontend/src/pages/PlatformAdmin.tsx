@@ -28,11 +28,13 @@ import {
   type PlatformUser,
   type PlatformUsageSummary,
   type PlatformWorkspaceArtifact,
+  type UsageTimeseriesPoint,
 } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { StatusIndicator, type StatusTone } from "@/components/ui/Status";
 import { Tab, TabList, TabPanel, Tabs } from "@/components/ui/Tabs";
+import { UsageTrendChart } from "@/components/charts/UsageTrendChart";
 
 type PlatformTab = "overview" | "users" | "organizations" | "usage" | "knowledge" | "jobs" | "runtime" | "artifacts" | "operations" | "audit";
 
@@ -88,6 +90,7 @@ export function PlatformAdmin() {
   const [users, setUsers] = useState<PlatformUser[]>([]);
   const [organizations, setOrganizations] = useState<PlatformOrganization[]>([]);
   const [usage, setUsage] = useState<PlatformUsageSummary[]>([]);
+  const [usageTimeseries, setUsageTimeseries] = useState<UsageTimeseriesPoint[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<PlatformKnowledgeBase[]>([]);
   const [jobs, setJobs] = useState<PlatformIngestionJob[]>([]);
   const [runtimeJobs, setRuntimeJobs] = useState<PlatformRuntimeJob[]>([]);
@@ -103,11 +106,12 @@ export function PlatformAdmin() {
     setLoading(true);
     setError("");
     try {
-      const [nextSummary, nextUsers, nextOrganizations, nextUsage, nextKnowledgeBases, nextJobs, nextRuntimeJobs, nextArtifacts, nextOperations, nextAudit] = await Promise.all([
+      const [nextSummary, nextUsers, nextOrganizations, nextUsage, nextUsageTimeseries, nextKnowledgeBases, nextJobs, nextRuntimeJobs, nextArtifacts, nextOperations, nextAudit] = await Promise.all([
         api.getPlatformSummary(),
         api.listPlatformUsers(),
         api.listPlatformOrganizations(),
         api.listPlatformUsage(),
+        api.getPlatformUsageTimeseries(30),
         api.listPlatformKnowledgeBases(),
         api.listPlatformIngestionJobs(),
         api.listPlatformRuntimeJobs(),
@@ -119,6 +123,7 @@ export function PlatformAdmin() {
       setUsers(nextUsers);
       setOrganizations(nextOrganizations);
       setUsage(nextUsage);
+      setUsageTimeseries(nextUsageTimeseries.series);
       setKnowledgeBases(nextKnowledgeBases);
       setJobs(nextJobs);
       setRuntimeJobs(nextRuntimeJobs);
@@ -270,7 +275,13 @@ export function PlatformAdmin() {
 
         <TabPanel value="organizations" className="mt-5"><section className="surface-panel overflow-hidden"><TableHeader title={t("platformAdmin.organizationsTitle")} count={organizations.length} /><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr>{["organization", "members", "knowledge", "models", "status", "actions"].map((key) => <th key={key} className="border-b border-border px-4 py-3 text-start text-xs font-medium text-ink-muted">{t(`platformAdmin.columns.${key}`)}</th>)}</tr></thead><tbody>{organizations.map((organization) => <tr key={organization.id} className="border-b border-border/70 last:border-0 hover:bg-surface-2/70"><td className="px-4 py-3 font-medium text-ink-strong">{organization.name}</td><td className="px-4 py-3 text-ink-muted">{organization.member_count}</td><td className="px-4 py-3 text-ink-muted">{organization.knowledge_base_count}</td><td className="px-4 py-3 text-ink-muted">{organization.model_provider_count}</td><td className="px-4 py-3"><StatusIndicator label={organization.is_active ? t("platformAdmin.active") : t("platformAdmin.suspended")} tone={statusTone(organization.is_active)} /></td><td className="px-4 py-3"><Button size="sm" variant="outline" loading={actionId === `organization-${organization.id}`} onClick={() => void toggleOrganization(organization)}>{organization.is_active ? t("platformAdmin.suspend") : t("platformAdmin.activate")}</Button></td></tr>)}</tbody></table></div></section></TabPanel>
 
-        <TabPanel value="usage" className="mt-5"><PlatformUsageTable rows={usage} t={t} statusTone={statusTone} /></TabPanel>
+        <TabPanel value="usage" className="mt-5 space-y-4">
+          <section className="surface-panel p-4">
+            <div className="border-b border-[hsl(var(--border-subtle))] pb-3"><h2 className="text-sm font-semibold text-ink-strong">{t("platformAdmin.usageTitle")}</h2></div>
+            <div className="mt-3"><UsageTrendChart points={usageTimeseries} tokenLabel={translate("adminCenter.usage.tokens")} latencyLabel={translate("adminCenter.usage.averageLatency")} /></div>
+          </section>
+          <PlatformUsageTable rows={usage} t={t} statusTone={statusTone} />
+        </TabPanel>
 
         <TabPanel value="knowledge" className="mt-5"><section className="surface-panel overflow-hidden"><TableHeader title={t("platformAdmin.knowledgeTitle")} count={knowledgeBases.length} /><div className="overflow-x-auto"><table className="w-full min-w-[820px] text-sm"><thead><tr>{["knowledgeBase", "organization", "documents", "chunks", "jobs", "actions"].map((key) => <th key={key} className="border-b border-border px-4 py-3 text-start text-xs font-medium text-ink-muted">{t(`platformAdmin.columns.${key}`)}</th>)}</tr></thead><tbody>{knowledgeBases.map((knowledgeBase) => <tr key={knowledgeBase.id} className="border-b border-border/70 last:border-0 hover:bg-surface-2/70"><td className="px-4 py-3"><div className="font-medium text-ink-strong">{knowledgeBase.name}</div><div className="max-w-[270px] truncate text-xs text-ink-muted">{knowledgeBase.description || "-"}</div></td><td className="px-4 py-3 text-ink-muted">{knowledgeBase.organization_name}</td><td className="px-4 py-3 text-ink-muted">{knowledgeBase.document_count}</td><td className="px-4 py-3 text-ink-muted">{knowledgeBase.chunk_count}</td><td className="px-4 py-3"><StatusIndicator label={t("platformAdmin.failedJobs", { count: knowledgeBase.failed_job_count || 0 })} tone={knowledgeBase.failed_job_count ? "danger" : "success"} /></td><td className="px-4 py-3"><Button size="sm" variant="ghost" loading={actionId === `knowledge-${knowledgeBase.id}`} onClick={() => void removeKnowledgeBase(knowledgeBase)} leftIcon={<Trash2 className="h-3.5 w-3.5" />}>{t("platformAdmin.delete")}</Button></td></tr>)}</tbody></table></div></section></TabPanel>
 

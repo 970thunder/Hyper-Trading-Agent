@@ -1027,6 +1027,13 @@ def register_commercial_routes(app: FastAPI) -> None:
     async def usage_summary(principal: Principal = Depends(_require_role("owner", "admin"))):
         return _store().usage_summary(principal)
 
+    @app.get("/usage/timeseries")
+    async def usage_timeseries(
+        days: int = Query(30, ge=1, le=90),
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        return {"days": days, "series": _store().usage_timeseries(principal, days=days)}
+
     @app.get("/usage/alerts")
     async def usage_alerts(
         limit: int = 100,
@@ -1188,6 +1195,14 @@ def register_commercial_routes(app: FastAPI) -> None:
     ):
         del principal
         return _store().list_platform_usage(limit=limit)
+
+    @app.get("/platform-admin/usage/timeseries")
+    async def platform_usage_timeseries(
+        days: int = Query(30, ge=1, le=90),
+        principal: Principal = Depends(_require_platform_admin),
+    ):
+        del principal
+        return {"days": days, "series": _store().platform_usage_timeseries(days=days)}
 
     @app.patch("/platform-admin/organizations/{organization_id}")
     async def update_platform_organization(
