@@ -63,6 +63,8 @@ export function Models() {
       temperature: provider.temperature,
       timeout_seconds: provider.timeout_seconds,
       max_retries: provider.max_retries,
+      input_price_per_million: provider.input_price_per_million ?? 0,
+      output_price_per_million: provider.output_price_per_million ?? 0,
       enabled: Boolean(provider.enabled),
       is_default: Boolean(provider.is_default),
     });
@@ -80,6 +82,8 @@ export function Models() {
       temperature: form.temperature,
       timeout_seconds: form.timeout_seconds,
       max_retries: form.max_retries,
+      input_price_per_million: form.input_price_per_million ?? 0,
+      output_price_per_million: form.output_price_per_million ?? 0,
       enabled: form.enabled,
       is_default: form.is_default,
     };
@@ -175,6 +179,8 @@ function toForm(settings: LLMSettings | null, option?: LLMProviderOption): Model
     temperature: settings?.temperature || 0,
     timeout_seconds: settings?.timeout_seconds || 120,
     max_retries: settings?.max_retries || 2,
+    input_price_per_million: 0,
+    output_price_per_million: 0,
     enabled: true,
     is_default: false,
   };

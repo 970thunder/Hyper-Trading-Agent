@@ -347,6 +347,13 @@ export const api = {
     return request<AuditLog[]>(`/audit-logs${qs ? `?${qs}` : ""}`);
   },
   listModelUsage: (limit?: number) => request<ModelUsage[]>(`/usage/model-calls${limit ? `?limit=${encodeURIComponent(String(limit))}` : ""}`),
+  getUsageSummary: () => request<OrganizationUsageSummary>("/usage/summary"),
+  getUsagePolicy: () => request<OrganizationUsagePolicy>("/usage/policy"),
+  updateUsagePolicy: (body: OrganizationUsagePolicyUpdateRequest) =>
+    request<OrganizationUsagePolicy>("/usage/policy", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
   createFeedback: (body: FeedbackCreateRequest) =>
     request<FeedbackEvent>("/feedback", {
       method: "POST",
@@ -827,6 +834,8 @@ export interface CommercialModelProvider {
   temperature: number;
   timeout_seconds: number;
   max_retries: number;
+  input_price_per_million?: number;
+  output_price_per_million?: number;
   enabled: number | boolean;
   is_default: number | boolean;
   created_at: string;
@@ -852,6 +861,8 @@ export interface CommercialModelProviderCreateRequest {
   temperature?: number;
   timeout_seconds?: number;
   max_retries?: number;
+  input_price_per_million?: number;
+  output_price_per_million?: number;
   enabled?: boolean;
   is_default?: boolean;
 }
@@ -865,6 +876,8 @@ export interface CommercialModelProviderUpdateRequest {
   temperature?: number;
   timeout_seconds?: number;
   max_retries?: number;
+  input_price_per_million?: number;
+  output_price_per_million?: number;
   enabled?: boolean;
   is_default?: boolean;
 }
@@ -1083,6 +1096,37 @@ export interface ModelUsage {
   attempt_id?: string;
   run_id?: string;
   created_at: string;
+}
+
+export interface OrganizationUsagePolicy {
+  organization_id: string;
+  monthly_token_soft_limit: number;
+  monthly_token_hard_limit: number;
+  monthly_cost_soft_limit: number;
+  monthly_cost_hard_limit: number;
+  updated_by_user_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface OrganizationUsagePolicyUpdateRequest {
+  monthly_token_soft_limit?: number;
+  monthly_token_hard_limit?: number;
+  monthly_cost_soft_limit?: number;
+  monthly_cost_hard_limit?: number;
+}
+
+export interface OrganizationUsageSummary {
+  period_start: string;
+  calls: number;
+  total_tokens: number;
+  estimated_cost: number;
+  average_latency_ms: number;
+  policy: OrganizationUsagePolicy;
+  token_soft_limit_reached: boolean;
+  token_hard_limit_reached: boolean;
+  cost_soft_limit_reached: boolean;
+  cost_hard_limit_reached: boolean;
 }
 
 export interface FeedbackCreateRequest {

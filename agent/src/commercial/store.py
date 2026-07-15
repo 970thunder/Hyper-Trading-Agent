@@ -29,6 +29,12 @@ SESSION_TTL_DAYS = 14
 ROLES = {"owner", "admin", "member", "viewer"}
 JOB_STATUSES = {"pending", "running", "completed", "failed", "cancelled"}
 TOOL_RISK_LEVELS = {"low", "medium", "high", "critical"}
+USAGE_POLICY_FIELDS = {
+    "monthly_token_soft_limit",
+    "monthly_token_hard_limit",
+    "monthly_cost_soft_limit",
+    "monthly_cost_hard_limit",
+}
 EMBEDDING_DIMENSIONS = int(os.getenv("VIBE_TRADING_LOCAL_EMBEDDING_DIMENSIONS", "64"))
 _TOKEN_RE = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
 KNOWLEDGE_RETRIEVAL_MODES = {"hybrid", "vector", "keyword"}
@@ -53,8 +59,17 @@ class Principal:
     is_platform_admin: bool = False
 
 
+class UsageLimitExceeded(ValueError):
+    """Raised before a model request when an organization hard limit is met."""
+
+
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def current_usage_period_start() -> str:
+    now = datetime.now(timezone.utc)
+    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
 
 
 def db_path() -> Path:
@@ -559,6 +574,8 @@ class CommercialStore:
                     temperature REAL NOT NULL DEFAULT 0,
                     timeout_seconds INTEGER NOT NULL DEFAULT 120,
                     max_retries INTEGER NOT NULL DEFAULT 2,
+                    input_price_per_million REAL NOT NULL DEFAULT 0,
+                    output_price_per_million REAL NOT NULL DEFAULT 0,
                     enabled INTEGER NOT NULL DEFAULT 1,
                     is_default INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
@@ -580,6 +597,18 @@ class CommercialStore:
                     run_id TEXT NOT NULL DEFAULT '',
                     metadata_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_model_call_usage_organization_period
+                    ON model_call_usage(organization_id, created_at DESC);
+                CREATE TABLE IF NOT EXISTS organization_usage_policies (
+                    organization_id TEXT PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+                    monthly_token_soft_limit INTEGER NOT NULL DEFAULT 0,
+                    monthly_token_hard_limit INTEGER NOT NULL DEFAULT 0,
+                    monthly_cost_soft_limit REAL NOT NULL DEFAULT 0,
+                    monthly_cost_hard_limit REAL NOT NULL DEFAULT 0,
+                    updated_by_user_id TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS knowledge_bases (
                     id TEXT PRIMARY KEY,
@@ -692,6 +721,13 @@ class CommercialStore:
                     conn.execute(f"ALTER TABLE model_call_usage ADD COLUMN {column_name} TEXT NOT NULL DEFAULT ''")
             if "metadata_json" not in existing_usage_columns:
                 conn.execute("ALTER TABLE model_call_usage ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'")
+            existing_provider_columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(model_providers)").fetchall()
+            }
+            for column_name in ("input_price_per_million", "output_price_per_million"):
+                if column_name not in existing_provider_columns:
+                    conn.execute(f"ALTER TABLE model_providers ADD COLUMN {column_name} REAL NOT NULL DEFAULT 0")
             existing_job_columns = {
                 str(row["name"])
                 for row in conn.execute("PRAGMA table_info(knowledge_ingestion_jobs)").fetchall()
@@ -1460,6 +1496,146 @@ class CommercialStore:
             "source": "organization",
         }
 
+    def get_usage_policy(self, principal: Principal) -> dict[str, Any]:
+        defaults = {
+            "organization_id": principal.organization_id,
+            "monthly_token_soft_limit": 0,
+            "monthly_token_hard_limit": 0,
+            "monthly_cost_soft_limit": 0.0,
+            "monthly_cost_hard_limit": 0.0,
+            "updated_by_user_id": "",
+            "created_at": "",
+            "updated_at": "",
+        }
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT organization_id, monthly_token_soft_limit, monthly_token_hard_limit,
+                       monthly_cost_soft_limit, monthly_cost_hard_limit,
+                       updated_by_user_id, created_at, updated_at
+                FROM organization_usage_policies
+                WHERE organization_id = ?
+                """,
+                (principal.organization_id,),
+            ).fetchone()
+        if row is None:
+            return defaults
+        return defaults | {
+            "monthly_token_soft_limit": max(0, int(row["monthly_token_soft_limit"] or 0)),
+            "monthly_token_hard_limit": max(0, int(row["monthly_token_hard_limit"] or 0)),
+            "monthly_cost_soft_limit": max(0.0, float(row["monthly_cost_soft_limit"] or 0.0)),
+            "monthly_cost_hard_limit": max(0.0, float(row["monthly_cost_hard_limit"] or 0.0)),
+            "updated_by_user_id": str(row["updated_by_user_id"] or ""),
+            "created_at": str(row["created_at"] or ""),
+            "updated_at": str(row["updated_at"] or ""),
+        }
+
+    def update_usage_policy(self, principal: Principal, payload: dict[str, Any]) -> dict[str, Any]:
+        current = self.get_usage_policy(principal)
+        updates: dict[str, int | float] = {}
+        for field in USAGE_POLICY_FIELDS:
+            if field not in payload or payload[field] is None:
+                continue
+            try:
+                value = float(payload[field]) if field.startswith("monthly_cost") else int(payload[field])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{field} must be a non-negative number") from exc
+            if value < 0:
+                raise ValueError(f"{field} must be a non-negative number")
+            updates[field] = value
+        if not updates:
+            return current
+        token_soft = int(updates.get("monthly_token_soft_limit", current["monthly_token_soft_limit"]))
+        token_hard = int(updates.get("monthly_token_hard_limit", current["monthly_token_hard_limit"]))
+        cost_soft = float(updates.get("monthly_cost_soft_limit", current["monthly_cost_soft_limit"]))
+        cost_hard = float(updates.get("monthly_cost_hard_limit", current["monthly_cost_hard_limit"]))
+        if token_hard and token_soft and token_soft > token_hard:
+            raise ValueError("monthly token soft limit cannot exceed hard limit")
+        if cost_hard and cost_soft and cost_soft > cost_hard:
+            raise ValueError("monthly cost soft limit cannot exceed hard limit")
+        now = utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO organization_usage_policies(
+                    organization_id, monthly_token_soft_limit, monthly_token_hard_limit,
+                    monthly_cost_soft_limit, monthly_cost_hard_limit, updated_by_user_id,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(organization_id) DO UPDATE SET
+                    monthly_token_soft_limit = excluded.monthly_token_soft_limit,
+                    monthly_token_hard_limit = excluded.monthly_token_hard_limit,
+                    monthly_cost_soft_limit = excluded.monthly_cost_soft_limit,
+                    monthly_cost_hard_limit = excluded.monthly_cost_hard_limit,
+                    updated_by_user_id = excluded.updated_by_user_id,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    principal.organization_id, token_soft, token_hard, cost_soft, cost_hard,
+                    principal.user_id, now, now,
+                ),
+            )
+        self.audit(principal, "usage_policy.update", "organization", principal.organization_id, {
+            "monthly_token_soft_limit": token_soft,
+            "monthly_token_hard_limit": token_hard,
+            "monthly_cost_soft_limit": cost_soft,
+            "monthly_cost_hard_limit": cost_hard,
+        })
+        return self.get_usage_policy(principal)
+
+    def usage_summary(self, principal: Principal, *, period_start: str | None = None) -> dict[str, Any]:
+        start = period_start or current_usage_period_start()
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS calls,
+                       COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                       COALESCE(SUM(estimated_cost), 0) AS estimated_cost,
+                       COALESCE(AVG(latency_ms), 0) AS average_latency_ms
+                FROM model_call_usage
+                WHERE organization_id = ? AND created_at >= ?
+                """,
+                (principal.organization_id, start),
+            ).fetchone()
+        policy = self.get_usage_policy(principal)
+        calls = max(0, int(row["calls"] or 0))
+        total_tokens = max(0, int(row["total_tokens"] or 0))
+        estimated_cost = max(0.0, float(row["estimated_cost"] or 0.0))
+        token_soft = int(policy["monthly_token_soft_limit"])
+        token_hard = int(policy["monthly_token_hard_limit"])
+        cost_soft = float(policy["monthly_cost_soft_limit"])
+        cost_hard = float(policy["monthly_cost_hard_limit"])
+        return {
+            "period_start": start,
+            "calls": calls,
+            "total_tokens": total_tokens,
+            "estimated_cost": estimated_cost,
+            "average_latency_ms": round(float(row["average_latency_ms"] or 0.0), 1),
+            "policy": policy,
+            "token_soft_limit_reached": bool(token_soft and total_tokens >= token_soft),
+            "token_hard_limit_reached": bool(token_hard and total_tokens >= token_hard),
+            "cost_soft_limit_reached": bool(cost_soft and estimated_cost >= cost_soft),
+            "cost_hard_limit_reached": bool(cost_hard and estimated_cost >= cost_hard),
+        }
+
+    def assert_model_usage_available(self, principal: Principal) -> dict[str, Any]:
+        summary = self.usage_summary(principal)
+        if not summary["token_hard_limit_reached"] and not summary["cost_hard_limit_reached"]:
+            return summary
+        reasons: list[str] = []
+        if summary["token_hard_limit_reached"]:
+            reasons.append("monthly token hard limit")
+        if summary["cost_hard_limit_reached"]:
+            reasons.append("monthly cost hard limit")
+        reason = " and ".join(reasons)
+        self.audit(principal, "usage.hard_limit.blocked", "organization", principal.organization_id, {
+            "reason": reason,
+            "period_start": summary["period_start"],
+            "total_tokens": summary["total_tokens"],
+            "estimated_cost": summary["estimated_cost"],
+        })
+        raise UsageLimitExceeded(f"Organization {reason} has been reached")
+
     def list_usage(self, principal: Principal, limit: int = 100) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -1549,6 +1725,25 @@ class CommercialStore:
             "created_at": now,
         }
 
+    def _model_provider_pricing(self, principal: Principal, provider_id: str) -> tuple[float, float]:
+        if not provider_id:
+            return 0.0, 0.0
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT input_price_per_million, output_price_per_million
+                FROM model_providers
+                WHERE id = ? AND organization_id = ?
+                """,
+                (provider_id, principal.organization_id),
+            ).fetchone()
+        if row is None:
+            return 0.0, 0.0
+        return (
+            max(0.0, float(row["input_price_per_million"] or 0.0)),
+            max(0.0, float(row["output_price_per_million"] or 0.0)),
+        )
+
     def record_llm_usage_summary(
         self,
         principal: Principal,
@@ -1565,13 +1760,18 @@ class CommercialStore:
         total_tokens = int(totals.get("total_tokens") or 0)
         if total_tokens <= 0:
             return None
+        input_price, output_price = self._model_provider_pricing(principal, provider_id)
+        input_tokens = int(totals.get("input_tokens") or 0)
+        output_tokens = int(totals.get("output_tokens") or 0)
+        estimated_cost = ((input_tokens * input_price) + (output_tokens * output_price)) / 1_000_000
         return self.record_model_usage(
             principal,
             provider=str(summary.get("provider") or "unknown"),
             model=str(summary.get("model") or "unknown"),
-            prompt_tokens=int(totals.get("input_tokens") or 0),
-            completion_tokens=int(totals.get("output_tokens") or 0),
+            prompt_tokens=input_tokens,
+            completion_tokens=output_tokens,
             total_tokens=total_tokens,
+            estimated_cost=estimated_cost,
             provider_id=provider_id,
             session_id=session_id,
             attempt_id=attempt_id,
@@ -1702,7 +1902,9 @@ class CommercialStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, provider, model, base_url, api_key_fingerprint, temperature, timeout_seconds, max_retries, enabled, is_default, created_at, updated_at
+                SELECT id, provider, model, base_url, api_key_fingerprint, temperature, timeout_seconds,
+                       max_retries, input_price_per_million, output_price_per_million,
+                       enabled, is_default, created_at, updated_at
                 FROM model_providers
                 WHERE organization_id = ?
                 ORDER BY is_default DESC, updated_at DESC
@@ -1723,8 +1925,9 @@ class CommercialStore:
                 """
                 INSERT INTO model_providers(
                     id, organization_id, provider, model, base_url, api_key_ciphertext, api_key_fingerprint,
-                    temperature, timeout_seconds, max_retries, enabled, is_default, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    temperature, timeout_seconds, max_retries, input_price_per_million,
+                    output_price_per_million, enabled, is_default, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     provider_id,
@@ -1737,6 +1940,8 @@ class CommercialStore:
                     float(payload.get("temperature") or 0),
                     int(payload.get("timeout_seconds") or 120),
                     int(payload.get("max_retries") or 2),
+                    max(0.0, float(payload.get("input_price_per_million") or 0.0)),
+                    max(0.0, float(payload.get("output_price_per_million") or 0.0)),
                     1 if payload.get("enabled", True) else 0,
                     is_default,
                     now,
@@ -1752,9 +1957,12 @@ class CommercialStore:
         for key in ("provider", "model", "base_url"):
             if key in payload and str(payload.get(key) or "").strip():
                 updates[key] = str(payload.get(key) or "").strip()
-        for key in ("temperature",):
+        for key in ("temperature", "input_price_per_million", "output_price_per_million"):
             if key in payload and payload.get(key) is not None:
-                updates[key] = float(payload[key])
+                value = float(payload[key])
+                if value < 0:
+                    raise ValueError(f"{key} must be non-negative")
+                updates[key] = value
         for key in ("timeout_seconds", "max_retries"):
             if key in payload and payload.get(key) is not None:
                 updates[key] = int(payload[key])

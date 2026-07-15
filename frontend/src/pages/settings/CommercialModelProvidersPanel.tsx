@@ -23,6 +23,8 @@ export interface ModelProviderFormState {
   temperature: number;
   timeout_seconds: number;
   max_retries: number;
+  input_price_per_million?: number;
+  output_price_per_million?: number;
   enabled: boolean;
   is_default: boolean;
 }
@@ -378,6 +380,15 @@ export function CommercialModelProvidersPanel({
             </Field>
             <Field label={t("settings.maxRetries")}>
               <NumberInput min={0} max={20} step={1} value={form.max_retries} onChange={(event) => onFormChange({ max_retries: Number(event.target.value) })} />
+            </Field>
+          </div>
+
+          <div className="grid gap-4 border-t border-[hsl(var(--border-subtle))] pt-4 sm:grid-cols-2">
+            <Field label={t("settings.modelProviderForm.inputPricePerMillion")} hint={t("settings.modelProviderForm.priceHint")}>
+              <NumberInput min={0} step={0.0001} value={form.input_price_per_million ?? 0} onChange={(event) => onFormChange({ input_price_per_million: Number(event.target.value) })} />
+            </Field>
+            <Field label={t("settings.modelProviderForm.outputPricePerMillion")} hint={t("settings.modelProviderForm.priceHint")}>
+              <NumberInput min={0} step={0.0001} value={form.output_price_per_million ?? 0} onChange={(event) => onFormChange({ output_price_per_million: Number(event.target.value) })} />
             </Field>
           </div>
 

@@ -569,6 +569,9 @@
       "customModel": "معرّف نموذج مخصص",
       "customModelPlaceholder": "مثال: vendor/model-name",
       "keepExistingKey": "Leave blank to keep existing key",
+      "inputPricePerMillion": "Input price per 1M tokens (USD)",
+      "outputPricePerMillion": "Output price per 1M tokens (USD)",
+      "priceHint": "Enter 0 when provider pricing is not tracked.",
       "makeDefault": "Use as organization default",
       "deleteTitle": "حذف مزود النموذج",
       "deleteDescription": "هل تريد حذف مزود النموذج {{model}}؟",
@@ -1623,7 +1626,7 @@
     "knowledge": { "title": "حوكمة المعرفة", "description": "مراجعة قواعد المعرفة وبنية المتجهات وإعدادات الاسترجاع وتغطية الصلاحيات.", "loadFailed": "تعذر تحميل حوكمة المعرفة", "openWorkspace": "فتح مساحة المعرفة", "baseCount": "قواعد المعرفة", "vectorStorage": "مخزن المتجهات", "embeddingProvider": "مزود التضمين", "base": "قاعدة المعرفة", "retrieval": "الاسترجاع", "access": "الصلاحيات", "roleCount": "{{count}} أدوار للقراءة", "empty": "لا توجد قواعد معرفة." },
     "runtime": { "title": "حوكمة التشغيل", "description": "مراقبة مهام الوكلاء والإدخال والزحف والاختبارات الخلفية.", "loadFailed": "تعذر تحميل مهام التشغيل", "active": "نشطة", "failed": "فاشلة", "completed": "مكتملة", "progress": "تقدم المهمة", "retry": "إعادة المحاولة", "cancel": "إلغاء", "retryStarted": "بدأت إعادة المحاولة.", "cancelled": "تم إلغاء المهمة.", "empty": "لا توجد مهام تشغيل." },
     "audit": { "title": "سجل التدقيق", "description": "فحص أحداث المصادقة والنماذج والمعرفة والأدوات والموافقات والإدارة.", "loadFailed": "تعذر تحميل أحداث التدقيق", "search": "بحث التدقيق", "searchPlaceholder": "البحث في الإجراء أو المنفذ أو المورد أو البيانات", "eventCount": "{{count}} حدث", "event": "الحدث", "actor": "المنفذ", "resource": "المورد", "time": "الوقت", "empty": "لا توجد أحداث مطابقة." },
-    "usage": { "title": "استخدام النماذج", "description": "مراجعة الاستدعاءات والرموز والتكلفة المقدرة وزمن الاستجابة حسب النموذج.", "loadFailed": "تعذر تحميل استخدام النماذج", "calls": "الاستدعاءات", "tokens": "الرموز", "estimatedCost": "التكلفة المقدرة", "averageLatency": "متوسط الزمن", "byModel": "الاستخدام حسب النموذج", "empty": "لا توجد سجلات استخدام." }
+    "usage": { "title": "استخدام النماذج", "description": "مراجعة الاستدعاءات والرموز والتكلفة المقدرة وزمن الاستجابة حسب النموذج.", "loadFailed": "تعذر تحميل استخدام النماذج", "calls": "الاستدعاءات", "tokens": "الرموز", "estimatedCost": "التكلفة المقدرة", "averageLatency": "متوسط الزمن", "byModel": "الاستخدام حسب النموذج", "empty": "لا توجد سجلات استخدام.", "budgetTitle": "Monthly budget controls", "budgetDescription": "Configure organization token and cost limits before model calls are dispatched.", "monthlyTokens": "Current-month tokens", "monthlyCost": "Current-month cost", "softTokenLimit": "Token soft limit", "hardTokenLimit": "Token hard limit", "softCostLimit": "Cost soft limit (USD)", "hardCostLimit": "Cost hard limit (USD)", "unlimited": "Unlimited", "unlimitedHint": "Set a limit to 0 to leave that guardrail disabled.", "withinBudget": "Within budget", "softLimitReached": "Soft limit reached", "hardLimitReached": "Hard limit reached", "saveBudget": "Save budget", "budgetSaved": "Organization budget updated.", "budgetSaveFailed": "Failed to update organization budget.", "budgetOwnerOnly": "Only organization owners can change budget limits." }
   },
   "knowledgeWorkspace": {
     "title": "مساحة عمل قاعدة المعرفة",

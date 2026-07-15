@@ -713,12 +713,16 @@ def register_sessions_routes(app: FastAPI) -> None:
                     "role": principal.role,
                 }
                 try:
-                    from src.commercial.store import CommercialStore
+                    from src.commercial.store import CommercialStore, UsageLimitExceeded
 
-                    commercial_model_provider = CommercialStore().resolve_model_provider_runtime(
+                    commercial_store = CommercialStore()
+                    commercial_store.assert_model_usage_available(principal)
+                    commercial_model_provider = commercial_store.resolve_model_provider_runtime(
                         principal,
                         payload.model_provider_id,
                     )
+                except UsageLimitExceeded as exc:
+                    raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
                 except KeyError as exc:
                     raise HTTPException(status_code=404, detail="model provider not found") from exc
                 except ValueError as exc:

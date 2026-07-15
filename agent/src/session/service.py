@@ -749,6 +749,16 @@ class SessionService:
             organization_id = str(commercial_principal.get("organization_id") or "").strip()
             user_id = str(commercial_principal.get("user_id") or "").strip()
             if organization_id and user_id:
+                # Queue delay must not allow a task accepted earlier to bypass
+                # an organization hard limit reached by concurrent work.
+                from src.commercial.store import CommercialStore, Principal
+
+                CommercialStore().assert_model_usage_available(Principal(
+                    user_id=user_id,
+                    organization_id=organization_id,
+                    email=str(commercial_principal.get("email") or ""),
+                    role=str(commercial_principal.get("role") or "member"),
+                ))
                 pm = PersistentMemory(memory_dir=commercial_memory_directory(organization_id, user_id))
             else:
                 pm = PersistentMemory()

@@ -1,18 +1,54 @@
 import { useEffect, useMemo, useState } from "react";
 import { Gauge } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { api, type ModelUsage } from "@/lib/api";
+import { toast } from "sonner";
+import { api, type CommercialPrincipal, type ModelUsage, type OrganizationUsagePolicy, type OrganizationUsageSummary } from "@/lib/api";
 import { InlineError, Skeleton } from "@/components/ui/AsyncState";
+import { Button } from "@/components/ui/Button";
+
+const EMPTY_POLICY: OrganizationUsagePolicy = {
+  organization_id: "",
+  monthly_token_soft_limit: 0,
+  monthly_token_hard_limit: 0,
+  monthly_cost_soft_limit: 0,
+  monthly_cost_hard_limit: 0,
+};
+
+const EMPTY_MONTHLY_SUMMARY: OrganizationUsageSummary = {
+  period_start: "",
+  calls: 0,
+  total_tokens: 0,
+  estimated_cost: 0,
+  average_latency_ms: 0,
+  policy: EMPTY_POLICY,
+  token_soft_limit_reached: false,
+  token_hard_limit_reached: false,
+  cost_soft_limit_reached: false,
+  cost_hard_limit_reached: false,
+};
 
 export function Usage() {
   const { t } = useTranslation();
   const [usage, setUsage] = useState<ModelUsage[]>([]);
+  const [monthlySummary, setMonthlySummary] = useState<OrganizationUsageSummary>(EMPTY_MONTHLY_SUMMARY);
+  const [policy, setPolicy] = useState<OrganizationUsagePolicy>(EMPTY_POLICY);
+  const [principal, setPrincipal] = useState<CommercialPrincipal | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [savingPolicy, setSavingPolicy] = useState(false);
 
   const load = async () => {
     setError("");
-    setUsage(await api.listModelUsage(1000));
+    const [records, summary, nextPolicy, currentPrincipal] = await Promise.all([
+      api.listModelUsage(1000),
+      api.getUsageSummary(),
+      api.getUsagePolicy(),
+      api.getCommercialMe(),
+    ]);
+    setUsage(records);
+    setMonthlySummary(summary);
+    setPolicy(nextPolicy);
+    setPrincipal(currentPrincipal);
   };
 
   useEffect(() => {
@@ -42,6 +78,29 @@ export function Usage() {
     return Array.from(grouped.values()).sort((left, right) => right.tokens - left.tokens);
   }, [usage]);
   const maxTokens = Math.max(1, ...byModel.map((item) => item.tokens));
+  const canEditBudget = principal?.role === "owner";
+  const hardLimitReached = monthlySummary.token_hard_limit_reached || monthlySummary.cost_hard_limit_reached;
+  const softLimitReached = monthlySummary.token_soft_limit_reached || monthlySummary.cost_soft_limit_reached;
+
+  const savePolicy = async () => {
+    if (!canEditBudget || savingPolicy) return;
+    setSavingPolicy(true);
+    try {
+      const nextPolicy = await api.updateUsagePolicy({
+        monthly_token_soft_limit: Math.max(0, Number(policy.monthly_token_soft_limit || 0)),
+        monthly_token_hard_limit: Math.max(0, Number(policy.monthly_token_hard_limit || 0)),
+        monthly_cost_soft_limit: Math.max(0, Number(policy.monthly_cost_soft_limit || 0)),
+        monthly_cost_hard_limit: Math.max(0, Number(policy.monthly_cost_hard_limit || 0)),
+      });
+      setPolicy(nextPolicy);
+      setMonthlySummary((current) => ({ ...current, policy: nextPolicy }));
+      toast.success(t("adminCenter.usage.budgetSaved"));
+    } catch (saveError) {
+      toast.error(errorMessage(saveError) || t("adminCenter.usage.budgetSaveFailed"));
+    } finally {
+      setSavingPolicy(false);
+    }
+  };
 
   if (loading) return <div className="grid gap-4"><Skeleton className="h-20" /><Skeleton className="h-96" /></div>;
   if (error) return <InlineError title={t("adminCenter.usage.loadFailed")} message={error} retryLabel={t("adminCenter.retry")} onRetry={() => void load()} />;
@@ -54,6 +113,34 @@ export function Usage() {
         <Metric label={t("adminCenter.usage.tokens")} value={formatNumber(summary.tokens)} />
         <Metric label={t("adminCenter.usage.estimatedCost")} value={formatCurrency(summary.cost)} />
         <Metric label={t("adminCenter.usage.averageLatency")} value={`${summary.calls ? Math.round(summary.latency / summary.calls) : 0} ms`} />
+      </section>
+      <section className="surface-panel p-4">
+        <div className="flex flex-col gap-3 border-b border-[hsl(var(--border-subtle))] pb-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-ink-strong">{t("adminCenter.usage.budgetTitle")}</h3>
+            <p className="mt-1 text-sm leading-5 text-ink-muted">{t("adminCenter.usage.budgetDescription")}</p>
+          </div>
+          <span className={[
+            "inline-flex w-fit rounded-md border px-2.5 py-1 text-xs font-medium",
+            hardLimitReached ? "border-danger/35 bg-danger/10 text-danger" : softLimitReached ? "border-warning/35 bg-warning/10 text-warning" : "border-success/35 bg-success/10 text-success",
+          ].join(" ")}>{hardLimitReached ? t("adminCenter.usage.hardLimitReached") : softLimitReached ? t("adminCenter.usage.softLimitReached") : t("adminCenter.usage.withinBudget")}</span>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <BudgetMetric label={t("adminCenter.usage.monthlyTokens")} value={formatNumber(monthlySummary.total_tokens)} limit={monthlySummary.policy.monthly_token_hard_limit} unlimitedLabel={t("adminCenter.usage.unlimited")} />
+          <BudgetMetric label={t("adminCenter.usage.monthlyCost")} value={formatCurrency(monthlySummary.estimated_cost)} limit={monthlySummary.policy.monthly_cost_hard_limit} unlimitedLabel={t("adminCenter.usage.unlimited")} currency />
+          <Metric label={t("adminCenter.usage.calls")} value={formatNumber(monthlySummary.calls)} />
+          <Metric label={t("adminCenter.usage.averageLatency")} value={`${Math.round(monthlySummary.average_latency_ms)} ms`} />
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <BudgetInput label={t("adminCenter.usage.softTokenLimit")} value={policy.monthly_token_soft_limit} disabled={!canEditBudget} onChange={(value) => setPolicy((current) => ({ ...current, monthly_token_soft_limit: value }))} />
+          <BudgetInput label={t("adminCenter.usage.hardTokenLimit")} value={policy.monthly_token_hard_limit} disabled={!canEditBudget} onChange={(value) => setPolicy((current) => ({ ...current, monthly_token_hard_limit: value }))} />
+          <BudgetInput label={t("adminCenter.usage.softCostLimit")} value={policy.monthly_cost_soft_limit} disabled={!canEditBudget} step="0.01" onChange={(value) => setPolicy((current) => ({ ...current, monthly_cost_soft_limit: value }))} />
+          <BudgetInput label={t("adminCenter.usage.hardCostLimit")} value={policy.monthly_cost_hard_limit} disabled={!canEditBudget} step="0.01" onChange={(value) => setPolicy((current) => ({ ...current, monthly_cost_hard_limit: value }))} />
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          {canEditBudget ? <Button size="sm" variant="primary" loading={savingPolicy} onClick={() => void savePolicy()}>{t("adminCenter.usage.saveBudget")}</Button> : <p className="text-xs text-ink-muted">{t("adminCenter.usage.budgetOwnerOnly")}</p>}
+          <p className="text-xs text-ink-muted">{t("adminCenter.usage.unlimitedHint")}</p>
+        </div>
       </section>
       <section>
         <h3 className="text-sm font-semibold text-ink-strong">{t("adminCenter.usage.byModel")}</h3>
@@ -74,6 +161,8 @@ export function Usage() {
 }
 
 function Metric({ label, value }: { label: string; value: string }) { return <div className="border-s-2 border-s-primary/35 bg-surface-2 px-3 py-2.5"><div className="text-xs text-ink-muted">{label}</div><div className="mt-2 truncate font-mono text-xl font-semibold tabular-nums text-ink-strong">{value}</div></div>; }
+function BudgetMetric({ label, value, limit, unlimitedLabel, currency = false }: { label: string; value: string; limit: number; unlimitedLabel: string; currency?: boolean }) { return <div className="border-s-2 border-s-accent/45 bg-surface-2 px-3 py-2.5"><div className="text-xs text-ink-muted">{label}</div><div className="mt-2 truncate font-mono text-xl font-semibold tabular-nums text-ink-strong">{value}</div><div className="mt-1 text-xs text-ink-muted">{limit > 0 ? `${currency ? "$" : ""}${formatNumber(limit)}` : unlimitedLabel}</div></div>; }
+function BudgetInput({ label, value, disabled, onChange, step = "1" }: { label: string; value: number; disabled: boolean; onChange: (value: number) => void; step?: string }) { return <label className="grid gap-1.5"><span className="text-xs text-ink-muted">{label}</span><input type="number" min="0" step={step} value={value || 0} disabled={disabled} onChange={(event) => onChange(Math.max(0, Number(event.target.value) || 0))} className="h-9 rounded-md border border-[hsl(var(--border-default))] bg-surface-1 px-2.5 text-sm text-ink-strong outline-none transition-[border-color,box-shadow] focus:border-primary/60 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-55" /></label>; }
 function formatNumber(value: number) { return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value); }
 function formatCurrency(value: number) { return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 4 }).format(value); }
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error || "Unknown error"); }

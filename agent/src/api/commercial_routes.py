@@ -51,6 +51,8 @@ class ModelProviderCreateRequest(BaseModel):
     temperature: float = 0.0
     timeout_seconds: int = 120
     max_retries: int = 2
+    input_price_per_million: float = Field(0.0, ge=0)
+    output_price_per_million: float = Field(0.0, ge=0)
     enabled: bool = True
     is_default: bool = False
 
@@ -64,6 +66,8 @@ class ModelProviderUpdateRequest(BaseModel):
     temperature: float | None = None
     timeout_seconds: int | None = None
     max_retries: int | None = None
+    input_price_per_million: float | None = Field(None, ge=0)
+    output_price_per_million: float | None = Field(None, ge=0)
     enabled: bool | None = None
     is_default: bool | None = None
 
@@ -146,6 +150,13 @@ class ToolPolicyUpdateRequest(BaseModel):
     permission_scope: str | None = None
     requires_approval: bool | None = None
     enabled: bool | None = None
+
+
+class UsagePolicyUpdateRequest(BaseModel):
+    monthly_token_soft_limit: int | None = Field(None, ge=0)
+    monthly_token_hard_limit: int | None = Field(None, ge=0)
+    monthly_cost_soft_limit: float | None = Field(None, ge=0)
+    monthly_cost_hard_limit: float | None = Field(None, ge=0)
 
 
 class FeedbackCreateRequest(BaseModel):
@@ -1001,6 +1012,24 @@ def register_commercial_routes(app: FastAPI) -> None:
     @app.get("/usage/model-calls")
     async def model_usage(limit: int = 100, principal: Principal = Depends(_require_role("owner", "admin"))):
         return _store().list_usage(principal, limit=limit)
+
+    @app.get("/usage/summary")
+    async def usage_summary(principal: Principal = Depends(_require_role("owner", "admin"))):
+        return _store().usage_summary(principal)
+
+    @app.get("/usage/policy")
+    async def usage_policy(principal: Principal = Depends(_require_role("owner", "admin"))):
+        return _store().get_usage_policy(principal)
+
+    @app.put("/usage/policy")
+    async def update_usage_policy(
+        payload: UsagePolicyUpdateRequest,
+        principal: Principal = Depends(_require_role("owner")),
+    ):
+        try:
+            return _store().update_usage_policy(principal, payload.model_dump(exclude_none=True))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     @app.post("/feedback")
     async def create_feedback(

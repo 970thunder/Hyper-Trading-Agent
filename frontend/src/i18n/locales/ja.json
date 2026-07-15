@@ -569,6 +569,9 @@
       "customModel": "カスタムモデル ID",
       "customModelPlaceholder": "例: vendor/model-name",
       "keepExistingKey": "Leave blank to keep existing key",
+      "inputPricePerMillion": "Input price per 1M tokens (USD)",
+      "outputPricePerMillion": "Output price per 1M tokens (USD)",
+      "priceHint": "Enter 0 when provider pricing is not tracked.",
       "makeDefault": "Use as organization default",
       "deleteTitle": "モデルプロバイダーを削除",
       "deleteDescription": "{{model}} のモデルプロバイダーを削除しますか？",
@@ -1640,7 +1643,7 @@
       "title": "監査ログ", "description": "認証、モデル、ナレッジ、ツール、承認、管理イベントを確認します。", "loadFailed": "監査イベントを読み込めませんでした", "search": "監査検索", "searchPlaceholder": "操作、実行者、リソース、メタデータを検索", "eventCount": "{{count}} 件", "event": "イベント", "actor": "実行者", "resource": "リソース", "time": "時刻", "empty": "一致するイベントがありません。"
     },
     "usage": {
-      "title": "モデル使用量", "description": "呼び出し、トークン、推定コスト、モデル別レイテンシを確認します。", "loadFailed": "使用量を読み込めませんでした", "calls": "呼び出し", "tokens": "トークン", "estimatedCost": "推定コスト", "averageLatency": "平均レイテンシ", "byModel": "モデル別使用量", "empty": "使用記録がありません。"
+      "title": "モデル使用量", "description": "呼び出し、トークン、推定コスト、モデル別レイテンシを確認します。", "loadFailed": "使用量を読み込めませんでした", "calls": "呼び出し", "tokens": "トークン", "estimatedCost": "推定コスト", "averageLatency": "平均レイテンシ", "byModel": "モデル別使用量", "empty": "使用記録がありません。", "budgetTitle": "Monthly budget controls", "budgetDescription": "Configure organization token and cost limits before model calls are dispatched.", "monthlyTokens": "Current-month tokens", "monthlyCost": "Current-month cost", "softTokenLimit": "Token soft limit", "hardTokenLimit": "Token hard limit", "softCostLimit": "Cost soft limit (USD)", "hardCostLimit": "Cost hard limit (USD)", "unlimited": "Unlimited", "unlimitedHint": "Set a limit to 0 to leave that guardrail disabled.", "withinBudget": "Within budget", "softLimitReached": "Soft limit reached", "hardLimitReached": "Hard limit reached", "saveBudget": "Save budget", "budgetSaved": "Organization budget updated.", "budgetSaveFailed": "Failed to update organization budget.", "budgetOwnerOnly": "Only organization owners can change budget limits."
     }
   },
   "knowledgeWorkspace": {
