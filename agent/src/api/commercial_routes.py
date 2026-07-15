@@ -14,6 +14,8 @@ from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Response, st
 from pydantic import BaseModel, Field
 
 from src.commercial.store import CommercialStore, Principal, embedding_backend_status as get_embedding_backend_status
+from src.memory.persistent import PersistentMemory, commercial_memory_directory
+from src.memory.policy import MemoryPolicy
 from src.runtime_jobs.backend import REDIS_POSTGRES_RUNTIME_BACKEND, _redis_client_from_url, _redis_url, build_runtime_job_backend
 from src.tools.doc_reader_tool import read_document
 from src.tools.path_utils import safe_document_path
@@ -171,12 +173,41 @@ class FeedbackCreateRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class PersistentMemoryCreateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=180)
+    content: str = Field(..., min_length=1, max_length=8000)
+    memory_type: str = Field("user", max_length=32)
+    description: str = Field("", max_length=320)
+
+
+class PersistentMemoryPurgeRequest(BaseModel):
+    older_than_days: int = Field(..., ge=1, le=3650)
+
+
 def _host():
     return _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
 
 
 def _store() -> CommercialStore:
     return CommercialStore()
+
+
+def _persistent_memory(principal: Principal) -> PersistentMemory:
+    """Resolve the caller's tenant- and user-scoped persistent memory only."""
+    return PersistentMemory(memory_dir=commercial_memory_directory(principal.organization_id, principal.user_id))
+
+
+def _memory_payload(entry: Any, *, include_body: bool = False) -> dict[str, Any]:
+    payload = {
+        "id": entry.path.stem,
+        "title": entry.title,
+        "description": entry.description,
+        "memory_type": entry.memory_type,
+        "modified_at": entry.modified_at,
+    }
+    if include_body:
+        payload["content"] = entry.body
+    return payload
 
 
 def _runtime_redis_client():
@@ -1093,6 +1124,77 @@ def register_commercial_routes(app: FastAPI) -> None:
             target_type=target_type,
             target_id=target_id,
         )
+
+    @app.get("/memory")
+    async def list_persistent_memory(
+        query: str = Query("", max_length=500),
+        limit: int = Query(50, ge=1, le=200),
+        principal: Principal = Depends(_require_role("owner", "admin", "member", "viewer")),
+    ):
+        memory = _persistent_memory(principal)
+        entries = memory.find_relevant(query, max_results=limit) if query.strip() else memory.list_entries()[:limit]
+        return [_memory_payload(entry) for entry in entries]
+
+    @app.get("/memory/{memory_id}")
+    async def get_persistent_memory(
+        memory_id: str,
+        principal: Principal = Depends(_require_role("owner", "admin", "member", "viewer")),
+    ):
+        entry = _persistent_memory(principal).find(memory_id)
+        if entry is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="memory not found")
+        return _memory_payload(entry, include_body=True)
+
+    @app.post("/memory")
+    async def create_persistent_memory(
+        payload: PersistentMemoryCreateRequest,
+        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+    ):
+        policy = MemoryPolicy()
+        allowed, reason = policy.validate_write(payload.title, payload.content, payload.memory_type)
+        if not allowed:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=reason or "memory write blocked")
+        memory = _persistent_memory(principal)
+        try:
+            path = memory.add(payload.title, payload.content, payload.memory_type, description=payload.description)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        entry = memory.find(path.stem)
+        if entry is None:  # pragma: no cover - protects a successful write from a transient read failure
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="memory write could not be read")
+        _store().audit(principal, "memory.create", "persistent_memory", path.stem, {
+            "memory_type": entry.memory_type,
+            "content_length": len(entry.body),
+        })
+        return _memory_payload(entry, include_body=True)
+
+    @app.delete("/memory/{memory_id}")
+    async def delete_persistent_memory(
+        memory_id: str,
+        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+    ):
+        memory = _persistent_memory(principal)
+        entry = memory.find(memory_id)
+        if entry is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="memory not found")
+        if not memory.remove_entry(entry):
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="memory deletion failed")
+        _store().audit(principal, "memory.delete", "persistent_memory", memory_id, {"memory_type": entry.memory_type})
+        return {"status": "deleted", "memory_id": memory_id}
+
+    @app.post("/memory/purge")
+    async def purge_persistent_memory(
+        payload: PersistentMemoryPurgeRequest,
+        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+    ):
+        memory = _persistent_memory(principal)
+        cutoff = time.time() - payload.older_than_days * 24 * 60 * 60
+        removed = [entry for entry in memory.list_entries() if entry.modified_at < cutoff and memory.remove_entry(entry)]
+        _store().audit(principal, "memory.purge", "persistent_memory", "", {
+            "older_than_days": payload.older_than_days,
+            "removed_count": len(removed),
+        })
+        return {"status": "completed", "removed_count": len(removed), "older_than_days": payload.older_than_days}
 
     # Platform administration is intentionally separate from organization /admin.
     # All endpoints return operational metadata only and never provider secrets.

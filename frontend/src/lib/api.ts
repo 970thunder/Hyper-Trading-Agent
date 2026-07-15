@@ -377,6 +377,24 @@ export const api = {
     const qs = q.toString();
     return request<FeedbackEvent[]>(`/feedback${qs ? `?${qs}` : ""}`);
   },
+  listPersistentMemory: (params: { query?: string; limit?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.query) query.set("query", params.query);
+    if (params.limit) query.set("limit", String(params.limit));
+    const suffix = query.toString();
+    return request<PersistentMemoryRecord[]>(`/memory${suffix ? `?${suffix}` : ""}`);
+  },
+  getPersistentMemory: (memoryId: string) =>
+    request<PersistentMemoryRecord>(`/memory/${encodeURIComponent(memoryId)}`),
+  createPersistentMemory: (body: PersistentMemoryCreateRequest) =>
+    request<PersistentMemoryRecord>("/memory", { method: "POST", body: JSON.stringify(body) }),
+  deletePersistentMemory: (memoryId: string) =>
+    request<{ status: string; memory_id: string }>(`/memory/${encodeURIComponent(memoryId)}`, { method: "DELETE" }),
+  purgePersistentMemory: (olderThanDays: number) =>
+    request<{ status: string; removed_count: number; older_than_days: number }>("/memory/purge", {
+      method: "POST",
+      body: JSON.stringify({ older_than_days: olderThanDays }),
+    }),
   getPlatformSummary: () => request<PlatformSummary>("/platform-admin/summary"),
   getPlatformOperations: () => request<PlatformOperations>("/platform-admin/operations"),
   runPlatformMaintenance: (action: PlatformMaintenanceAction) =>
@@ -1219,6 +1237,22 @@ export interface FeedbackEvent {
   tags: string[];
   metadata: Record<string, unknown>;
   created_at: string;
+}
+
+export interface PersistentMemoryRecord {
+  id: string;
+  title: string;
+  description: string;
+  memory_type: "user" | "feedback" | "project" | "reference";
+  modified_at: number;
+  content?: string;
+}
+
+export interface PersistentMemoryCreateRequest {
+  title: string;
+  content: string;
+  memory_type?: PersistentMemoryRecord["memory_type"];
+  description?: string;
 }
 
 export interface ChannelAdapterStatus {
