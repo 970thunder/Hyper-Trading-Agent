@@ -107,7 +107,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Professional output policy, emoji filtering, citation checks, and investment risk disclosure.
 - [ ] Add richer step cards with retry count, artifacts, approval links, and persisted refresh recovery for every attempt.
 - [ ] Add structured quantitative research report templates and downloadable result bundles.
-- [ ] Add persistent memory controls, history retrieval, and memory deletion/retention UI.
+- [x] Add persistent memory controls, history retrieval, and memory deletion/retention UI.
 - [ ] Add user feedback analytics and cross-evaluation datasets.
 
 ## P4 Deployment And Operations

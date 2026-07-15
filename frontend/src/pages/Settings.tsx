@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { BarChart3, Loader2, MessageSquareMore, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { BarChart3, Brain, Loader2, MessageSquareMore, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -15,9 +15,10 @@ import { cn } from "@/lib/utils";
 import { ChannelsSettingsPanel } from "@/pages/settings/ChannelsSettingsPanel";
 import { DataSourceSettingsPanel } from "@/pages/settings/DataSourceSettingsPanel";
 import { OrganizationSecurityPanel } from "@/pages/settings/OrganizationSecurityPanel";
+import { PersistentMemoryPanel } from "@/pages/settings/PersistentMemoryPanel";
 import { SettingsOverviewPanel } from "@/pages/settings/SettingsOverviewPanel";
 
-type SettingsSection = "overview" | "data" | "security" | "channels";
+type SettingsSection = "overview" | "data" | "security" | "memory" | "channels";
 
 const SETTINGS_SECTIONS: Array<{
   id: SettingsSection;
@@ -28,6 +29,7 @@ const SETTINGS_SECTIONS: Array<{
   { id: "overview", icon: BarChart3, labelKey: "settings.nav.overview", descKey: "settings.navDesc.overview" },
   { id: "data", icon: SlidersHorizontal, labelKey: "settings.nav.data", descKey: "settings.navDesc.data" },
   { id: "security", icon: ShieldCheck, labelKey: "settings.nav.security", descKey: "settings.navDesc.security" },
+  { id: "memory", icon: Brain, labelKey: "settings.nav.memory", descKey: "settings.navDesc.memory" },
   { id: "channels", icon: MessageSquareMore, labelKey: "settings.nav.channels", descKey: "settings.navDesc.channels" },
 ];
 
@@ -205,6 +207,9 @@ export function Settings() {
           onSubmitLocalApiKey={submitLocalApiKey}
         />
       );
+    }
+    if (activeSection === "memory") {
+      return <PersistentMemoryPanel canManage={principal?.role !== "viewer"} />;
     }
     return (
       <ChannelsSettingsPanel

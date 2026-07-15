@@ -610,7 +610,8 @@
       "security": "安全与 API 访问",
       "channels": "IM 通道",
       "runtime": "运行时 / 后台任务",
-      "audit": "审计与用量"
+      "audit": "审计与用量",
+      "memory": "持久记忆"
     },
     "navDesc": {
       "overview": "当前系统就绪状态",
@@ -621,7 +622,35 @@
       "security": "本地浏览器 API Key 访问",
       "channels": "连接器运行时控制",
       "runtime": "长任务运行状态",
-      "audit": "模型、工具与安全追踪"
+      "audit": "模型、工具与安全追踪",
+      "memory": "管理个人长期研究上下文"
+    },
+    "memory": {
+      "title": "持久记忆",
+      "description": "查看和管理仅属于当前组织与当前用户的长期上下文。",
+      "create": "新建记忆",
+      "search": "搜索",
+      "searchPlaceholder": "搜索标题或说明",
+      "retentionTitle": "保留策略",
+      "retentionDescription": "清理超过所选保留期限的个人记忆。",
+      "days": "{{count}} 天",
+      "purge": "清理过期记忆",
+      "empty": "暂无已保存的持久记忆。",
+      "noDescription": "未填写说明",
+      "loadError": "无法加载持久记忆。",
+      "saveError": "无法保存持久记忆。",
+      "deleteError": "无法删除持久记忆。",
+      "purgeError": "无法清理过期记忆。",
+      "deleteConfirm": "删除记忆 {{title}}？",
+      "delete": "删除",
+      "createTitle": "新建持久记忆",
+      "createDescription": "保存明确的偏好、研究笔记或可复用上下文，供后续 Agent 工作使用。",
+      "close": "关闭",
+      "cancel": "取消",
+      "save": "保存记忆",
+      "name": "标题",
+      "note": "说明",
+      "content": "内容"
     },
     "overview": {
       "title": "系统概览",

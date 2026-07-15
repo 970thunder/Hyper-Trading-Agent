@@ -610,7 +610,8 @@
       "security": "Security & API Access",
       "channels": "IM Channels",
       "runtime": "Runtime / Jobs",
-      "audit": "Audit & Usage"
+      "audit": "Audit & Usage",
+      "memory": "Persistent Memory"
     },
     "navDesc": {
       "overview": "Current system readiness",
@@ -621,7 +622,35 @@
       "security": "Local browser API key access",
       "channels": "Connector runtime controls",
       "runtime": "Long-running task status",
-      "audit": "Model, tool, and security traces"
+      "audit": "Model, tool, and security traces",
+      "memory": "Your long-term research context"
+    },
+    "memory": {
+      "title": "Persistent memory",
+      "description": "Review and manage long-term context stored only for your current organization and account.",
+      "create": "Add memory",
+      "search": "Search",
+      "searchPlaceholder": "Search titles and descriptions",
+      "retentionTitle": "Retention",
+      "retentionDescription": "Remove personal memories older than the selected retention period.",
+      "days": "{{count}} days",
+      "purge": "Purge expired",
+      "empty": "No persistent memories are stored yet.",
+      "noDescription": "No description",
+      "loadError": "Persistent memory could not be loaded.",
+      "saveError": "Persistent memory could not be saved.",
+      "deleteError": "Persistent memory could not be deleted.",
+      "purgeError": "Expired memories could not be removed.",
+      "deleteConfirm": "Delete memory {{title}}?",
+      "delete": "Delete",
+      "createTitle": "Add persistent memory",
+      "createDescription": "Store an explicit preference, research note, or reusable context for future Agent work.",
+      "close": "Close",
+      "cancel": "Cancel",
+      "save": "Save memory",
+      "name": "Title",
+      "note": "Description",
+      "content": "Content"
     },
     "overview": {
       "title": "System Overview",
