@@ -26,6 +26,7 @@ from typing import Any
 from .postgres_identity import PostgresIdentityRepository
 from .postgres_governance import PostgresGovernanceRepository
 from .postgres_knowledge import PostgresKnowledgeRepository
+from .postgres_workspace import PostgresWorkspaceRepository
 
 DEFAULT_DB_PATH = Path.home() / ".vibe-trading" / "commercial" / "commercial.db"
 SESSION_TTL_DAYS = 14
@@ -485,6 +486,7 @@ class CommercialStore:
         self._primary_identity = None if path is not None else PostgresIdentityRepository.from_environment()
         self._primary_governance = None if path is not None else PostgresGovernanceRepository.from_environment()
         self._primary_knowledge = None if path is not None else PostgresKnowledgeRepository.from_environment()
+        self._primary_workspace = None if path is not None else PostgresWorkspaceRepository.from_environment()
         self._init()
         if self._primary_identity is not None:
             self._primary_identity.ensure_available()
@@ -498,6 +500,10 @@ class CommercialStore:
             self._primary_knowledge.ensure_available()
             if self._primary_knowledge.needs_initial_sync():
                 self._sync_primary_knowledge_from_sqlite()
+        if self._primary_workspace is not None:
+            self._primary_workspace.ensure_available()
+            if self._primary_workspace.needs_initial_sync():
+                self._sync_primary_workspace_from_sqlite()
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.path))
@@ -827,6 +833,12 @@ class CommercialStore:
         with self._connect() as conn:
             self._primary_knowledge.sync_from_sqlite(conn)
 
+    def _sync_primary_workspace_from_sqlite(self) -> None:
+        if self._primary_workspace is None:
+            return
+        with self._connect() as conn:
+            self._primary_workspace.sync_from_sqlite(conn)
+
     # --- auth / orgs ---
 
     def _sync_platform_admin_bootstrap(self, user_id: str, email: str) -> None:
@@ -1058,6 +1070,15 @@ class CommercialStore:
     def bind_workspace_session(self, principal: Principal, session_id: str) -> None:
         if not session_id:
             raise ValueError("session id is required")
+        if self._primary_workspace is not None:
+            self._primary_workspace.bind_session(
+                session_id=session_id,
+                organization_id=principal.organization_id,
+                user_id=principal.user_id,
+                now=utcnow(),
+            )
+            self.audit(principal, "workspace.session.create", "session", session_id, {})
+            return
         with self._connect() as conn:
             existing = conn.execute(
                 "SELECT organization_id FROM workspace_sessions WHERE session_id = ?",
@@ -1072,6 +1093,8 @@ class CommercialStore:
         self.audit(principal, "workspace.session.create", "session", session_id, {})
 
     def session_belongs_to_organization(self, principal: Principal, session_id: str) -> bool:
+        if self._primary_workspace is not None:
+            return self._primary_workspace.session_belongs_to_organization(principal.organization_id, session_id)
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT 1 FROM workspace_sessions WHERE session_id = ? AND organization_id = ?",
@@ -1080,6 +1103,8 @@ class CommercialStore:
         return row is not None
 
     def list_workspace_session_ids(self, principal: Principal, limit: int = 200) -> set[str]:
+        if self._primary_workspace is not None:
+            return self._primary_workspace.list_session_ids(principal.organization_id, limit)
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT session_id FROM workspace_sessions WHERE organization_id = ? ORDER BY created_at DESC LIMIT ?",
@@ -1088,6 +1113,10 @@ class CommercialStore:
         return {str(row["session_id"]) for row in rows}
 
     def delete_workspace_session(self, principal: Principal, session_id: str) -> None:
+        if self._primary_workspace is not None:
+            self._primary_workspace.delete_session(principal.organization_id, session_id)
+            self.audit(principal, "workspace.session.delete", "session", session_id, {})
+            return
         with self._connect() as conn:
             conn.execute(
                 "DELETE FROM workspace_sessions WHERE session_id = ? AND organization_id = ?",
@@ -1105,6 +1134,17 @@ class CommercialStore:
     ) -> None:
         if not run_id:
             raise ValueError("run id is required")
+        if self._primary_workspace is not None:
+            self._primary_workspace.bind_run(
+                run_id=run_id,
+                organization_id=principal.organization_id,
+                user_id=principal.user_id,
+                session_id=session_id,
+                attempt_id=attempt_id,
+                now=utcnow(),
+            )
+            self.audit(principal, "workspace.run.create", "run", run_id, {"session_id": session_id, "attempt_id": attempt_id})
+            return
         with self._connect() as conn:
             existing = conn.execute("SELECT organization_id FROM workspace_runs WHERE run_id = ?", (run_id,)).fetchone()
             if existing is not None and str(existing["organization_id"]) != principal.organization_id:
@@ -1116,6 +1156,8 @@ class CommercialStore:
         self.audit(principal, "workspace.run.create", "run", run_id, {"session_id": session_id, "attempt_id": attempt_id})
 
     def run_belongs_to_organization(self, principal: Principal, run_id: str) -> bool:
+        if self._primary_workspace is not None:
+            return self._primary_workspace.run_belongs_to_organization(principal.organization_id, run_id)
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT 1 FROM workspace_runs WHERE run_id = ? AND organization_id = ?",
@@ -1124,6 +1166,8 @@ class CommercialStore:
         return row is not None
 
     def list_workspace_run_ids(self, principal: Principal, limit: int = 200) -> set[str]:
+        if self._primary_workspace is not None:
+            return self._primary_workspace.list_run_ids(principal.organization_id, limit)
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT run_id FROM workspace_runs WHERE organization_id = ? ORDER BY created_at DESC LIMIT ?",
@@ -1149,6 +1193,26 @@ class CommercialStore:
             raise ValueError("artifact identity is invalid")
         now = utcnow()
         metadata_json = json.dumps(metadata or {}, ensure_ascii=False, default=str)
+        if self._primary_workspace is not None:
+            self._primary_workspace.bind_artifact(
+                artifact_type=normalized_type,
+                artifact_id=normalized_id,
+                organization_id=principal.organization_id,
+                user_id=principal.user_id,
+                session_id=session_id,
+                attempt_id=attempt_id,
+                storage_path=storage_path,
+                metadata=metadata or {},
+                now=now,
+            )
+            self.audit(
+                principal,
+                "workspace.artifact.upsert",
+                normalized_type,
+                normalized_id,
+                {"session_id": session_id, "attempt_id": attempt_id, "storage_path": storage_path},
+            )
+            return
         with self._connect() as conn:
             existing = conn.execute(
                 "SELECT organization_id FROM workspace_artifacts WHERE artifact_type = ? AND artifact_id = ?",
@@ -1196,6 +1260,12 @@ class CommercialStore:
         artifact_type: str,
         artifact_id: str,
     ) -> bool:
+        if self._primary_workspace is not None:
+            return self._primary_workspace.artifact_belongs_to_organization(
+                principal.organization_id,
+                str(artifact_type or "").strip().lower(),
+                artifact_id,
+            )
         with self._connect() as conn:
             row = conn.execute(
                 """
@@ -1213,6 +1283,12 @@ class CommercialStore:
         *,
         limit: int = 200,
     ) -> set[str]:
+        if self._primary_workspace is not None:
+            return self._primary_workspace.list_artifact_ids(
+                principal.organization_id,
+                str(artifact_type or "").strip().lower(),
+                limit,
+            )
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -1234,6 +1310,17 @@ class CommercialStore:
     ) -> None:
         if not storage_key.startswith("uploads/"):
             raise ValueError("upload storage key is invalid")
+        if self._primary_workspace is not None:
+            self._primary_workspace.register_uploaded_file(
+                storage_key=storage_key,
+                organization_id=principal.organization_id,
+                user_id=principal.user_id,
+                original_filename=original_filename,
+                size_bytes=size_bytes,
+                now=utcnow(),
+            )
+            self.audit(principal, "workspace.upload.create", "upload", storage_key, {"size_bytes": max(0, int(size_bytes))})
+            return
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO uploaded_files(storage_key, organization_id, uploaded_by_user_id, original_filename, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -1249,6 +1336,8 @@ class CommercialStore:
         self.audit(principal, "workspace.upload.create", "upload", storage_key, {"size_bytes": max(0, int(size_bytes))})
 
     def uploaded_file_belongs_to_organization(self, principal: Principal, storage_key: str) -> bool:
+        if self._primary_workspace is not None:
+            return self._primary_workspace.uploaded_file_belongs_to_organization(principal.organization_id, storage_key)
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT 1 FROM uploaded_files WHERE storage_key = ? AND organization_id = ?",
@@ -4053,6 +4142,8 @@ class CommercialStore:
         payload = {str(key): int(row[key] or 0) for key in row.keys()}
         if self._primary_knowledge is not None:
             payload.update(self._primary_knowledge.status())
+        if self._primary_workspace is not None:
+            payload.update(self._primary_workspace.status())
         try:
             payload["commercial_db_bytes"] = int(self.path.stat().st_size)
         except OSError:
@@ -4099,6 +4190,11 @@ class CommercialStore:
             payload["knowledge_primary_counts"] = self._primary_knowledge.status()
         else:
             payload["knowledge_storage"] = "sqlite-compatibility"
+        if self._primary_workspace is not None:
+            payload["workspace_storage"] = "postgres-primary"
+            payload["workspace_primary_counts"] = self._primary_workspace.status()
+        else:
+            payload["workspace_storage"] = "sqlite-compatibility"
         return payload
 
     def list_platform_workspace_artifacts(
@@ -4109,6 +4205,12 @@ class CommercialStore:
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List tenant-bound generated resources for platform-level support work."""
+        if self._primary_workspace is not None:
+            return self._primary_workspace.list_platform_artifacts(
+                artifact_type=artifact_type,
+                organization_id=organization_id,
+                limit=limit,
+            )
         clauses: list[str] = []
         params: list[Any] = []
         if artifact_type.strip():
