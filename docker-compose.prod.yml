@@ -36,9 +36,22 @@ services:
       - /bin/sh
       - -ec
       - |
+        psql -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS schema_migrations (filename text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())"
         for migration in /migrations/*.sql; do
-          echo "Applying $$migration"
+          filename="$$(basename "$$migration")"
+          checksum="$$(sha256sum "$$migration" | awk '{print $$1}')"
+          applied="$$(psql -tAc "SELECT checksum FROM schema_migrations WHERE filename = '$$filename'")"
+          if [ -n "$$applied" ]; then
+            if [ "$$applied" != "$$checksum" ]; then
+              echo "Migration checksum mismatch: $$filename" >&2
+              exit 1
+            fi
+            echo "Migration already applied: $$filename"
+            continue
+          fi
+          echo "Applying $$filename"
           psql -v ON_ERROR_STOP=1 -f "$$migration"
+          psql -v ON_ERROR_STOP=1 -c "INSERT INTO schema_migrations(filename, checksum) VALUES ('$$filename', '$$checksum')"
         done
     depends_on:
       postgres:

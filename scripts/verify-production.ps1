@@ -50,4 +50,10 @@ Invoke-Compose exec -T postgres psql -U vibe -d vibe_trading -tAc "SELECT to_reg
     if ($_.Trim() -ne "rag_vector_chunks") { throw "rag_vector_chunks migration is missing" }
 }
 
+Write-Host "Checking migration ledger"
+$migrationCount = Invoke-Compose exec -T postgres psql -U vibe -d vibe_trading -tAc "SELECT COUNT(*) FROM schema_migrations"
+if ([int](($migrationCount | Select-Object -Last 1).Trim()) -lt 1) {
+    throw "schema_migrations has no applied migration records"
+}
+
 Write-Host "Production readiness checks passed"

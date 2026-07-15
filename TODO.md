@@ -115,6 +115,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Add a rate-limited Nginx server gateway with TLS overlay and secure public endpoint policy.
 - [x] Align backup/restore and secret-rotation runbooks with the production Compose services and PostgreSQL credentials.
 - [x] Add idempotent server-side schema migration execution for commercial governance tables.
+- [x] Track applied SQL migrations with checksums and fail startup when a historical migration drifts.
 - [x] Make PostgreSQL the primary repository for commercial identity and authorization in production Compose.
 - [ ] Migrate the remaining commercial metadata, knowledge lifecycle, audit, usage, and workspace repositories from SQLite to PostgreSQL.
 - [ ] Add Alembic migration execution and rollback documentation.
