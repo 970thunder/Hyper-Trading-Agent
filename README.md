@@ -168,6 +168,7 @@ Operations runbooks:
 - [Secret rotation and encryption migration](docs/operations-secret-rotation.md)
 - [Backup and restore drill](docs/operations-backup-restore.md)
 - [Server deployment guide](docs/deployment-server.md)
+- [Automated server deployment](docs/deployment-automation.md)
 - [Prometheus and Grafana overlay](docs/deployment-server.md#optional-observability)
 - [UI screenshot regression](docs/ui-screenshot-regression.md)
 

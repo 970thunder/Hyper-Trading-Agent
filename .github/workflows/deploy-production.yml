@@ -1,0 +1,68 @@
+name: Deploy Production
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit SHA or main ref that has already passed CI
+        required: true
+        default: main
+        type: string
+
+concurrency:
+  group: hyper-trading-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    env:
+      DEPLOY_HOST: ${{ secrets.HYPER_TRADING_DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.HYPER_TRADING_DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.HYPER_TRADING_DEPLOY_PORT }}
+      DEPLOY_PATH: ${{ secrets.HYPER_TRADING_DEPLOY_PATH }}
+      DEPLOY_PRIVATE_KEY: ${{ secrets.HYPER_TRADING_DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.HYPER_TRADING_DEPLOY_KNOWN_HOSTS }}
+      DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.workflow_run.head_sha }}
+      DEPLOY_TLS: ${{ vars.HYPER_TRADING_DEPLOY_TLS || '1' }}
+
+    steps:
+      - name: Validate deployment configuration
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_PORT"
+          test -n "$DEPLOY_PATH"
+          test -n "$DEPLOY_PRIVATE_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          test -n "$DEPLOY_REF"
+
+      - name: Configure SSH trust
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy tested main commit
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && HYPER_TRADING_DEPLOY_REF='$DEPLOY_REF' HYPER_TRADING_ENABLE_TLS='$DEPLOY_TLS' ./scripts/deploy-production.sh"
