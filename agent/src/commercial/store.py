@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from .postgres_identity import PostgresIdentityRepository
+from .postgres_governance import PostgresGovernanceRepository
 
 DEFAULT_DB_PATH = Path.home() / ".vibe-trading" / "commercial" / "commercial.db"
 SESSION_TTL_DAYS = 14
@@ -460,11 +461,16 @@ class CommercialStore:
         # reads and writes. Supplying a path keeps unit tests and local tools on
         # the SQLite compatibility repository.
         self._primary_identity = None if path is not None else PostgresIdentityRepository.from_environment()
+        self._primary_governance = None if path is not None else PostgresGovernanceRepository.from_environment()
         self._init()
         if self._primary_identity is not None:
             self._primary_identity.ensure_available()
             if self._primary_identity.needs_initial_sync():
                 self._sync_primary_identity_from_sqlite()
+        if self._primary_governance is not None:
+            self._primary_governance.ensure_available()
+            if self._primary_governance.needs_initial_sync():
+                self._sync_primary_governance_from_sqlite()
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.path))
@@ -781,6 +787,12 @@ class CommercialStore:
             return
         with self._connect() as conn:
             self._primary_identity.sync_from_sqlite(conn)
+
+    def _sync_primary_governance_from_sqlite(self) -> None:
+        if self._primary_governance is None:
+            return
+        with self._connect() as conn:
+            self._primary_governance.sync_from_sqlite(conn)
 
     # --- auth / orgs ---
 
@@ -1332,13 +1344,27 @@ class CommercialStore:
     def audit(self, principal: Principal | None, action: str, target_type: str = "", target_id: str = "", metadata: dict[str, Any] | None = None) -> None:
         organization_id = principal.organization_id if principal else ""
         user_id = principal.user_id if principal else ""
+        audit_id = _new_id("aud")
+        created_at = utcnow()
+        if self._primary_governance is not None:
+            self._primary_governance.audit(
+                audit_id=audit_id,
+                organization_id=organization_id,
+                user_id=user_id,
+                action=action,
+                target_type=target_type,
+                target_id=target_id,
+                metadata=metadata or {},
+                created_at=created_at,
+            )
+            return
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO audit_logs(id, organization_id, user_id, action, target_type, target_id, metadata_json, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (_new_id("aud"), organization_id, user_id, action, target_type, target_id, json.dumps(metadata or {}, ensure_ascii=False), utcnow()),
+                (audit_id, organization_id, user_id, action, target_type, target_id, json.dumps(metadata or {}, ensure_ascii=False), created_at),
             )
 
     def list_audit_logs(
@@ -1352,6 +1378,16 @@ class CommercialStore:
         date_from: str = "",
         date_to: str = "",
     ) -> list[dict[str, Any]]:
+        if self._primary_governance is not None:
+            return self._primary_governance.list_audit_logs(
+                organization_id=principal.organization_id,
+                limit=limit,
+                action=action,
+                target_type=target_type,
+                user_id=user_id,
+                date_from=date_from,
+                date_to=date_to,
+            )
         where = ["organization_id = ?"]
         params: list[Any] = [principal.organization_id]
         if action:
@@ -1422,15 +1458,18 @@ class CommercialStore:
     def list_tool_policies(self, principal: Principal, tool_metadata: list[dict[str, Any]]) -> list[dict[str, Any]]:
         defaults = {str(item.get("tool_name") or ""): default_tool_policy(str(item.get("tool_name") or ""), item) for item in tool_metadata}
         defaults = {name: policy for name, policy in defaults.items() if name}
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT tool_name, risk_level, permission_scope, requires_approval, enabled, updated_at
-                FROM tool_policies
-                WHERE organization_id = ?
-                """,
-                (principal.organization_id,),
-            ).fetchall()
+        if self._primary_governance is not None:
+            rows = self._primary_governance.list_tool_policy_overrides(principal.organization_id)
+        else:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT tool_name, risk_level, permission_scope, requires_approval, enabled, updated_at
+                    FROM tool_policies
+                    WHERE organization_id = ?
+                    """,
+                    (principal.organization_id,),
+                ).fetchall()
         overrides = {str(row["tool_name"]): dict(row) for row in rows}
         merged: list[dict[str, Any]] = []
         for name in sorted(defaults):
@@ -1462,20 +1501,31 @@ class CommercialStore:
         requires_approval = bool(payload.get("requires_approval", current["requires_approval"]))
         enabled = bool(payload.get("enabled", current["enabled"]))
         now = utcnow()
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO tool_policies(organization_id, tool_name, risk_level, permission_scope, requires_approval, enabled, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(organization_id, tool_name) DO UPDATE SET
-                    risk_level = excluded.risk_level,
-                    permission_scope = excluded.permission_scope,
-                    requires_approval = excluded.requires_approval,
-                    enabled = excluded.enabled,
-                    updated_at = excluded.updated_at
-                """,
-                (principal.organization_id, tool_name, risk_level, permission_scope, int(requires_approval), int(enabled), now),
+        if self._primary_governance is not None:
+            self._primary_governance.upsert_tool_policy(
+                organization_id=principal.organization_id,
+                tool_name=tool_name,
+                risk_level=risk_level,
+                permission_scope=permission_scope,
+                requires_approval=requires_approval,
+                enabled=enabled,
+                updated_at=now,
             )
+        else:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO tool_policies(organization_id, tool_name, risk_level, permission_scope, requires_approval, enabled, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(organization_id, tool_name) DO UPDATE SET
+                        risk_level = excluded.risk_level,
+                        permission_scope = excluded.permission_scope,
+                        requires_approval = excluded.requires_approval,
+                        enabled = excluded.enabled,
+                        updated_at = excluded.updated_at
+                    """,
+                    (principal.organization_id, tool_name, risk_level, permission_scope, int(requires_approval), int(enabled), now),
+                )
         self.audit(principal, "tool_policy.update", "tool", tool_name, {"risk_level": risk_level, "enabled": enabled, "requires_approval": requires_approval})
         return current | {
             "organization_id": principal.organization_id,
@@ -1489,15 +1539,18 @@ class CommercialStore:
 
     def get_effective_tool_policy(self, principal: Principal, tool_name: str, tool_metadata: dict[str, Any] | None = None) -> dict[str, Any]:
         default = default_tool_policy(tool_name, tool_metadata or {})
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT tool_name, risk_level, permission_scope, requires_approval, enabled, updated_at
-                FROM tool_policies
-                WHERE organization_id = ? AND tool_name = ?
-                """,
-                (principal.organization_id, tool_name),
-            ).fetchone()
+        if self._primary_governance is not None:
+            row = next((item for item in self._primary_governance.list_tool_policy_overrides(principal.organization_id) if str(item.get("tool_name")) == tool_name), None)
+        else:
+            with self._connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT tool_name, risk_level, permission_scope, requires_approval, enabled, updated_at
+                    FROM tool_policies
+                    WHERE organization_id = ? AND tool_name = ?
+                    """,
+                    (principal.organization_id, tool_name),
+                ).fetchone()
         if row is None:
             return default | {"organization_id": principal.organization_id, "source": "default", "updated_at": ""}
         return default | {
@@ -1521,17 +1574,20 @@ class CommercialStore:
             "created_at": "",
             "updated_at": "",
         }
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT organization_id, monthly_token_soft_limit, monthly_token_hard_limit,
-                       monthly_cost_soft_limit, monthly_cost_hard_limit,
-                       updated_by_user_id, created_at, updated_at
-                FROM organization_usage_policies
-                WHERE organization_id = ?
-                """,
-                (principal.organization_id,),
-            ).fetchone()
+        if self._primary_governance is not None:
+            row = self._primary_governance.get_usage_policy(principal.organization_id)
+        else:
+            with self._connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT organization_id, monthly_token_soft_limit, monthly_token_hard_limit,
+                           monthly_cost_soft_limit, monthly_cost_hard_limit,
+                           updated_by_user_id, created_at, updated_at
+                    FROM organization_usage_policies
+                    WHERE organization_id = ?
+                    """,
+                    (principal.organization_id,),
+                ).fetchone()
         if row is None:
             return defaults
         return defaults | {
@@ -1568,27 +1624,38 @@ class CommercialStore:
         if cost_hard and cost_soft and cost_soft > cost_hard:
             raise ValueError("monthly cost soft limit cannot exceed hard limit")
         now = utcnow()
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO organization_usage_policies(
-                    organization_id, monthly_token_soft_limit, monthly_token_hard_limit,
-                    monthly_cost_soft_limit, monthly_cost_hard_limit, updated_by_user_id,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(organization_id) DO UPDATE SET
-                    monthly_token_soft_limit = excluded.monthly_token_soft_limit,
-                    monthly_token_hard_limit = excluded.monthly_token_hard_limit,
-                    monthly_cost_soft_limit = excluded.monthly_cost_soft_limit,
-                    monthly_cost_hard_limit = excluded.monthly_cost_hard_limit,
-                    updated_by_user_id = excluded.updated_by_user_id,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    principal.organization_id, token_soft, token_hard, cost_soft, cost_hard,
-                    principal.user_id, now, now,
-                ),
+        if self._primary_governance is not None:
+            self._primary_governance.upsert_usage_policy(
+                organization_id=principal.organization_id,
+                token_soft=token_soft,
+                token_hard=token_hard,
+                cost_soft=cost_soft,
+                cost_hard=cost_hard,
+                updated_by_user_id=principal.user_id,
+                now=now,
             )
+        else:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO organization_usage_policies(
+                        organization_id, monthly_token_soft_limit, monthly_token_hard_limit,
+                        monthly_cost_soft_limit, monthly_cost_hard_limit, updated_by_user_id,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(organization_id) DO UPDATE SET
+                        monthly_token_soft_limit = excluded.monthly_token_soft_limit,
+                        monthly_token_hard_limit = excluded.monthly_token_hard_limit,
+                        monthly_cost_soft_limit = excluded.monthly_cost_soft_limit,
+                        monthly_cost_hard_limit = excluded.monthly_cost_hard_limit,
+                        updated_by_user_id = excluded.updated_by_user_id,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        principal.organization_id, token_soft, token_hard, cost_soft, cost_hard,
+                        principal.user_id, now, now,
+                    ),
+                )
         self.audit(principal, "usage_policy.update", "organization", principal.organization_id, {
             "monthly_token_soft_limit": token_soft,
             "monthly_token_hard_limit": token_hard,
@@ -1599,18 +1666,21 @@ class CommercialStore:
 
     def usage_summary(self, principal: Principal, *, period_start: str | None = None) -> dict[str, Any]:
         start = period_start or current_usage_period_start()
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT COUNT(*) AS calls,
-                       COALESCE(SUM(total_tokens), 0) AS total_tokens,
-                       COALESCE(SUM(estimated_cost), 0) AS estimated_cost,
-                       COALESCE(AVG(latency_ms), 0) AS average_latency_ms
-                FROM model_call_usage
-                WHERE organization_id = ? AND created_at >= ?
-                """,
-                (principal.organization_id, start),
-            ).fetchone()
+        if self._primary_governance is not None:
+            row = self._primary_governance.usage_totals(principal.organization_id, start)
+        else:
+            with self._connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT COUNT(*) AS calls,
+                           COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                           COALESCE(SUM(estimated_cost), 0) AS estimated_cost,
+                           COALESCE(AVG(latency_ms), 0) AS average_latency_ms
+                    FROM model_call_usage
+                    WHERE organization_id = ? AND created_at >= ?
+                    """,
+                    (principal.organization_id, start),
+                ).fetchone()
         policy = self.get_usage_policy(principal)
         calls = max(0, int(row["calls"] or 0))
         total_tokens = max(0, int(row["total_tokens"] or 0))
@@ -1668,47 +1738,58 @@ class CommercialStore:
         period_start = str(summary.get("period_start") or current_usage_period_start())
         policy = summary.get("policy") if isinstance(summary.get("policy"), dict) else {}
         now = utcnow()
-        with self._connect() as conn:
-            for alert_type, reached_key, limit_key, current_key in candidates:
-                if not bool(summary.get(reached_key)):
-                    continue
-                metadata = {
-                    "limit": policy.get(limit_key, 0),
-                    "current": summary.get(current_key, 0),
-                    "calls": summary.get("calls", 0),
-                    "average_latency_ms": summary.get("average_latency_ms", 0),
-                }
-                alert_id = _new_id("ual")
-                cursor = conn.execute(
-                    """
-                    INSERT OR IGNORE INTO usage_alert_events(
-                        id, organization_id, period_start, alert_type, status,
-                        metadata_json, created_at, acknowledged_at, acknowledged_by_user_id
-                    ) VALUES (?, ?, ?, ?, 'open', ?, ?, '', '')
-                    """,
-                    (
-                        alert_id,
-                        principal.organization_id,
-                        period_start,
-                        alert_type,
-                        json.dumps(metadata, ensure_ascii=False),
-                        now,
-                    ),
+        for alert_type, reached_key, limit_key, current_key in candidates:
+            if not bool(summary.get(reached_key)):
+                continue
+            metadata = {
+                "limit": policy.get(limit_key, 0),
+                "current": summary.get(current_key, 0),
+                "calls": summary.get("calls", 0),
+                "average_latency_ms": summary.get("average_latency_ms", 0),
+            }
+            alert_id = _new_id("ual")
+            if self._primary_governance is not None:
+                inserted = self._primary_governance.create_usage_alert(
+                    alert_id=alert_id,
+                    organization_id=principal.organization_id,
+                    period_start=period_start,
+                    alert_type=alert_type,
+                    metadata=metadata,
+                    created_at=now,
                 )
-                if cursor.rowcount:
-                    created.append(
-                        {
-                            "id": alert_id,
-                            "organization_id": principal.organization_id,
-                            "period_start": period_start,
-                            "alert_type": alert_type,
-                            "status": "open",
-                            "metadata": metadata,
-                            "created_at": now,
-                            "acknowledged_at": "",
-                            "acknowledged_by_user_id": "",
-                        }
+            else:
+                with self._connect() as conn:
+                    cursor = conn.execute(
+                        """
+                        INSERT OR IGNORE INTO usage_alert_events(
+                            id, organization_id, period_start, alert_type, status,
+                            metadata_json, created_at, acknowledged_at, acknowledged_by_user_id
+                        ) VALUES (?, ?, ?, ?, 'open', ?, ?, '', '')
+                        """,
+                        (
+                            alert_id,
+                            principal.organization_id,
+                            period_start,
+                            alert_type,
+                            json.dumps(metadata, ensure_ascii=False),
+                            now,
+                        ),
                     )
+                inserted = bool(cursor.rowcount)
+            if inserted:
+                created.append(
+                    {
+                        "id": alert_id,
+                        "organization_id": principal.organization_id,
+                        "period_start": period_start,
+                        "alert_type": alert_type,
+                        "status": "open",
+                        "metadata": metadata,
+                        "created_at": now,
+                        "acknowledged_at": "",
+                        "acknowledged_by_user_id": "",
+                    }
+                )
         for event in created:
             self.audit(
                 principal,
@@ -1730,6 +1811,12 @@ class CommercialStore:
         limit: int = 100,
         include_acknowledged: bool = False,
     ) -> list[dict[str, Any]]:
+        if self._primary_governance is not None:
+            return self._primary_governance.list_usage_alerts(
+                principal.organization_id,
+                limit,
+                include_acknowledged,
+            )
         where = ["organization_id = ?"]
         params: list[Any] = [principal.organization_id]
         if not include_acknowledged:
@@ -1751,6 +1838,19 @@ class CommercialStore:
 
     def acknowledge_usage_alert(self, principal: Principal, alert_id: str) -> dict[str, Any]:
         now = utcnow()
+        if self._primary_governance is not None:
+            result = self._primary_governance.acknowledge_usage_alert(
+                alert_id=alert_id,
+                organization_id=principal.organization_id,
+                user_id=principal.user_id,
+                now=now,
+            )
+            if result is None:
+                raise KeyError(alert_id)
+            event, acknowledged_now = result
+            if acknowledged_now:
+                self.audit(principal, "usage_alert.acknowledge", "usage_alert", alert_id, {"alert_type": event["alert_type"], "period_start": event["period_start"]})
+            return event
         acknowledged_now = False
         with self._connect() as conn:
             row = conn.execute(
@@ -1789,6 +1889,8 @@ class CommercialStore:
         return event
 
     def list_usage(self, principal: Principal, limit: int = 100) -> list[dict[str, Any]]:
+        if self._primary_governance is not None:
+            return self._primary_governance.list_usage(principal.organization_id, limit)
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -1827,33 +1929,52 @@ class CommercialStore:
             total = prompt + completion
         usage_id = _new_id("use")
         now = utcnow()
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO model_call_usage(
-                    id, organization_id, provider_id, provider, model,
-                    prompt_tokens, completion_tokens, total_tokens, latency_ms,
-                    estimated_cost, session_id, attempt_id, run_id, metadata_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    usage_id,
-                    principal.organization_id,
-                    provider_id,
-                    provider,
-                    model,
-                    prompt,
-                    completion,
-                    total,
-                    max(0, int(latency_ms or 0)),
-                    float(estimated_cost or 0.0),
-                    session_id,
-                    attempt_id,
-                    run_id,
-                    json.dumps(metadata or {}, ensure_ascii=False),
-                    now,
-                ),
+        if self._primary_governance is not None:
+            self._primary_governance.record_model_usage(
+                usage_id=usage_id,
+                organization_id=principal.organization_id,
+                provider_id=provider_id,
+                provider=provider,
+                model=model,
+                prompt_tokens=prompt,
+                completion_tokens=completion,
+                total_tokens=total,
+                latency_ms=max(0, int(latency_ms or 0)),
+                estimated_cost=float(estimated_cost or 0.0),
+                session_id=session_id,
+                attempt_id=attempt_id,
+                run_id=run_id,
+                metadata=metadata or {},
+                created_at=now,
             )
+        else:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO model_call_usage(
+                        id, organization_id, provider_id, provider, model,
+                        prompt_tokens, completion_tokens, total_tokens, latency_ms,
+                        estimated_cost, session_id, attempt_id, run_id, metadata_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        usage_id,
+                        principal.organization_id,
+                        provider_id,
+                        provider,
+                        model,
+                        prompt,
+                        completion,
+                        total,
+                        max(0, int(latency_ms or 0)),
+                        float(estimated_cost or 0.0),
+                        session_id,
+                        attempt_id,
+                        run_id,
+                        json.dumps(metadata or {}, ensure_ascii=False),
+                        now,
+                    ),
+                )
         self.audit(
             principal,
             "model_call.record",
@@ -1882,6 +2003,8 @@ class CommercialStore:
     def _model_provider_pricing(self, principal: Principal, provider_id: str) -> tuple[float, float]:
         if not provider_id:
             return 0.0, 0.0
+        if self._primary_governance is not None:
+            return self._primary_governance.model_provider_pricing(principal.organization_id, provider_id) or (0.0, 0.0)
         with self._connect() as conn:
             row = conn.execute(
                 """
@@ -1973,31 +2096,24 @@ class CommercialStore:
             "metadata": metadata,
             "created_at": now,
         }
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO feedback_events(
-                    id, organization_id, user_id, target_type, target_id,
-                    session_id, attempt_id, run_id, rating, comment,
-                    tags_json, metadata_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    feedback_id,
-                    principal.organization_id,
-                    principal.user_id,
-                    target_type,
-                    target_id,
-                    event["session_id"],
-                    event["attempt_id"],
-                    event["run_id"],
-                    rating,
-                    event["comment"],
-                    json.dumps(tags, ensure_ascii=False),
-                    json.dumps(metadata, ensure_ascii=False),
-                    now,
-                ),
-            )
+        if self._primary_governance is not None:
+            self._primary_governance.record_feedback(event)
+        else:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO feedback_events(
+                        id, organization_id, user_id, target_type, target_id,
+                        session_id, attempt_id, run_id, rating, comment,
+                        tags_json, metadata_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        feedback_id, principal.organization_id, principal.user_id, target_type, target_id,
+                        event["session_id"], event["attempt_id"], event["run_id"], rating, event["comment"],
+                        json.dumps(tags, ensure_ascii=False), json.dumps(metadata, ensure_ascii=False), now,
+                    ),
+                )
         self.audit(
             principal,
             "feedback.create",
@@ -2015,6 +2131,13 @@ class CommercialStore:
         target_type: str = "",
         target_id: str = "",
     ) -> list[dict[str, Any]]:
+        if self._primary_governance is not None:
+            return self._primary_governance.list_feedback(
+                organization_id=principal.organization_id,
+                limit=limit,
+                target_type=target_type,
+                target_id=target_id,
+            )
         where = ["organization_id = ?"]
         params: list[Any] = [principal.organization_id]
         if target_type:
@@ -2053,6 +2176,8 @@ class CommercialStore:
     # --- model providers ---
 
     def list_model_providers(self, principal: Principal) -> list[dict[str, Any]]:
+        if self._primary_governance is not None:
+            return self._primary_governance.list_model_providers(principal.organization_id)
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -2072,6 +2197,26 @@ class CommercialStore:
         provider_id = _new_id("llm")
         api_key = str(payload.get("api_key") or "")
         is_default = 1 if payload.get("is_default") else 0
+        if self._primary_governance is not None:
+            self._primary_governance.create_model_provider(
+                provider_id=provider_id,
+                organization_id=principal.organization_id,
+                provider=str(payload.get("provider") or "").strip(),
+                model=str(payload.get("model") or "").strip(),
+                base_url=str(payload.get("base_url") or "").strip(),
+                api_key_ciphertext=encrypt_secret(api_key),
+                api_key_fingerprint=_secret_fingerprint(api_key) if api_key else "",
+                temperature=float(payload.get("temperature") or 0),
+                timeout_seconds=int(payload.get("timeout_seconds") or 120),
+                max_retries=int(payload.get("max_retries") or 2),
+                input_price_per_million=max(0.0, float(payload.get("input_price_per_million") or 0.0)),
+                output_price_per_million=max(0.0, float(payload.get("output_price_per_million") or 0.0)),
+                enabled=bool(payload.get("enabled", True)),
+                is_default=bool(is_default),
+                now=now,
+            )
+            self.audit(principal, "model_provider.create", "model_provider", provider_id, {"provider": payload.get("provider"), "model": payload.get("model")})
+            return self.get_model_provider(principal, provider_id)
         with self._connect() as conn:
             if is_default:
                 conn.execute("UPDATE model_providers SET is_default = 0 WHERE organization_id = ?", (principal.organization_id,))
@@ -2137,6 +2282,21 @@ class CommercialStore:
             return current
 
         updates["updated_at"] = utcnow()
+        if self._primary_governance is not None:
+            if not self._primary_governance.update_model_provider(
+                organization_id=principal.organization_id,
+                provider_id=provider_id,
+                updates=updates,
+            ):
+                raise KeyError(provider_id)
+            self.audit(
+                principal,
+                "model_provider.update",
+                "model_provider",
+                provider_id,
+                {"provider": payload.get("provider") or current.get("provider"), "model": payload.get("model") or current.get("model")},
+            )
+            return self.get_model_provider(principal, provider_id)
         with self._connect() as conn:
             if updates.get("is_default") == 1:
                 conn.execute(
@@ -2162,6 +2322,15 @@ class CommercialStore:
         if not bool(provider.get("enabled")):
             raise ValueError("disabled model provider cannot be default")
         now = utcnow()
+        if self._primary_governance is not None:
+            if not self._primary_governance.set_default_model_provider(
+                organization_id=principal.organization_id,
+                provider_id=provider_id,
+                updated_at=now,
+            ):
+                raise KeyError(provider_id)
+            self.audit(principal, "model_provider.default", "model_provider", provider_id, {"model": provider.get("model")})
+            return self.get_model_provider(principal, provider_id)
         with self._connect() as conn:
             conn.execute("UPDATE model_providers SET is_default = 0 WHERE organization_id = ?", (principal.organization_id,))
             conn.execute(
@@ -2175,6 +2344,11 @@ class CommercialStore:
         provider = self.get_model_provider(principal, provider_id)
         if bool(provider.get("is_default")):
             raise ValueError("default model provider cannot be deleted")
+        if self._primary_governance is not None:
+            if not self._primary_governance.delete_model_provider(organization_id=principal.organization_id, provider_id=provider_id):
+                raise KeyError(provider_id)
+            self.audit(principal, "model_provider.delete", "model_provider", provider_id, {"model": provider.get("model")})
+            return
         with self._connect() as conn:
             conn.execute(
                 "DELETE FROM model_providers WHERE id = ? AND organization_id = ?",
@@ -2195,6 +2369,11 @@ class CommercialStore:
         return next((p for p in providers if bool(p.get("is_default"))), providers[0])
 
     def get_model_provider_secret(self, principal: Principal, provider_id: str) -> str:
+        if self._primary_governance is not None:
+            ciphertext = self._primary_governance.get_model_provider_secret(principal.organization_id, provider_id)
+            if ciphertext is None:
+                raise KeyError(provider_id)
+            return decrypt_secret(ciphertext)
         with self._connect() as conn:
             row = conn.execute(
                 """
@@ -3512,6 +3691,25 @@ class CommercialStore:
     def list_platform_usage(self, *, period_start: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
         """Return current-period, non-secret usage aggregates for every organization."""
         start = period_start or current_usage_period_start()
+        if self._primary_governance is not None:
+            rows = self._primary_governance.list_platform_usage(start, limit)
+            items: list[dict[str, Any]] = []
+            for row in rows:
+                item = dict(row)
+                item["calls"] = max(0, int(item["calls"] or 0))
+                item["total_tokens"] = max(0, int(item["total_tokens"] or 0))
+                item["estimated_cost"] = max(0.0, float(item["estimated_cost"] or 0.0))
+                item["average_latency_ms"] = round(max(0.0, float(item["average_latency_ms"] or 0.0)), 1)
+                for field in ("monthly_token_soft_limit", "monthly_token_hard_limit"):
+                    item[field] = max(0, int(item[field] or 0))
+                for field in ("monthly_cost_soft_limit", "monthly_cost_hard_limit"):
+                    item[field] = max(0.0, float(item[field] or 0.0))
+                item["token_hard_limit_reached"] = bool(item["monthly_token_hard_limit"] and item["total_tokens"] >= item["monthly_token_hard_limit"])
+                item["cost_hard_limit_reached"] = bool(item["monthly_cost_hard_limit"] and item["estimated_cost"] >= item["monthly_cost_hard_limit"])
+                item["token_soft_limit_reached"] = bool(item["monthly_token_soft_limit"] and item["total_tokens"] >= item["monthly_token_soft_limit"])
+                item["cost_soft_limit_reached"] = bool(item["monthly_cost_soft_limit"] and item["estimated_cost"] >= item["monthly_cost_soft_limit"])
+                items.append(item)
+            return items
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -3612,6 +3810,8 @@ class CommercialStore:
         return [dict(row) for row in rows]
 
     def list_platform_audit_logs(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        if self._primary_governance is not None:
+            return self._primary_governance.list_platform_audit_logs(query, limit)
         filters = []
         params: list[Any] = []
         if query.strip():

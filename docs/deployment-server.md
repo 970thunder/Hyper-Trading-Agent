@@ -41,6 +41,8 @@ docker compose --env-file .env.production -f docker-compose.prod.yml -f docker-c
 
 Nginx publishes port `80`, forwards traffic to the API service, rate-limits login requests to 5/minute per client and other API traffic to 20/second per client, and blocks public access to metrics and interactive API documentation. The `migrations` service records every applied SQL file and its SHA-256 checksum in `schema_migrations` before API and worker startup. A changed historical migration fails startup instead of silently drifting the production schema.
 
+The production Compose profile also sets PostgreSQL as the primary repository for commercial identity and governance data. On the first API or worker access after enabling a new repository domain, existing SQLite compatibility records are copied idempotently and a domain marker is written to `commercial_repository_migrations`; a failed copy does not write the marker and keeps the service from silently treating a partial import as complete.
+
 ## Enable TLS
 
 Place `fullchain.pem` and `privkey.pem` under `./certs` using an ACME client or your certificate manager, then start with the TLS overlay:

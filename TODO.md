@@ -117,7 +117,8 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Add idempotent server-side schema migration execution for commercial governance tables.
 - [x] Track applied SQL migrations with checksums and fail startup when a historical migration drifts.
 - [x] Make PostgreSQL the primary repository for commercial identity and authorization in production Compose.
-- [ ] Migrate the remaining commercial metadata, knowledge lifecycle, audit, usage, and workspace repositories from SQLite to PostgreSQL.
+- [x] Migrate commercial governance records (models, usage, alerts, tool policies, feedback, and audit) to PostgreSQL primary storage.
+- [ ] Migrate knowledge lifecycle metadata, documents, jobs, chunks, retrieval logs, and workspace repositories from SQLite to PostgreSQL.
 - [ ] Add Alembic migration execution and rollback documentation.
 - [ ] Add backup/restore drills for PostgreSQL, uploads/object storage, and encrypted secrets.
 - [x] Add Prometheus/Grafana dashboard examples for jobs, model calls, RAG, audit, and failures.
