@@ -12,6 +12,7 @@ from typing import Any, Awaitable, Callable
 
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
+from src.storage import ObjectStorageError, build_object_storage
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -108,14 +109,14 @@ def register_uploads_routes(
     async def get_shadow_report(shadow_id: str, request: Request, format: str = "html"):
         """Serve a rendered Shadow Account report.
 
-        Reports live under ``~/.vibe-trading/shadow_reports/<shadow_id>.{html,pdf}``.
+        Reports live under ``~/.hyper-trading-agent/shadow_reports/<shadow_id>.{html,pdf}``.
         """
         if not _SHADOW_ID_RE.match(shadow_id):
             raise HTTPException(status_code=400, detail="invalid shadow_id")
         if format not in ("html", "pdf"):
             raise HTTPException(status_code=400, detail="format must be html or pdf")
 
-        reports_dir = Path.home() / ".vibe-trading" / "shadow_reports"
+        reports_dir = Path.home() / ".hyper-trading-agent" / "shadow_reports"
         path = reports_dir / f"{shadow_id}.{format}"
         context = _commercial_upload_context(request)
         if context is not None and not context[0].workspace_artifact_belongs_to_organization(
@@ -193,6 +194,19 @@ def register_uploads_routes(
             await file.close()
 
         storage_key = f"uploads/{context[1].organization_id}/{safe_name}" if context is not None else f"uploads/{safe_name}"
+        try:
+            durable_storage = build_object_storage().upload_file(
+                dest,
+                storage_key,
+                content_type=str(file.content_type or ""),
+            )
+        except ObjectStorageError as exc:
+            if dest.exists():
+                dest.unlink()
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Upload failed while writing the original document to configured object storage.",
+            ) from exc
         if context is not None:
             try:
                 context[0].register_uploaded_file(
@@ -202,6 +216,10 @@ def register_uploads_routes(
                     size_bytes=total_size,
                 )
             except Exception as exc:
+                try:
+                    build_object_storage().delete_file(storage_key)
+                except ObjectStorageError:
+                    pass
                 if dest.exists():
                     dest.unlink()
                 raise HTTPException(status_code=500, detail="Upload ownership registration failed") from exc
@@ -210,4 +228,5 @@ def register_uploads_routes(
             "status": "ok",
             "file_path": storage_key,
             "filename": filename,
+            "storage_backend": durable_storage["backend"],
         }

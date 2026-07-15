@@ -32,6 +32,11 @@ if (-not (Test-Path -LiteralPath $postgresDump) -or (Get-Item -LiteralPath $post
 }
 
 $volumes = @("vibe-home", "vibe-uploads", "vibe-runs", "vibe-sessions")
+$objectStorageVolume = "${ProjectName}_vibe-object-storage"
+& docker volume inspect $objectStorageVolume *> $null
+if ($LASTEXITCODE -eq 0) {
+    $volumes += "vibe-object-storage"
+}
 $archives = @()
 foreach ($volume in $volumes) {
     $archiveName = "$volume-$stamp.tgz"

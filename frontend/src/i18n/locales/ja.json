@@ -1800,6 +1800,7 @@
     "configurationSaved": "ナレッジ設定を保存しました。",
     "backendStatus": "索引バックエンド",
     "vectorStorage": "ベクトルストレージ",
+    "objectStorage": "原本文書ストレージ",
     "embeddingModel": "埋め込みモデル",
     "available": "利用可能",
     "fallback": "フォールバック",

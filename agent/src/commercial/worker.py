@@ -18,6 +18,7 @@ from typing import Any
 from src.commercial.store import CommercialStore, Principal
 from src.runtime_jobs.backend import _queue_name, _redis_client_from_url, _redis_url
 from src.runtime_jobs.store import DurableRuntimeJobStore
+from src.storage import ObjectStorageError, build_object_storage
 from src.tools.doc_reader_tool import read_document
 from src.tools.path_utils import safe_document_path
 from src.tools.web_reader_tool import WebReaderTool
@@ -123,6 +124,7 @@ def _execute_knowledge_file_ingest(payload: dict[str, Any]) -> dict[str, Any]:
     ingestion_job_id = str(payload.get("ingestion_job_id") or "")
     chunk_size = payload.get("chunk_size")
     chunk_overlap = payload.get("chunk_overlap")
+    object_key = str(payload.get("object_key") or "")
     if not kb_id or not path_value:
         raise ValueError("knowledge_file_ingest payload missing knowledge_base_id or path")
 
@@ -131,6 +133,11 @@ def _execute_knowledge_file_ingest(payload: dict[str, Any]) -> dict[str, Any]:
         if ingestion_job_id:
             store.start_ingestion_job(principal, kb_id, ingestion_job_id, stage="parsing", progress=5)
         path = safe_document_path(path_value)
+        if (not path.exists() or not path.is_file()) and object_key:
+            try:
+                build_object_storage().materialize_file(object_key, path)
+            except ObjectStorageError as exc:
+                raise ValueError("original upload is unavailable in object storage") from exc
         if not path.exists() or not path.is_file():
             raise ValueError(f"file not found: {path_value}")
         parsed = json.loads(read_document(str(path)))
@@ -146,10 +153,10 @@ def _execute_knowledge_file_ingest(payload: dict[str, Any]) -> dict[str, Any]:
             principal,
             kb_id,
             title=title or path.name,
-            source_uri=str(path),
+            source_uri=object_key or str(path),
             source_type="file",
             text=text,
-            metadata={"path": str(path), "runtime_worker": True, **metadata},
+            metadata={"path": str(path), "object_key": object_key, "runtime_worker": True, **metadata},
             chunk_size=int(chunk_size) if chunk_size is not None else None,
             chunk_overlap=int(chunk_overlap) if chunk_overlap is not None else None,
             ingestion_job_id=ingestion_job_id,

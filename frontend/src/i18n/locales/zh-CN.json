@@ -2017,6 +2017,7 @@
     "configurationSaved": "知识库配置已保存。",
     "backendStatus": "索引后端",
     "vectorStorage": "向量存储",
+    "objectStorage": "原始文档存储",
     "embeddingModel": "向量模型",
     "available": "可用",
     "fallback": "回退模式",

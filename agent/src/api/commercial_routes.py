@@ -17,6 +17,7 @@ from src.commercial.store import CommercialStore, Principal, embedding_backend_s
 from src.memory.persistent import PersistentMemory, commercial_memory_directory
 from src.memory.policy import MemoryPolicy
 from src.runtime_jobs.backend import REDIS_POSTGRES_RUNTIME_BACKEND, _redis_client_from_url, _redis_url, build_runtime_job_backend
+from src.storage import ObjectStorageError, build_object_storage, object_storage_status
 from src.tools.doc_reader_tool import read_document
 from src.tools.path_utils import safe_document_path
 from src.tools.web_reader_tool import WebReaderTool
@@ -480,6 +481,12 @@ def _set_cookie(response: Response, token: str) -> None:
 
 def _read_document_text(path_value: str) -> tuple[str, str, dict[str, Any]]:
     path = safe_document_path(path_value)
+    normalized_key = path_value.replace("\\", "/").lstrip("./")
+    if (not path.exists() or not path.is_file()) and normalized_key.startswith("uploads/"):
+        try:
+            build_object_storage().materialize_file(normalized_key, path)
+        except ObjectStorageError:
+            pass
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"file not found: {path_value}")
     parsed = json.loads(read_document(str(path)))
@@ -489,7 +496,7 @@ def _read_document_text(path_value: str) -> tuple[str, str, dict[str, Any]]:
     if not text:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="document produced no readable text")
     metadata = {key: value for key, value in parsed.items() if key not in {"status", "text"}}
-    return text, str(path), metadata
+    return text, normalized_key if normalized_key.startswith("uploads/") else str(path), metadata
 
 
 def _require_owned_upload(principal: Principal, path_value: str) -> None:
@@ -743,6 +750,7 @@ def register_commercial_routes(app: FastAPI) -> None:
     async def knowledge_backend_status(principal: Principal = Depends(_principal_from_cookie)):
         status_payload = get_embedding_backend_status()
         status_payload["organization_id"] = principal.organization_id
+        status_payload["object_storage"] = object_storage_status()
         return status_payload
 
     @app.post("/knowledge-bases")
@@ -789,6 +797,8 @@ def register_commercial_routes(app: FastAPI) -> None:
                 detail="Member role must use knowledge-base chunking defaults",
             )
         _require_owned_upload(principal, payload.path)
+        normalized_upload_key = payload.path.replace("\\", "/").lstrip("./")
+        object_key = normalized_upload_key if normalized_upload_key.startswith("uploads/") else ""
         backend = build_runtime_job_backend(redis_client=_runtime_redis_client())
         if backend.status().get("configured") == REDIS_POSTGRES_RUNTIME_BACKEND and backend.name == REDIS_POSTGRES_RUNTIME_BACKEND:
             try:
@@ -818,6 +828,7 @@ def register_commercial_routes(app: FastAPI) -> None:
                         "knowledge_base_id": knowledge_base_id,
                         "ingestion_job_id": queued["id"],
                         "path": str(source_path),
+                        "object_key": object_key,
                         "title": payload.title or source_path.name,
                         "chunk_size": payload.chunk_size,
                         "chunk_overlap": payload.chunk_overlap,

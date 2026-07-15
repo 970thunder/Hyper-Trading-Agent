@@ -1782,6 +1782,7 @@
     "configurationSaved": "지식 베이스 설정을 저장했습니다.",
     "backendStatus": "인덱스 백엔드",
     "vectorStorage": "벡터 저장소",
+    "objectStorage": "원본 문서 저장소",
     "embeddingModel": "임베딩 모델",
     "available": "사용 가능",
     "fallback": "대체 모드",

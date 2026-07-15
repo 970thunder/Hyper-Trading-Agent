@@ -2024,6 +2024,7 @@
     "configurationSaved": "Knowledge configuration saved.",
     "backendStatus": "Index backend",
     "vectorStorage": "Vector storage",
+    "objectStorage": "Original document storage",
     "embeddingModel": "Embedding model",
     "available": "Available",
     "fallback": "Fallback",

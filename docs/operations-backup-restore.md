@@ -63,9 +63,21 @@ Compress-Archive -Path output,uploads -DestinationPath "backups/artifacts-$stamp
 
 For MinIO/S3-compatible storage:
 
-1. Export the bucket with the provider's native tool.
-2. Save bucket policy and lifecycle rules.
+1. Export the private original-document bucket with the provider's native tool.
+2. Save bucket policy and lifecycle rules. Do not configure expiry for active
+   `uploads/` objects unless the application has an approved retention policy.
 3. Verify object count and total size after export.
+4. When the bundled `object-storage` Compose profile is enabled, the backup
+   script automatically includes `vibe-object-storage`; verify its archive is
+   present in the generated manifest.
+
+To enable bundled MinIO, configure `HYPER_TRADING_OBJECT_STORAGE_BACKEND=s3`,
+the endpoint `http://minio:9000`, a private bucket name, and strong
+`MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` values in `.env.production`, then
+start Compose with `--profile object-storage`. Uploads fail closed if the
+durable object write cannot complete. The API and worker may then run on
+separate hosts because a worker re-materializes an original upload by its
+tenant-scoped storage key before parsing it.
 
 ## Restore Drill
 

@@ -106,6 +106,21 @@ organization-scoped `rag_vector_chunks` live in PostgreSQL. Local development
 retains SQLite FTS and hashing embeddings as an explicit fallback when
 PostgreSQL, `psycopg`, or the configured embedding endpoint is unavailable.
 
+For multi-host API/worker deployments, keep original uploads in private
+S3-compatible storage. The optional bundled MinIO profile mirrors every upload
+to a tenant-scoped object key and lets a worker materialize it on demand before
+parsing. Set the S3 variables in `.env.production` with
+`HYPER_TRADING_OBJECT_STORAGE_BACKEND=s3`, use `http://minio:9000` as the
+endpoint for bundled MinIO, and start it with:
+
+```powershell
+docker compose --profile object-storage --env-file .env.production -f docker-compose.prod.yml up --build -d
+```
+
+The bucket is private and is never exposed through a public object URL. When
+S3 storage is configured, a failed durable write rejects the upload rather than
+silently keeping the only source copy on a container volume.
+
 Commercial persistence is migrated by domain. Production Compose uses
 PostgreSQL as the primary source for identity, governance, knowledge lifecycle,
 workspace ownership, and production vectors. An idempotent startup mirror

@@ -1029,6 +1029,13 @@ export interface CommercialKnowledgeBackendStatus {
     model: string;
     available: boolean;
   };
+  object_storage?: {
+    backend: string;
+    configured: boolean;
+    available: boolean;
+    bucket: string;
+    error: string;
+  };
 }
 
 export interface CommercialKnowledgeBaseCreateRequest {

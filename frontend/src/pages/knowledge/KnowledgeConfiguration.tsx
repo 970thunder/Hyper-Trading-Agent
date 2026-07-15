@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Cpu, Database, Save } from "lucide-react";
+import { Cpu, Database, HardDrive, Save } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type {
   CommercialKnowledgeBackendStatus,
@@ -122,6 +122,14 @@ export function KnowledgeConfiguration({ config, backendStatus, saving, onSave }
             label={t("knowledgeWorkspace.embeddingModel")}
             value={backendStatus ? `${backendStatus.primary.provider} / ${backendStatus.primary.model}` : "-"}
             status={backendStatus?.primary.available ? "success" : "warning"}
+          />
+          <BackendRow
+            icon={HardDrive}
+            label={t("knowledgeWorkspace.objectStorage")}
+            value={backendStatus?.object_storage?.backend === "s3"
+              ? `${backendStatus.object_storage.bucket || "S3"} / ${backendStatus.object_storage.backend}`
+              : backendStatus?.object_storage?.backend || "local"}
+            status={backendStatus?.object_storage?.available === false ? "warning" : "success"}
           />
         </div>
         {backendStatus && !backendStatus.primary.available ? (

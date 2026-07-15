@@ -1782,6 +1782,7 @@
     "configurationSaved": "تم حفظ إعدادات المعرفة.",
     "backendStatus": "خلفية الفهرسة",
     "vectorStorage": "مخزن المتجهات",
+    "objectStorage": "تخزين المستندات الأصلية",
     "embeddingModel": "نموذج التضمين",
     "available": "متاح",
     "fallback": "احتياطي",

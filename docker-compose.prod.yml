@@ -22,6 +22,17 @@ services:
       - vibe-redis:/data
     command: redis-server --appendonly yes
 
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    profiles: ["object-storage"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-hyper-storage}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-this-before-production}
+    command: server /data --console-address :9001
+    volumes:
+      - vibe-object-storage:/data
+    restart: unless-stopped
+
   migrations:
     image: pgvector/pgvector:pg16
     environment:
@@ -160,3 +171,4 @@ volumes:
   vibe-sessions:
   vibe-home:
   vibe-uploads:
+  vibe-object-storage:

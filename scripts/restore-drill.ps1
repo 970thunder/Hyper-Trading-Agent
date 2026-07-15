@@ -76,7 +76,7 @@ foreach ($volume in $manifest.volumes) {
     Assert-ArchiveChecksum -Archive $volume -Root $backupPath
 }
 
-$stagingVolumes = @("vibe-postgres", "vibe-home", "vibe-uploads", "vibe-runs", "vibe-sessions") |
+$stagingVolumes = @("vibe-postgres", "vibe-home", "vibe-uploads", "vibe-runs", "vibe-sessions", "vibe-object-storage") |
     ForEach-Object { "${StagingProjectName}_$_" }
 
 try {

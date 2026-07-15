@@ -80,7 +80,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Migrate knowledge metadata, documents, jobs, chunks, and retrieval logs to PostgreSQL repositories.
 - [x] Add configurable reranking.
 - [x] Add RAG evaluation datasets with tenant-scoped benchmark cases, hit-rate, and MRR history.
-- [ ] Add object-storage lifecycle for original documents.
+- [x] Add S3/MinIO object-storage lifecycle for original documents with worker re-materialization and backup coverage.
 
 ## P2 Model, Agent, Audit, And Usage Governance
 
