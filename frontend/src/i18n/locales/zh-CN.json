@@ -384,7 +384,7 @@
       "markets": "A股 · 多因子 · 量化",
       "connectors": "交易连接器配置",
       "timeframes": "分钟级到日线级时间框架",
-      "optimizers": "4 种投资组合优化器",
+      "optimizers": "5 种投资组合优化器",
       "riskMetrics": "15+ 风险指标",
       "options": "期权与衍生品",
       "pdfWeb": "PDF 与网络研究",
