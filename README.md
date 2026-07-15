@@ -169,6 +169,7 @@ Operations runbooks:
 - [Backup and restore drill](docs/operations-backup-restore.md)
 - [Server deployment guide](docs/deployment-server.md)
 - [Automated server deployment](docs/deployment-automation.md)
+- [服务器部署与自动发布中文教程](docs/server-deployment-tutorial.zh-CN.md)
 - [Prometheus and Grafana overlay](docs/deployment-server.md#optional-observability)
 - [UI screenshot regression](docs/ui-screenshot-regression.md)
 
