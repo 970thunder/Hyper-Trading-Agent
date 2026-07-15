@@ -631,7 +631,7 @@ def register_commercial_routes(app: FastAPI) -> None:
     @app.post("/knowledge-bases")
     async def create_knowledge_base(
         payload: KnowledgeBaseCreateRequest,
-        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+        principal: Principal = Depends(_require_role("owner", "admin")),
     ):
         return _store().create_knowledge_base(principal, payload.name, payload.description)
 
@@ -666,6 +666,11 @@ def register_commercial_routes(app: FastAPI) -> None:
         payload: KnowledgeDocumentCreateRequest,
         principal: Principal = Depends(_require_role("owner", "admin", "member")),
     ):
+        if principal.role == "member" and (payload.chunk_size is not None or payload.chunk_overlap is not None):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Member role must use knowledge-base chunking defaults",
+            )
         _require_owned_upload(principal, payload.path)
         backend = build_runtime_job_backend(redis_client=_runtime_redis_client())
         if backend.status().get("configured") == REDIS_POSTGRES_RUNTIME_BACKEND and backend.name == REDIS_POSTGRES_RUNTIME_BACKEND:
@@ -740,7 +745,7 @@ def register_commercial_routes(app: FastAPI) -> None:
         response: Response,
         knowledge_base_id: str,
         payload: KnowledgeUrlCreateRequest,
-        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+        principal: Principal = Depends(_require_role("owner", "admin")),
     ):
         backend = build_runtime_job_backend(redis_client=_runtime_redis_client())
         if backend.status().get("configured") == REDIS_POSTGRES_RUNTIME_BACKEND and backend.name == REDIS_POSTGRES_RUNTIME_BACKEND:
@@ -811,7 +816,7 @@ def register_commercial_routes(app: FastAPI) -> None:
     async def delete_knowledge_document(
         knowledge_base_id: str,
         document_id: str,
-        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+        principal: Principal = Depends(_require_role("owner", "admin")),
     ):
         try:
             _store().delete_knowledge_document(principal, knowledge_base_id, document_id)
@@ -854,7 +859,7 @@ def register_commercial_routes(app: FastAPI) -> None:
     async def reindex_knowledge_document(
         knowledge_base_id: str,
         document_id: str,
-        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+        principal: Principal = Depends(_require_role("owner", "admin")),
     ):
         try:
             return _store().reindex_knowledge_document(principal, knowledge_base_id, document_id)
@@ -902,7 +907,7 @@ def register_commercial_routes(app: FastAPI) -> None:
         response: Response,
         knowledge_base_id: str,
         job_id: str,
-        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+        principal: Principal = Depends(_require_role("owner", "admin")),
     ):
         try:
             store = _store()
@@ -959,7 +964,7 @@ def register_commercial_routes(app: FastAPI) -> None:
     async def cancel_ingestion_job(
         knowledge_base_id: str,
         job_id: str,
-        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+        principal: Principal = Depends(_require_role("owner", "admin")),
     ):
         try:
             return _store().cancel_ingestion_job(principal, knowledge_base_id, job_id)

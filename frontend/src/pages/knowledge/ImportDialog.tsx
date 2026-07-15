@@ -22,10 +22,11 @@ interface ImportDialogProps {
   onOpenChange: (open: boolean) => void;
   config: CommercialKnowledgeBaseConfig;
   saving: boolean;
+  allowGovernedSources: boolean;
   onImport: (request: KnowledgeImportRequest) => Promise<void> | void;
 }
 
-export function ImportDialog({ open, onOpenChange, config, saving, onImport }: ImportDialogProps) {
+export function ImportDialog({ open, onOpenChange, config, saving, allowGovernedSources, onImport }: ImportDialogProps) {
   const { t } = useTranslation();
   const formId = `knowledge-import-${useId().replace(/:/g, "")}`;
   const [mode, setMode] = useState<KnowledgeImportRequest["mode"]>("file");
@@ -42,6 +43,13 @@ export function ImportDialog({ open, onOpenChange, config, saving, onImport }: I
     setChunkSize(config.chunk_size);
     setChunkOverlap(config.chunk_overlap);
   }, [config.chunk_overlap, config.chunk_size, open]);
+
+  useEffect(() => {
+    if (!allowGovernedSources) {
+      if (mode !== "file") setMode("file");
+      if (!useDefaults) setUseDefaults(true);
+    }
+  }, [allowGovernedSources, mode, useDefaults]);
 
   const reset = () => {
     setMode("file");
@@ -102,10 +110,10 @@ export function ImportDialog({ open, onOpenChange, config, saving, onImport }: I
         </Field>
 
         <Tabs value={mode} onValueChange={(value) => setMode(value as KnowledgeImportRequest["mode"])}>
-          <TabList className="grid grid-cols-3">
+          <TabList className={allowGovernedSources ? "grid grid-cols-3" : "grid grid-cols-1"}>
             <Tab value="file"><FileUp className="h-3.5 w-3.5" />{t("knowledgeWorkspace.uploadFile")}</Tab>
-            <Tab value="url"><Link2 className="h-3.5 w-3.5" />{t("knowledgeWorkspace.webUrl")}</Tab>
-            <Tab value="path"><Server className="h-3.5 w-3.5" />{t("knowledgeWorkspace.serverPath")}</Tab>
+            {allowGovernedSources ? <Tab value="url"><Link2 className="h-3.5 w-3.5" />{t("knowledgeWorkspace.webUrl")}</Tab> : null}
+            {allowGovernedSources ? <Tab value="path"><Server className="h-3.5 w-3.5" />{t("knowledgeWorkspace.serverPath")}</Tab> : null}
           </TabList>
           <TabPanel value="file" className="pt-4">
             <Field label={t("knowledgeWorkspace.file")} required hint={t("knowledgeWorkspace.supportedFormats")}>
@@ -117,16 +125,20 @@ export function ImportDialog({ open, onOpenChange, config, saving, onImport }: I
               />
             </Field>
           </TabPanel>
-          <TabPanel value="url" className="pt-4">
-            <Field label={t("knowledgeWorkspace.webUrl")} required>
-              <Input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://" />
-            </Field>
-          </TabPanel>
-          <TabPanel value="path" className="pt-4">
-            <Field label={t("knowledgeWorkspace.serverPath")} required hint={t("knowledgeWorkspace.serverPathHint")}>
-              <Input value={path} onChange={(event) => setPath(event.target.value)} placeholder="uploads/research.pdf" />
-            </Field>
-          </TabPanel>
+          {allowGovernedSources ? (
+            <TabPanel value="url" className="pt-4">
+              <Field label={t("knowledgeWorkspace.webUrl")} required>
+                <Input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://" />
+              </Field>
+            </TabPanel>
+          ) : null}
+          {allowGovernedSources ? (
+            <TabPanel value="path" className="pt-4">
+              <Field label={t("knowledgeWorkspace.serverPath")} required hint={t("knowledgeWorkspace.serverPathHint")}>
+                <Input value={path} onChange={(event) => setPath(event.target.value)} placeholder="uploads/research.pdf" />
+              </Field>
+            </TabPanel>
+          ) : null}
         </Tabs>
 
         <div className="border-t border-[hsl(var(--border-subtle))] pt-4">
@@ -134,8 +146,9 @@ export function ImportDialog({ open, onOpenChange, config, saving, onImport }: I
             <input
               type="checkbox"
               checked={useDefaults}
+              disabled={!allowGovernedSources}
               onChange={(event) => setUseDefaults(event.target.checked)}
-              className="mt-0.5 h-4 w-4 accent-primary"
+              className="mt-0.5 h-4 w-4 accent-primary disabled:cursor-not-allowed disabled:opacity-60"
             />
             <span>
               <span className="block font-medium text-ink-strong">{t("knowledgeWorkspace.useDefaults")}</span>
@@ -144,7 +157,7 @@ export function ImportDialog({ open, onOpenChange, config, saving, onImport }: I
               </span>
             </span>
           </label>
-          {!useDefaults ? (
+          {!useDefaults && allowGovernedSources ? (
             <div data-page-enter className="mt-4 grid gap-4 sm:grid-cols-2">
               <Field label={t("knowledgeWorkspace.chunkSize")}>
                 <NumberInput min={300} max={8000} value={chunkSize} onChange={(event) => setChunkSize(Number(event.target.value))} />

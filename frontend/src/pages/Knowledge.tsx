@@ -365,7 +365,14 @@ export function Knowledge() {
         onSaveAccess={saveAccess}
       />
 
-      <ImportDialog open={importOpen} onOpenChange={setImportOpen} config={config} saving={importSaving} onImport={importDocument} />
+      <ImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        config={config}
+        saving={importSaving}
+        allowGovernedSources={principal.role === "owner" || principal.role === "admin"}
+        onImport={importDocument}
+      />
 
       <DocumentDrawer
         open={Boolean(drawerDocument)}

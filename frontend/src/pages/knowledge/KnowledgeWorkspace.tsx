@@ -140,7 +140,7 @@ export function KnowledgeWorkspace({
           knowledgeBases={knowledgeBases}
           selectedId={selectedId}
           selectedDocumentCount={documents.length}
-          canCreate={principal.role !== "viewer"}
+          canCreate={canManage}
           onSelect={(id) => {
             setTab("documents");
             onSelectKnowledgeBase(id);
@@ -172,7 +172,7 @@ export function KnowledgeWorkspace({
               <TabPanel value="documents" className="mt-3">
                 <DocumentsTable
                   documents={documents}
-                  canWrite={canWrite}
+                  canWrite={canManage}
                   actionId={actionId}
                   onOpen={onOpenDocument}
                   onReindex={onReindexDocument}
@@ -180,7 +180,7 @@ export function KnowledgeWorkspace({
                 />
               </TabPanel>
               <TabPanel value="jobs" className="mt-3">
-                <IngestionJobs jobs={jobs} documents={documents} canWrite={canWrite} actionId={actionId} onRetry={onRetryJob} onCancel={onCancelJob} />
+                <IngestionJobs jobs={jobs} documents={documents} canWrite={canManage} actionId={actionId} onRetry={onRetryJob} onCancel={onCancelJob} />
               </TabPanel>
               <TabPanel value="search" className="mt-3">
                 <SearchEvaluation
@@ -204,7 +204,7 @@ export function KnowledgeWorkspace({
               <Database className="h-8 w-8 text-ink-disabled" aria-hidden="true" />
               <h2 className="mt-3 text-base font-semibold text-ink-strong">{t("knowledgeWorkspace.noBase")}</h2>
               <p className="mt-1 max-w-md text-sm text-ink-muted">{t("knowledgeWorkspace.noBaseDescription")}</p>
-              {principal.role !== "viewer" ? (
+              {canManage ? (
                 <Button className="mt-4" variant="primary" leftIcon={<Plus className="h-4 w-4" />} onClick={() => setCreateOpen(true)}>
                   {t("knowledgeWorkspace.createBase")}
                 </Button>

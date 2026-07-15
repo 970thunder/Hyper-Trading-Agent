@@ -119,7 +119,7 @@ def test_commercial_role_matrix_for_governance_and_knowledge(tmp_path: Path, mon
 
     assert owner_client.post("/knowledge-bases", json={"name": "Owner KB"}).status_code == 200
     assert admin_client.post("/knowledge-bases", json={"name": "Admin KB"}).status_code == 200
-    assert member_client.post("/knowledge-bases", json={"name": "Member KB"}).status_code == 200
+    assert member_client.post("/knowledge-bases", json={"name": "Member KB"}).status_code == 403
     assert viewer_client.post("/knowledge-bases", json={"name": "Viewer KB"}).status_code == 403
     assert viewer_client.get("/knowledge-bases").status_code == 200
 
@@ -201,6 +201,7 @@ def test_commercial_governance_routes_require_admin_even_from_loopback(tmp_path:
     assert member_client.get("/sessions").status_code == 200
     assert member_client.get("/settings/llm").status_code == 403
     assert member_client.put("/settings/llm", json={"provider": "siliconflow"}).status_code == 403
+    assert member_client.post("/knowledge-bases", json={"name": "Member controlled base"}).status_code == 403
     assert viewer_client.get(
         "/correlation?codes=BTC-USDT,ETH-USDT",
         headers={"accept": "application/json"},

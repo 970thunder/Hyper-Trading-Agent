@@ -40,6 +40,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Restrict global Runtime governance and Swarm Agent mutation APIs to Owner/Admin.
 - [x] Hide Runtime governance navigation from Member/Viewer roles.
 - [x] Hide or disable Knowledge and member-management actions by role.
+- [x] Limit Member knowledge actions to file upload on existing writable bases; reserve source governance, URL ingestion, reindexing, retries, cancellation, and deletion for Owner/Admin.
 - [x] Enforce Viewer read-only access for session, Agent, Swarm, research jobs, upload, and feedback mutations at the API boundary.
 - [x] Add frontend and backend role-matrix regression tests.
 - [x] Audit Swarm Agent create/update/delete actions.

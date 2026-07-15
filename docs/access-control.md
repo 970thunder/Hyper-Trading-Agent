@@ -8,7 +8,7 @@ Hyper Trading Agent separates organization administration from platform operatio
 | --- | --- | --- | --- | --- | --- |
 | View organization sessions, reports, knowledge and completed runs | Yes | Yes | Yes | Yes | Yes |
 | Start chats, research, correlation analysis, backtests and swarm runs | No | Yes | Yes | Yes | Yes |
-| Upload and ingest approved knowledge sources | No | Yes | Yes | Yes | Yes |
+| Upload approved files to an existing knowledge base | No | Yes | Yes | Yes | Yes |
 | Manage knowledge-base configuration and delete shared sources | No | No | Yes | Yes | Yes |
 | Manage models, tools, agents, audit and organization usage views | No | No | Yes | Yes | Yes |
 | Create, change or remove organization members | No | No | No | Yes | Yes |
