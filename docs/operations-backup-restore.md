@@ -9,8 +9,8 @@ validates archive checksums before it touches a volume.
 
 ## What Must Be Backed Up
 
-- PostgreSQL database: pgvector chunks and the staged commercial schema.
-- Application SQLite volume (`vibe-home`): active organization metadata, users, memberships, model-provider metadata, RAG lifecycle records, audit logs, usage, and workspace ownership until the PostgreSQL-primary repository migration is complete.
+- PostgreSQL database: pgvector chunks plus the primary commercial identity domain (organizations, users, memberships, browser sessions, and platform-admin grants).
+- Application SQLite volume (`vibe-home`): staged compatibility data for model-provider metadata, RAG lifecycle records, audit logs, usage, and workspace ownership. It also remains the migration source for legacy identity records during upgrades.
 - Object/file storage: uploaded source files, parsed documents, generated reports, run artifacts, sessions, and exports.
 - `.env.production`: deployment settings and bootstrap secrets. Store this separately in a secure password manager or secret manager.
 - Optional MinIO/S3 bucket: original documents and large artifacts if object storage is enabled.
@@ -49,8 +49,8 @@ foreach ($volume in "vibe-home", "vibe-uploads", "vibe-runs", "vibe-sessions") {
 Get-ChildItem "backups/*-$stamp.tgz" | Select-Object Name,Length
 ```
 
-Do not omit `vibe-home`: it contains the active commercial SQLite repository
-while the PostgreSQL-primary migration remains in progress.
+Do not omit `vibe-home`: it contains active commercial compatibility data while
+the remaining PostgreSQL repository migrations are in progress.
 
 ## File and Artifact Backup
 

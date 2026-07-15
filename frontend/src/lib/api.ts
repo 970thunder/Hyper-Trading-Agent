@@ -668,6 +668,8 @@ export interface PlatformOperations {
     free_pages: number;
     journal_mode: string;
     postgres_configured: boolean;
+    identity_storage?: string;
+    identity_primary_counts?: Record<string, number>;
     table_counts: Record<string, number>;
   };
   runtime: {

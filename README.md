@@ -107,12 +107,14 @@ tenant-scoped `rag_vector_chunks` pgvector table. If PostgreSQL, `psycopg`, or
 the configured embedding dimension is unavailable, retrieval falls back to the
 SQLite path without exposing the database error to users.
 
-Commercial metadata is still in a staged migration: the application currently
-persists organization metadata, sessions, knowledge lifecycle records, audit
-data, and encrypted provider settings in the `vibe-home` volume, while
-production vectors are stored in PostgreSQL. Back up both persistence layers
-before every upgrade. PostgreSQL-primary repositories remain an explicit
-roadmap item rather than an implied deployment guarantee.
+Commercial persistence is migrated by domain. Production Compose uses
+PostgreSQL as the primary source for organizations, users, memberships, browser
+sessions, and platform-administrator grants; an idempotent startup mirror
+migrates existing identity data from the compatibility store. Knowledge
+lifecycle records, audit data, model-provider settings, usage, and workspace
+ownership still use the `vibe-home` SQLite compatibility repository while their
+PostgreSQL repositories are completed. Production vectors are stored in
+PostgreSQL. Back up both persistence layers before every upgrade.
 
 For a single-machine deployment without Redis/Postgres workers, set `HYPER_TRADING_RUNTIME_JOB_BACKEND=sqlite-local`.
 
@@ -192,7 +194,7 @@ npm run build
 ## Roadmap
 
 1. Move Agent run, web crawl, RAG ingestion, and long backtest executors onto the durable Redis/Postgres worker path.
-2. Complete Postgres runtime repository parity for commercial data beyond the current SQLite MVP.
+2. Complete PostgreSQL repository parity for knowledge lifecycle, audit, usage, model, and workspace data beyond the current compatibility store.
 3. Add rerank/evaluation loops for RAG and investment report quality.
 4. Add enterprise SSO, quota enforcement, and stronger observability hardening.
 5. Package private deployment runbooks, backup drills, and security review gates for commercial delivery.

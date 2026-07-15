@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from .postgres_identity import PostgresIdentityRepository
 
 DEFAULT_DB_PATH = Path.home() / ".vibe-trading" / "commercial" / "commercial.db"
 SESSION_TTL_DAYS = 14
@@ -440,7 +441,15 @@ class CommercialStore:
     def __init__(self, path: Path | None = None) -> None:
         self.path = (path or db_path()).expanduser()
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # Explicit production configuration selects PostgreSQL for identity
+        # reads and writes. Supplying a path keeps unit tests and local tools on
+        # the SQLite compatibility repository.
+        self._primary_identity = None if path is not None else PostgresIdentityRepository.from_environment()
         self._init()
+        if self._primary_identity is not None:
+            self._primary_identity.ensure_available()
+            if self._primary_identity.needs_initial_sync():
+                self._sync_primary_identity_from_sqlite()
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.path))
@@ -716,6 +725,13 @@ class CommercialStore:
             if "is_active" not in existing_organization_columns:
                 conn.execute("ALTER TABLE organizations ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
 
+    def _sync_primary_identity_from_sqlite(self) -> None:
+        """Synchronously mirror the staged identity domain to PostgreSQL."""
+        if self._primary_identity is None:
+            return
+        with self._connect() as conn:
+            self._primary_identity.sync_from_sqlite(conn)
+
     # --- auth / orgs ---
 
     def _sync_platform_admin_bootstrap(self, user_id: str, email: str) -> None:
@@ -727,9 +743,17 @@ class CommercialStore:
                 "INSERT OR IGNORE INTO platform_admins(user_id, created_at, created_by_user_id) VALUES (?, ?, ?)",
                 (user_id, utcnow(), "bootstrap"),
             )
+        if self._primary_identity is not None:
+            self._primary_identity.upsert_platform_admin(
+                user_id=user_id,
+                created_at=utcnow(),
+                created_by_user_id="bootstrap",
+            )
 
     def _is_platform_admin(self, user_id: str, email: str = "") -> bool:
         self._sync_platform_admin_bootstrap(user_id, email)
+        if self._primary_identity is not None:
+            return self._primary_identity.is_platform_admin(user_id)
         with self._connect() as conn:
             row = conn.execute("SELECT 1 FROM platform_admins WHERE user_id = ?", (user_id,)).fetchone()
         return row is not None
@@ -759,6 +783,7 @@ class CommercialStore:
                 "INSERT INTO memberships(organization_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)",
                 (org_id, user_id, now),
             )
+        self._sync_primary_identity_from_sqlite()
         self._sync_platform_admin_bootstrap(user_id, email)
         principal = Principal(
             user_id=user_id,
@@ -773,20 +798,23 @@ class CommercialStore:
 
     def login(self, *, email: str, password: str) -> tuple[Principal, str]:
         email = email.strip().lower()
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT u.id AS user_id, u.email, u.password_hash, u.is_active AS user_active,
-                       m.organization_id, m.role, o.is_active AS organization_active
-                FROM users u
-                JOIN memberships m ON m.user_id = u.id
-                JOIN organizations o ON o.id = m.organization_id
-                WHERE u.email = ?
-                ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'member' THEN 2 ELSE 3 END
-                LIMIT 1
-                """,
-                (email,),
-            ).fetchone()
+        if self._primary_identity is not None:
+            row = self._primary_identity.login_candidate(email)
+        else:
+            with self._connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT u.id AS user_id, u.email, u.password_hash, u.is_active AS user_active,
+                           m.organization_id, m.role, o.is_active AS organization_active
+                    FROM users u
+                    JOIN memberships m ON m.user_id = u.id
+                    JOIN organizations o ON o.id = m.organization_id
+                    WHERE u.email = ?
+                    ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'member' THEN 2 ELSE 3 END
+                    LIMIT 1
+                    """,
+                    (email,),
+                ).fetchone()
         if row is None or not _verify_password(password, str(row["password_hash"])):
             raise ValueError("invalid email or password")
         if not bool(row["user_active"]) or not bool(row["organization_active"]):
@@ -806,10 +834,19 @@ class CommercialStore:
         token = secrets.token_urlsafe(32)
         token_hash = _secret_fingerprint(token)
         expires = (datetime.now(timezone.utc) + timedelta(days=SESSION_TTL_DAYS)).isoformat()
+        created_at = utcnow()
+        if self._primary_identity is not None:
+            self._primary_identity.create_session(
+                token_hash=token_hash,
+                user_id=principal.user_id,
+                organization_id=principal.organization_id,
+                expires_at=expires,
+                created_at=created_at,
+            )
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO auth_sessions(token_hash, user_id, organization_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
-                (token_hash, principal.user_id, principal.organization_id, expires, utcnow()),
+                (token_hash, principal.user_id, principal.organization_id, expires, created_at),
             )
         return token
 
@@ -817,6 +854,17 @@ class CommercialStore:
         if not token:
             return None
         token_hash = _secret_fingerprint(token)
+        if self._primary_identity is not None:
+            row = self._primary_identity.principal_from_token(token_hash)
+            if row is None:
+                return None
+            return Principal(
+                str(row["user_id"]),
+                str(row["organization_id"]),
+                str(row["email"]),
+                str(row["role"]),
+                bool(row["is_platform_admin"]),
+            )
         with self._connect() as conn:
             row = conn.execute(
                 """
@@ -842,16 +890,26 @@ class CommercialStore:
 
     def logout(self, token: str) -> None:
         if token:
+            token_hash = _secret_fingerprint(token)
+            if self._primary_identity is not None:
+                self._primary_identity.delete_session(token_hash)
             with self._connect() as conn:
-                conn.execute("DELETE FROM auth_sessions WHERE token_hash = ?", (_secret_fingerprint(token),))
+                conn.execute("DELETE FROM auth_sessions WHERE token_hash = ?", (token_hash,))
 
     def current_organization(self, principal: Principal) -> dict[str, Any]:
+        if self._primary_identity is not None:
+            return self._primary_identity.current_organization(principal.organization_id)
         with self._connect() as conn:
             row = conn.execute("SELECT id, name, created_at FROM organizations WHERE id = ?", (principal.organization_id,)).fetchone()
         return dict(row) if row else {}
 
     def list_user_organizations(self, principal: Principal) -> list[dict[str, Any]]:
         """List active organization memberships available to the signed-in user."""
+        if self._primary_identity is not None:
+            return self._primary_identity.list_user_organizations(
+                user_id=principal.user_id,
+                current_organization_id=principal.organization_id,
+            )
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -870,17 +928,20 @@ class CommercialStore:
         target = str(organization_id or "").strip()
         if not target:
             raise ValueError("organization_id is required")
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT m.organization_id, m.role, o.is_active AS organization_active, u.is_active AS user_active
-                FROM memberships m
-                JOIN organizations o ON o.id = m.organization_id
-                JOIN users u ON u.id = m.user_id
-                WHERE m.user_id = ? AND m.organization_id = ?
-                """,
-                (principal.user_id, target),
-            ).fetchone()
+        if self._primary_identity is not None:
+            row = self._primary_identity.membership(user_id=principal.user_id, organization_id=target)
+        else:
+            with self._connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT m.organization_id, m.role, o.is_active AS organization_active, u.is_active AS user_active
+                    FROM memberships m
+                    JOIN organizations o ON o.id = m.organization_id
+                    JOIN users u ON u.id = m.user_id
+                    WHERE m.user_id = ? AND m.organization_id = ?
+                    """,
+                    (principal.user_id, target),
+                ).fetchone()
         if row is None:
             raise KeyError(target)
         if not bool(row["organization_active"]):
@@ -1147,6 +1208,7 @@ class CommercialStore:
                 "INSERT INTO memberships(organization_id, user_id, role, created_at) VALUES (?, ?, ?, ?)",
                 (principal.organization_id, user_id, role, now),
             )
+        self._sync_primary_identity_from_sqlite()
         self.audit(principal, "organization.member.create", "user", user_id, {"email": email, "role": role})
         return self._get_organization_member(principal, user_id)
 
@@ -1164,6 +1226,7 @@ class CommercialStore:
             )
             if cursor.rowcount == 0:
                 raise KeyError(user_id)
+        self._sync_primary_identity_from_sqlite()
         self.audit(principal, "organization.member.update", "user", user_id, {"role": role, "previous_role": current["role"]})
         return self._get_organization_member(principal, user_id)
 
@@ -1183,6 +1246,11 @@ class CommercialStore:
             conn.execute(
                 "DELETE FROM auth_sessions WHERE organization_id = ? AND user_id = ?",
                 (principal.organization_id, user_id),
+            )
+        if self._primary_identity is not None:
+            self._primary_identity.delete_membership(
+                organization_id=principal.organization_id,
+                user_id=user_id,
             )
         self.audit(principal, "organization.member.delete", "user", user_id, {"role": current["role"], "email": current["email"]})
 
@@ -2918,7 +2986,7 @@ class CommercialStore:
         return payload
 
     def platform_database_status(self) -> dict[str, Any]:
-        """Return non-secret SQLite repository health for platform operations."""
+        """Return non-secret primary and compatibility repository health."""
         with self._connect() as conn:
             page_count = int(conn.execute("PRAGMA page_count").fetchone()[0] or 0)
             page_size = int(conn.execute("PRAGMA page_size").fetchone()[0] or 0)
@@ -2937,7 +3005,7 @@ class CommercialStore:
             file_bytes = int(self.path.stat().st_size)
         except OSError:
             file_bytes = page_count * page_size
-        return {
+        payload: dict[str, Any] = {
             "engine": "sqlite",
             "file_bytes": file_bytes,
             "page_count": page_count,
@@ -2946,7 +3014,12 @@ class CommercialStore:
             "journal_mode": journal_mode,
             "table_counts": table_counts,
             "postgres_configured": bool(os.getenv("DATABASE_URL", "").strip()),
+            "identity_storage": "sqlite-compatibility",
         }
+        if self._primary_identity is not None:
+            payload["identity_storage"] = "postgres-primary"
+            payload["identity_primary_counts"] = self._primary_identity.status()
+        return payload
 
     def list_platform_workspace_artifacts(
         self,
@@ -2999,6 +3072,8 @@ class CommercialStore:
             with self._connect() as conn:
                 cursor = conn.execute("DELETE FROM auth_sessions WHERE expires_at < ?", (utcnow(),))
             details["records_affected"] = max(0, int(cursor.rowcount or 0))
+            if self._primary_identity is not None:
+                details["identity_records_affected"] = self._primary_identity.expire_sessions()
         elif normalized == "sqlite_checkpoint":
             with self._connect() as conn:
                 row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
@@ -3174,6 +3249,9 @@ class CommercialStore:
                 raise KeyError(user_id)
             if "is_active" in payload and not bool(payload["is_active"]):
                 conn.execute("DELETE FROM auth_sessions WHERE user_id = ?", (user_id,))
+        self._sync_primary_identity_from_sqlite()
+        if self._primary_identity is not None and "is_active" in payload and not bool(payload["is_active"]):
+            self._primary_identity.delete_sessions_for_user(user_id)
         self.audit(actor, "platform.user.update", "user", user_id, {"changes": {key: payload[key] for key in payload if key != "password"}})
         return next((user for user in self.list_platform_users(limit=500) if user["user_id"] == user_id), {})
 
@@ -3198,6 +3276,9 @@ class CommercialStore:
                 raise KeyError(organization_id)
             if "is_active" in payload and not bool(payload["is_active"]):
                 conn.execute("DELETE FROM auth_sessions WHERE organization_id = ?", (organization_id,))
+        self._sync_primary_identity_from_sqlite()
+        if self._primary_identity is not None and "is_active" in payload and not bool(payload["is_active"]):
+            self._primary_identity.delete_sessions_for_organization(organization_id)
         self.audit(actor, "platform.organization.update", "organization", organization_id, {"changes": payload})
         return next((org for org in self.list_platform_organizations(limit=500) if org["id"] == organization_id), {})
 
@@ -3220,6 +3301,11 @@ class CommercialStore:
                 if int(count["count"] or 0) <= 1:
                     raise ValueError("at least one platform administrator is required")
                 conn.execute("DELETE FROM platform_admins WHERE user_id = ?", (user_id,))
+        if self._primary_identity is not None:
+            if enabled:
+                self._sync_primary_identity_from_sqlite()
+            else:
+                self._primary_identity.delete_platform_admin(user_id)
         self.audit(actor, "platform.admin.update", "user", user_id, {"enabled": enabled})
         return next((user for user in self.list_platform_users(limit=500) if user["user_id"] == user_id), {})
 
