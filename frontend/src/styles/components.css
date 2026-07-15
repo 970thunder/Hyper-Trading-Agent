@@ -11,7 +11,7 @@
       linear-gradient(145deg, hsl(var(--canvas)) 0%, hsl(var(--surface-2)) 52%, hsl(var(--canvas)) 100%);
   }
 
-  /* The sign-in surface deliberately sits above the entire application shell. */
+  /* The sign-in surface is a standalone public boundary, never a workspace overlay. */
   .auth-shell {
     position: fixed;
     inset: 0;
@@ -24,6 +24,11 @@
       radial-gradient(circle at 16% 12%, hsl(var(--interactive-accent) / 0.11), transparent 27rem),
       radial-gradient(circle at 84% 88%, hsl(var(--interactive-primary) / 0.11), transparent 30rem),
       linear-gradient(145deg, hsl(var(--canvas)) 0%, hsl(var(--surface-2)) 52%, hsl(var(--canvas)) 100%);
+  }
+
+  body.auth-active,
+  body.auth-active #root {
+    overflow: hidden;
   }
 
   .auth-shell::before {

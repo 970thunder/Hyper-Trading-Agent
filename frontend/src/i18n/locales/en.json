@@ -1660,8 +1660,9 @@
     "somethingWrong": "Something went wrong"
   },
   "login": {
-    "title": "Commercial login",
-    "description": "Sign in to enable organization models, admin settings, audit, and usage governance.",
+    "product": "Hyper Trading Agent",
+    "title": "Sign in",
+    "description": "Enter your account credentials to continue.",
     "email": "Email",
     "password": "Password",
     "submit": "Sign in",

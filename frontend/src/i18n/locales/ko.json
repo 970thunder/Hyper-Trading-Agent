@@ -1556,8 +1556,9 @@
     "noEquityData": "자산 데이터 없음"
   },
   "login": {
-    "title": "Commercial login",
-    "description": "Sign in to enable organization models, admin settings, audit, and usage governance.",
+    "product": "Hyper Trading Agent",
+    "title": "로그인",
+    "description": "계정 정보를 입력하여 계속하세요.",
     "email": "Email",
     "password": "Password",
     "submit": "Sign in",

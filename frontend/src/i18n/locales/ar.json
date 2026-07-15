@@ -1556,8 +1556,9 @@
     "noEquityData": "لا توجد بيانات أصول"
   },
   "login": {
-    "title": "Commercial login",
-    "description": "Sign in to enable organization models, admin settings, audit, and usage governance.",
+    "product": "Hyper Trading Agent",
+    "title": "تسجيل الدخول",
+    "description": "أدخل بيانات اعتماد حسابك للمتابعة.",
     "email": "Email",
     "password": "Password",
     "submit": "Sign in",

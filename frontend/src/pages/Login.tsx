@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Loader2, LogIn, ShieldCheck } from "lucide-react";
+import { BarChart3, Loader2, LogIn } from "lucide-react";
 import { api } from "@/lib/api";
 import { AuthGateScreen } from "@/components/layout/AuthGateScreen";
 
@@ -67,10 +67,11 @@ export function Login() {
       <form onSubmit={submit} className="auth-card" aria-label={t("login.title")}>
         <div className="mb-8 flex items-center gap-3.5">
           <div className="auth-brand-mark">
-            <ShieldCheck className="h-5 w-5" />
+            <BarChart3 className="h-5 w-5" aria-hidden="true" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-ink-strong">{t("login.title")}</h1>
+            <p className="text-xs font-semibold text-primary">{t("login.product")}</p>
+            <h1 className="mt-1 text-xl font-semibold text-ink-strong">{t("login.title")}</h1>
             <p className="mt-1.5 text-sm leading-6 text-ink-muted">{t("login.description")}</p>
           </div>
         </div>
@@ -83,6 +84,8 @@ export function Login() {
               onChange={(event) => setEmail(event.target.value)}
               type="email"
               autoComplete="email"
+              autoFocus
+              required
               className="w-full rounded-md border border-[hsl(var(--border-default))] bg-[hsl(var(--canvas)/0.72)] px-3 py-2.5 text-sm outline-none transition-[border-color,box-shadow,background-color] focus:border-primary/60 focus:bg-[hsl(var(--surface-1))] focus:ring-2 focus:ring-primary/20"
             />
           </label>
@@ -93,6 +96,7 @@ export function Login() {
               onChange={(event) => setPassword(event.target.value)}
               type="password"
               autoComplete="current-password"
+              required
               className="w-full rounded-md border border-[hsl(var(--border-default))] bg-[hsl(var(--canvas)/0.72)] px-3 py-2.5 text-sm outline-none transition-[border-color,box-shadow,background-color] focus:border-primary/60 focus:bg-[hsl(var(--surface-1))] focus:ring-2 focus:ring-primary/20"
             />
           </label>
