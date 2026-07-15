@@ -124,6 +124,13 @@ It checks service state, API health, the anonymous workspace boundary, pgvector
 runtime status, and the `rag_vector_chunks` migration without creating or
 changing business data.
 
+The verifier rejects unsafe public-server configuration by default: placeholder
+secrets, non-loopback API binding, non-secure session cookies, Docker loopback
+trust, non-HTTPS/wildcard CORS, and a missing bootstrap platform administrator.
+For a local Docker Desktop smoke check that intentionally uses development
+cookies or loopback trust, add `-AllowLocalDev`; that mode is not a server
+deployment certification.
+
 ## Operations
 
 - Use [backup and restore](operations-backup-restore.md) before upgrades and at least quarterly for restore drills.
