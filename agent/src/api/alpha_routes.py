@@ -636,6 +636,13 @@ def _require_workspace_runtime_job_access(request: Request, job_id: str) -> None
     raise HTTPException(status_code=404, detail="Runtime job not found")
 
 
+def _require_workspace_research_write_access(request: Request) -> None:
+    """Allow Viewer reporting access without granting compute-consuming actions."""
+    context = _commercial_runtime_context(request)
+    if context is not None and context[1].role == "viewer":
+        raise HTTPException(status_code=403, detail="Viewer role is read-only")
+
+
 def _find_rag_ingestion_job(request: Request, job_id: str) -> tuple[Any, Any, str, dict[str, Any]] | None:
     if not _JOB_ID_RE.fullmatch(job_id or ""):
         raise HTTPException(status_code=400, detail="invalid job_id")
@@ -965,7 +972,7 @@ def register_alpha_routes(
     @app.post(
         "/alpha/bench",
         status_code=202,
-        dependencies=[Depends(require_auth)],
+        dependencies=[Depends(require_auth), Depends(_require_workspace_research_write_access)],
     )
     async def kick_off_bench(payload: BenchRequest, request: Request) -> dict[str, Any]:
         """Queue a background bench job and return a job_id."""
@@ -1100,7 +1107,7 @@ def register_alpha_routes(
     @app.post(
         "/alpha/compare",
         status_code=202,
-        dependencies=[Depends(require_auth)],
+        dependencies=[Depends(require_auth), Depends(_require_workspace_research_write_access)],
     )
     async def kick_off_compare(payload: CompareRequest, request: Request) -> dict[str, Any]:
         """Queue a background head-to-head comparison and return a job_id."""
