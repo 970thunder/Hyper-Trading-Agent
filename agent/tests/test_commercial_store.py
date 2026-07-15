@@ -249,6 +249,47 @@ def test_record_llm_usage_summary(tmp_path):
     assert usage[0]["metadata"]["calls"] == 2
 
 
+def test_usage_alerts_are_deduplicated_acknowledgeable_and_audited(tmp_path):
+    store = CommercialStore(tmp_path / "commercial.db")
+    principal, _ = store.register_owner(
+        email="owner@example.com",
+        password="password123",
+        organization_name="Acme Research",
+    )
+    store.update_usage_policy(
+        principal,
+        {
+            "monthly_token_soft_limit": 100,
+            "monthly_token_hard_limit": 120,
+        },
+    )
+
+    first = store.record_model_usage(
+        principal,
+        provider="siliconflow",
+        model="deepseek-ai/DeepSeek-V3.2",
+        total_tokens=100,
+    )
+    assert [alert["alert_type"] for alert in first["alerts"]] == ["token_soft_limit"]
+
+    second = store.record_model_usage(
+        principal,
+        provider="siliconflow",
+        model="deepseek-ai/DeepSeek-V3.2",
+        total_tokens=25,
+    )
+    assert [alert["alert_type"] for alert in second["alerts"]] == ["token_hard_limit"]
+
+    alerts = store.list_usage_alerts(principal)
+    assert {alert["alert_type"] for alert in alerts} == {"token_soft_limit", "token_hard_limit"}
+    soft_alert = next(alert for alert in alerts if alert["alert_type"] == "token_soft_limit")
+    acknowledged = store.acknowledge_usage_alert(principal, soft_alert["id"])
+    assert acknowledged["status"] == "acknowledged"
+    assert {alert["alert_type"] for alert in store.list_usage_alerts(principal)} == {"token_hard_limit"}
+    assert len(store.list_usage_alerts(principal, include_acknowledged=True)) == 2
+    assert any(row["action"] == "usage_alert.acknowledge" for row in store.list_audit_logs(principal))
+
+
 def test_feedback_events_are_scoped_and_audited(tmp_path):
     store = CommercialStore(tmp_path / "commercial.db")
     owner_a, _ = store.register_owner(

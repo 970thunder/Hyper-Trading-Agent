@@ -348,6 +348,15 @@ export const api = {
   },
   listModelUsage: (limit?: number) => request<ModelUsage[]>(`/usage/model-calls${limit ? `?limit=${encodeURIComponent(String(limit))}` : ""}`),
   getUsageSummary: () => request<OrganizationUsageSummary>("/usage/summary"),
+  listUsageAlerts: (options?: { limit?: number; includeAcknowledged?: boolean }) => {
+    const q = new URLSearchParams();
+    if (options?.limit) q.set("limit", String(options.limit));
+    if (options?.includeAcknowledged) q.set("include_acknowledged", "true");
+    const query = q.toString();
+    return request<UsageAlertEvent[]>(`/usage/alerts${query ? `?${query}` : ""}`);
+  },
+  acknowledgeUsageAlert: (alertId: string) =>
+    request<UsageAlertEvent>(`/usage/alerts/${encodeURIComponent(alertId)}/acknowledge`, { method: "POST" }),
   getUsagePolicy: () => request<OrganizationUsagePolicy>("/usage/policy"),
   updateUsagePolicy: (body: OrganizationUsagePolicyUpdateRequest) =>
     request<OrganizationUsagePolicy>("/usage/policy", {
@@ -1147,6 +1156,18 @@ export interface OrganizationUsageSummary {
   token_hard_limit_reached: boolean;
   cost_soft_limit_reached: boolean;
   cost_hard_limit_reached: boolean;
+}
+
+export interface UsageAlertEvent {
+  id: string;
+  organization_id: string;
+  period_start: string;
+  alert_type: "token_soft_limit" | "token_hard_limit" | "cost_soft_limit" | "cost_hard_limit";
+  status: "open" | "acknowledged";
+  metadata: Record<string, unknown>;
+  created_at: string;
+  acknowledged_at?: string;
+  acknowledged_by_user_id?: string;
 }
 
 export interface FeedbackCreateRequest {

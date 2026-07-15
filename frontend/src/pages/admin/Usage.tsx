@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Gauge } from "lucide-react";
+import { BellRing, Check, Gauge } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { api, type CommercialPrincipal, type ModelUsage, type OrganizationUsagePolicy, type OrganizationUsageSummary } from "@/lib/api";
+import { api, type CommercialPrincipal, type ModelUsage, type OrganizationUsagePolicy, type OrganizationUsageSummary, type UsageAlertEvent } from "@/lib/api";
 import { InlineError, Skeleton } from "@/components/ui/AsyncState";
 import { Button } from "@/components/ui/Button";
 
@@ -32,23 +32,27 @@ export function Usage() {
   const [usage, setUsage] = useState<ModelUsage[]>([]);
   const [monthlySummary, setMonthlySummary] = useState<OrganizationUsageSummary>(EMPTY_MONTHLY_SUMMARY);
   const [policy, setPolicy] = useState<OrganizationUsagePolicy>(EMPTY_POLICY);
+  const [alerts, setAlerts] = useState<UsageAlertEvent[]>([]);
   const [principal, setPrincipal] = useState<CommercialPrincipal | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [savingPolicy, setSavingPolicy] = useState(false);
+  const [acknowledgingAlertId, setAcknowledgingAlertId] = useState("");
 
   const load = async () => {
     setError("");
-    const [records, summary, nextPolicy, currentPrincipal] = await Promise.all([
+    const [records, summary, nextPolicy, currentPrincipal, nextAlerts] = await Promise.all([
       api.listModelUsage(1000),
       api.getUsageSummary(),
       api.getUsagePolicy(),
       api.getCommercialMe(),
+      api.listUsageAlerts({ limit: 50 }),
     ]);
     setUsage(records);
     setMonthlySummary(summary);
     setPolicy(nextPolicy);
     setPrincipal(currentPrincipal);
+    setAlerts(nextAlerts);
   };
 
   useEffect(() => {
@@ -81,6 +85,12 @@ export function Usage() {
   const canEditBudget = principal?.role === "owner";
   const hardLimitReached = monthlySummary.token_hard_limit_reached || monthlySummary.cost_hard_limit_reached;
   const softLimitReached = monthlySummary.token_soft_limit_reached || monthlySummary.cost_soft_limit_reached;
+  const alertLabels: Record<UsageAlertEvent["alert_type"], string> = {
+    token_soft_limit: t("adminCenter.usage.alert.token_soft_limit"),
+    token_hard_limit: t("adminCenter.usage.alert.token_hard_limit"),
+    cost_soft_limit: t("adminCenter.usage.alert.cost_soft_limit"),
+    cost_hard_limit: t("adminCenter.usage.alert.cost_hard_limit"),
+  };
 
   const savePolicy = async () => {
     if (!canEditBudget || savingPolicy) return;
@@ -99,6 +109,20 @@ export function Usage() {
       toast.error(errorMessage(saveError) || t("adminCenter.usage.budgetSaveFailed"));
     } finally {
       setSavingPolicy(false);
+    }
+  };
+
+  const acknowledgeAlert = async (alertId: string) => {
+    if (acknowledgingAlertId || !canEditBudget) return;
+    setAcknowledgingAlertId(alertId);
+    try {
+      await api.acknowledgeUsageAlert(alertId);
+      setAlerts((current) => current.filter((alert) => alert.id !== alertId));
+      toast.success(t("adminCenter.usage.alertAcknowledged"));
+    } catch (acknowledgeError) {
+      toast.error(errorMessage(acknowledgeError) || t("adminCenter.usage.alertAcknowledgeFailed"));
+    } finally {
+      setAcknowledgingAlertId("");
     }
   };
 
@@ -142,6 +166,18 @@ export function Usage() {
           <p className="text-xs text-ink-muted">{t("adminCenter.usage.unlimitedHint")}</p>
         </div>
       </section>
+      <section className="surface-panel p-4">
+        <div className="flex items-start gap-2 border-b border-[hsl(var(--border-subtle))] pb-4"><BellRing className="mt-0.5 h-4 w-4 shrink-0 text-warning" /><div><h3 className="text-sm font-semibold text-ink-strong">{t("adminCenter.usage.alertsTitle")}</h3><p className="mt-1 text-sm leading-5 text-ink-muted">{t("adminCenter.usage.alertsDescription")}</p></div></div>
+        <div className="mt-3 divide-y divide-[hsl(var(--border-subtle))]">
+          {alerts.map((alert) => (
+            <article key={alert.id} className="flex flex-col gap-3 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0"><div className="text-sm font-medium text-ink-strong">{alertLabels[alert.alert_type]}</div><div className="mt-1 text-xs text-ink-muted">{alertDetail(alert)} · {new Date(alert.created_at).toLocaleString()}</div></div>
+              {canEditBudget ? <Button size="sm" variant="secondary" loading={acknowledgingAlertId === alert.id} onClick={() => void acknowledgeAlert(alert.id)}><Check className="h-3.5 w-3.5" />{t("adminCenter.usage.acknowledgeAlert")}</Button> : null}
+            </article>
+          ))}
+          {!alerts.length ? <div className="py-8 text-center text-sm text-ink-muted">{t("adminCenter.usage.alertsEmpty")}</div> : null}
+        </div>
+      </section>
       <section>
         <h3 className="text-sm font-semibold text-ink-strong">{t("adminCenter.usage.byModel")}</h3>
         <div className="mt-3 divide-y divide-[hsl(var(--border-subtle))] rounded-lg border border-border bg-surface-1">
@@ -166,3 +202,4 @@ function BudgetInput({ label, value, disabled, onChange, step = "1" }: { label: 
 function formatNumber(value: number) { return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value); }
 function formatCurrency(value: number) { return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 4 }).format(value); }
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error || "Unknown error"); }
+function alertDetail(alert: UsageAlertEvent) { const current = Number(alert.metadata.current || 0); const limit = Number(alert.metadata.limit || 0); const value = alert.alert_type.startsWith("cost_") ? formatCurrency(current) : formatNumber(current); const cap = alert.alert_type.startsWith("cost_") ? formatCurrency(limit) : formatNumber(limit); return `${value} / ${cap}`; }

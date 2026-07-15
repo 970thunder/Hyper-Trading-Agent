@@ -1017,6 +1017,28 @@ def register_commercial_routes(app: FastAPI) -> None:
     async def usage_summary(principal: Principal = Depends(_require_role("owner", "admin"))):
         return _store().usage_summary(principal)
 
+    @app.get("/usage/alerts")
+    async def usage_alerts(
+        limit: int = 100,
+        include_acknowledged: bool = False,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        return _store().list_usage_alerts(
+            principal,
+            limit=limit,
+            include_acknowledged=include_acknowledged,
+        )
+
+    @app.post("/usage/alerts/{alert_id}/acknowledge")
+    async def acknowledge_usage_alert(
+        alert_id: str,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        try:
+            return _store().acknowledge_usage_alert(principal, alert_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="usage alert not found") from exc
+
     @app.get("/usage/policy")
     async def usage_policy(principal: Principal = Depends(_require_role("owner", "admin"))):
         return _store().get_usage_policy(principal)

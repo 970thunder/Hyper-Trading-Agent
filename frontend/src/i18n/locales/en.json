@@ -704,6 +704,7 @@
     "stats": {
       "users": "Users",
       "organizations": "Organizations",
+      "usage": "Usage",
       "knowledge": "Knowledge bases",
       "jobs": "Ingestion jobs",
       "active": "{{count}} active",
@@ -1846,7 +1847,19 @@
       "saveBudget": "Save budget",
       "budgetSaved": "Organization budget updated.",
       "budgetSaveFailed": "Failed to update organization budget.",
-      "budgetOwnerOnly": "Only organization owners can change budget limits."
+      "budgetOwnerOnly": "Only organization owners can change budget limits.",
+      "alertsTitle": "Budget alerts",
+      "alertsDescription": "Threshold events are delivered here once per monthly period and retained in the audit trail.",
+      "alertsEmpty": "No open budget alerts.",
+      "acknowledgeAlert": "Acknowledge",
+      "alertAcknowledged": "Budget alert acknowledged.",
+      "alertAcknowledgeFailed": "Failed to acknowledge budget alert.",
+      "alert": {
+        "token_soft_limit": "Token soft limit reached",
+        "token_hard_limit": "Token hard limit reached",
+        "cost_soft_limit": "Cost soft limit reached",
+        "cost_hard_limit": "Cost hard limit reached"
+      }
     }
   },
   "knowledgeWorkspace": {

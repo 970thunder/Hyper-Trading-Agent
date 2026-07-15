@@ -610,6 +610,20 @@ class CommercialStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS usage_alert_events (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    period_start TEXT NOT NULL,
+                    alert_type TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    acknowledged_at TEXT NOT NULL DEFAULT '',
+                    acknowledged_by_user_id TEXT NOT NULL DEFAULT '',
+                    UNIQUE(organization_id, period_start, alert_type)
+                );
+                CREATE INDEX IF NOT EXISTS idx_usage_alert_events_organization
+                    ON usage_alert_events(organization_id, status, created_at DESC);
                 CREATE TABLE IF NOT EXISTS knowledge_bases (
                     id TEXT PRIMARY KEY,
                     organization_id TEXT NOT NULL,
@@ -1620,6 +1634,7 @@ class CommercialStore:
 
     def assert_model_usage_available(self, principal: Principal) -> dict[str, Any]:
         summary = self.usage_summary(principal)
+        self._record_usage_limit_alerts(principal, summary)
         if not summary["token_hard_limit_reached"] and not summary["cost_hard_limit_reached"]:
             return summary
         reasons: list[str] = []
@@ -1635,6 +1650,143 @@ class CommercialStore:
             "estimated_cost": summary["estimated_cost"],
         })
         raise UsageLimitExceeded(f"Organization {reason} has been reached")
+
+    def _record_usage_limit_alerts(self, principal: Principal, summary: dict[str, Any]) -> list[dict[str, Any]]:
+        """Create one durable in-app alert per organization, period, and threshold.
+
+        A threshold can be evaluated on every model call. The unique key makes
+        the write idempotent, so alert delivery remains useful without turning
+        normal usage traffic into an audit-log flood.
+        """
+        candidates = (
+            ("token_soft_limit", "token_soft_limit_reached", "monthly_token_soft_limit", "total_tokens"),
+            ("token_hard_limit", "token_hard_limit_reached", "monthly_token_hard_limit", "total_tokens"),
+            ("cost_soft_limit", "cost_soft_limit_reached", "monthly_cost_soft_limit", "estimated_cost"),
+            ("cost_hard_limit", "cost_hard_limit_reached", "monthly_cost_hard_limit", "estimated_cost"),
+        )
+        created: list[dict[str, Any]] = []
+        period_start = str(summary.get("period_start") or current_usage_period_start())
+        policy = summary.get("policy") if isinstance(summary.get("policy"), dict) else {}
+        now = utcnow()
+        with self._connect() as conn:
+            for alert_type, reached_key, limit_key, current_key in candidates:
+                if not bool(summary.get(reached_key)):
+                    continue
+                metadata = {
+                    "limit": policy.get(limit_key, 0),
+                    "current": summary.get(current_key, 0),
+                    "calls": summary.get("calls", 0),
+                    "average_latency_ms": summary.get("average_latency_ms", 0),
+                }
+                alert_id = _new_id("ual")
+                cursor = conn.execute(
+                    """
+                    INSERT OR IGNORE INTO usage_alert_events(
+                        id, organization_id, period_start, alert_type, status,
+                        metadata_json, created_at, acknowledged_at, acknowledged_by_user_id
+                    ) VALUES (?, ?, ?, ?, 'open', ?, ?, '', '')
+                    """,
+                    (
+                        alert_id,
+                        principal.organization_id,
+                        period_start,
+                        alert_type,
+                        json.dumps(metadata, ensure_ascii=False),
+                        now,
+                    ),
+                )
+                if cursor.rowcount:
+                    created.append(
+                        {
+                            "id": alert_id,
+                            "organization_id": principal.organization_id,
+                            "period_start": period_start,
+                            "alert_type": alert_type,
+                            "status": "open",
+                            "metadata": metadata,
+                            "created_at": now,
+                            "acknowledged_at": "",
+                            "acknowledged_by_user_id": "",
+                        }
+                    )
+        for event in created:
+            self.audit(
+                principal,
+                "usage.limit.reached",
+                "usage_alert",
+                str(event["id"]),
+                {
+                    "alert_type": event["alert_type"],
+                    "period_start": event["period_start"],
+                    **(event["metadata"] if isinstance(event.get("metadata"), dict) else {}),
+                },
+            )
+        return created
+
+    def list_usage_alerts(
+        self,
+        principal: Principal,
+        *,
+        limit: int = 100,
+        include_acknowledged: bool = False,
+    ) -> list[dict[str, Any]]:
+        where = ["organization_id = ?"]
+        params: list[Any] = [principal.organization_id]
+        if not include_acknowledged:
+            where.append("status = 'open'")
+        params.append(max(1, min(limit, 500)))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT id, organization_id, period_start, alert_type, status, metadata_json,
+                       created_at, acknowledged_at, acknowledged_by_user_id
+                FROM usage_alert_events
+                WHERE {' AND '.join(where)}
+                ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END, created_at DESC
+                LIMIT ?
+                """,
+                tuple(params),
+            ).fetchall()
+        return [dict(row) | {"metadata": _json_object(row["metadata_json"])} for row in rows]
+
+    def acknowledge_usage_alert(self, principal: Principal, alert_id: str) -> dict[str, Any]:
+        now = utcnow()
+        acknowledged_now = False
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, organization_id, period_start, alert_type, status, metadata_json,
+                       created_at, acknowledged_at, acknowledged_by_user_id
+                FROM usage_alert_events
+                WHERE id = ? AND organization_id = ?
+                """,
+                (alert_id, principal.organization_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError(alert_id)
+            if str(row["status"]) == "open":
+                conn.execute(
+                    """
+                    UPDATE usage_alert_events
+                    SET status = 'acknowledged', acknowledged_at = ?, acknowledged_by_user_id = ?
+                    WHERE id = ? AND organization_id = ?
+                    """,
+                    (now, principal.user_id, alert_id, principal.organization_id),
+                )
+                acknowledged_now = True
+                row = conn.execute(
+                    """
+                    SELECT id, organization_id, period_start, alert_type, status, metadata_json,
+                           created_at, acknowledged_at, acknowledged_by_user_id
+                    FROM usage_alert_events
+                    WHERE id = ? AND organization_id = ?
+                    """,
+                    (alert_id, principal.organization_id),
+                ).fetchone()
+        event = dict(row) | {"metadata": _json_object(row["metadata_json"])}
+        if acknowledged_now:
+            self.audit(principal, "usage_alert.acknowledge", "usage_alert", alert_id, {"alert_type": event["alert_type"], "period_start": event["period_start"]})
+        return event
 
     def list_usage(self, principal: Principal, limit: int = 100) -> list[dict[str, Any]]:
         with self._connect() as conn:
@@ -1709,6 +1861,7 @@ class CommercialStore:
             usage_id,
             {"provider": provider, "model": model, "tokens": total, "run_id": run_id},
         )
+        alerts = self._record_usage_limit_alerts(principal, self.usage_summary(principal))
         return {
             "id": usage_id,
             "provider": provider,
@@ -1723,6 +1876,7 @@ class CommercialStore:
             "run_id": run_id,
             "metadata": metadata or {},
             "created_at": now,
+            "alerts": alerts,
         }
 
     def _model_provider_pricing(self, principal: Principal, provider_id: str) -> tuple[float, float]:

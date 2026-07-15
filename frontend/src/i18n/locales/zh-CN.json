@@ -710,6 +710,7 @@
       "overview": "概览",
       "users": "用户",
       "organizations": "组织",
+      "usage": "用量",
       "knowledge": "知识库",
       "jobs": "任务",
       "runtime": "运行时",
@@ -1846,7 +1847,19 @@
       "saveBudget": "保存预算",
       "budgetSaved": "组织预算已更新。",
       "budgetSaveFailed": "组织预算更新失败。",
-      "budgetOwnerOnly": "只有组织 Owner 可以修改预算限额。"
+      "budgetOwnerOnly": "只有组织 Owner 可以修改预算限额。",
+      "alertsTitle": "预算告警",
+      "alertsDescription": "每个自然月的阈值事件只推送一次，并保留在审计记录中。",
+      "alertsEmpty": "暂无未确认的预算告警。",
+      "acknowledgeAlert": "确认告警",
+      "alertAcknowledged": "预算告警已确认。",
+      "alertAcknowledgeFailed": "确认预算告警失败。",
+      "alert": {
+        "token_soft_limit": "已达到 Token 软限额",
+        "token_hard_limit": "已达到 Token 硬限额",
+        "cost_soft_limit": "已达到成本软限额",
+        "cost_hard_limit": "已达到成本硬限额"
+      }
     }
   },
   "knowledgeWorkspace": {

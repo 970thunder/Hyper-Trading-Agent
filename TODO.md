@@ -90,7 +90,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Remove organization model, Agent, Knowledge, Runtime, Audit, and Usage API loading from Settings.
 - [ ] Add complete audit links for Runtime retry/cancel and every remaining management action.
 - [x] Add provider token pricing, organization monthly budgets, and soft/hard quota enforcement.
-- [ ] Add organization usage alert delivery for soft-limit and hard-limit events.
+- [x] Add organization usage alert delivery for soft-limit and hard-limit events, acknowledgement, and audit records.
 - [ ] Add time-series usage and latency charts backed by aggregated usage endpoints.
 - [ ] Add secret-manager integration and key rotation workflows.
 
