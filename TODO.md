@@ -107,6 +107,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Tool audit and risk levels.
 - [x] Separate step trace rows for tools, RAG, skills, and multi-Agent actions.
 - [x] Professional output policy, emoji filtering, citation checks, and investment risk disclosure.
+- [x] Apply causal, order-independent opening-basket execution to the shared backtest engine.
 - [ ] Add richer step cards with retry count, artifacts, approval links, and persisted refresh recovery for every attempt.
 - [ ] Add structured quantitative research report templates and downloadable result bundles.
 - [x] Add persistent memory controls, history retrieval, and memory deletion/retention UI.

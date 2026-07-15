@@ -12,14 +12,12 @@ platform and materially improve research correctness or operator choice.
 | `#478`, `#531` | Execution-derived turnover metrics | Reports now measure filled entry and exit allocations rather than planned weights. Rejected, rounded, or blocked orders do not inflate turnover. |
 | `#536`, `#538`, `#539` | Backtest metric finite-value guards | Wiped-out portfolios annualize to -100%; one-bar runs keep Sharpe and information ratio finite. |
 | `#531` | Terminal liquidation accounting | The final equity snapshot includes final slippage and closing commission. |
+| `#530` | Causal, order-independent opening execution | Rebalances value the existing book at observable opens, release outgoing positions first, then proportionally scale the full opening basket. |
 | `#544` | Repeatable market-query tools | Market data, screening, symbol search, and financial statements can be called again during a single Agent attempt. |
 | `#529` | NVIDIA NIM provider catalog | NVIDIA NIM is selectable through the organization model configuration, with preset model IDs and custom model support retained. |
 
 ## Deferred For Isolated Migration
 
-- `#530` causal and order-independent opening rebalances: a large execution
-  engine rewrite. It needs a dedicated fixture suite and report comparison
-  before adoption.
 - `#540` turnover-aware optimizer and per-name/per-group exposure caps: the
   current optimizer module predates this interface. Port it with its complete
   validation tests rather than partially copying configuration fields.
