@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
+import { AuthGateScreen } from "@/components/layout/AuthGateScreen";
 
 export function Login() {
   const { t } = useTranslation();
@@ -58,14 +59,7 @@ export function Login() {
   };
 
   if (checkingSession) {
-    return (
-      <main className="auth-shell text-ink-strong" data-auth-screen>
-        <div className="auth-gate-shell" role="status" aria-live="polite">
-          <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" />
-          <span>{t("settings.loading")}</span>
-        </div>
-      </main>
-    );
+    return <AuthGateScreen />;
   }
 
   return (

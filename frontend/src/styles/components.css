@@ -1,6 +1,5 @@
 @layer components {
-  .auth-shell,
-  .auth-gate-shell {
+  .auth-shell {
     position: relative;
     display: flex;
     min-height: 100dvh;
@@ -73,6 +72,9 @@
   }
 
   .auth-gate-shell {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     gap: 0.625rem;
     color: hsl(var(--text-muted));
     font-size: 0.875rem;

@@ -1,11 +1,11 @@
 import { Suspense, lazy, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import { createBrowserRouter } from "react-router-dom";
-import { AdminShell } from "@/components/admin/AdminShell";
-import { Layout } from "@/components/layout/Layout";
 import { RequirePlatformAdmin } from "@/components/layout/RequirePlatformAdmin";
 import { RequireRole } from "@/components/layout/RequireRole";
 
+const Layout = lazy(() => import("@/components/layout/Layout").then((module) => ({ default: module.Layout })));
+const AdminShell = lazy(() => import("@/components/admin/AdminShell").then((module) => ({ default: module.AdminShell })));
 const Home = lazy(() => import("@/pages/Home").then((module) => ({ default: module.Home })));
 const Agent = lazy(() => import("@/pages/Agent").then((module) => ({ default: module.Agent })));
 const RunDetail = lazy(() => import("@/pages/RunDetail").then((module) => ({ default: module.RunDetail })));
@@ -51,7 +51,7 @@ export const router = createBrowserRouter([
     element: wrap(Login),
   },
   {
-    element: <RequireRole><Layout /></RequireRole>,
+    element: <RequireRole>{wrap(Layout)}</RequireRole>,
     children: [
       { path: "/", element: wrap(Home) },
       { path: "/agent", element: wrap(Agent) },

@@ -1,11 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { Loader2 } from "lucide-react";
-import { useTranslation } from "react-i18next";
 import { api, type CommercialPrincipal } from "@/lib/api";
+import { AuthGateScreen } from "@/components/layout/AuthGateScreen";
 
 export function RequirePlatformAdmin({ children }: { children: ReactNode }) {
-  const { t } = useTranslation();
   const location = useLocation();
   const [principal, setPrincipal] = useState<CommercialPrincipal | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,12 +26,7 @@ export function RequirePlatformAdmin({ children }: { children: ReactNode }) {
   }, []);
 
   if (loading) {
-    return (
-      <div className="auth-gate-shell" role="status" aria-live="polite">
-        <Loader2 className="h-4 w-4 animate-spin text-primary" aria-hidden="true" />
-        <span>{t("settings.loading")}</span>
-      </div>
-    );
+    return <AuthGateScreen />;
   }
   if (!principal) {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
