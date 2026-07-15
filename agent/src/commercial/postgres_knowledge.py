@@ -82,6 +82,9 @@ class PostgresKnowledgeRepository:
             cursor.execute("SELECT 1 FROM knowledge_documents LIMIT 1")
             cursor.execute("SELECT 1 FROM knowledge_chunks LIMIT 1")
             cursor.execute("SELECT 1 FROM knowledge_ingestion_jobs LIMIT 1")
+            cursor.execute("SELECT 1 FROM knowledge_evaluation_datasets LIMIT 1")
+            cursor.execute("SELECT 1 FROM knowledge_evaluation_cases LIMIT 1")
+            cursor.execute("SELECT 1 FROM knowledge_evaluation_runs LIMIT 1")
 
     def needs_initial_sync(self) -> bool:
         with self._connect() as connection, connection.cursor() as cursor:
@@ -96,6 +99,9 @@ class PostgresKnowledgeRepository:
             "knowledge_chunks": [dict(row) for row in sqlite_connection.execute("SELECT * FROM knowledge_chunks").fetchall()],
             "knowledge_ingestion_jobs": [dict(row) for row in sqlite_connection.execute("SELECT * FROM knowledge_ingestion_jobs").fetchall()],
             "knowledge_retrieval_logs": [dict(row) for row in sqlite_connection.execute("SELECT * FROM knowledge_retrieval_logs").fetchall()],
+            "knowledge_evaluation_datasets": [dict(row) for row in sqlite_connection.execute("SELECT * FROM knowledge_evaluation_datasets").fetchall()],
+            "knowledge_evaluation_cases": [dict(row) for row in sqlite_connection.execute("SELECT * FROM knowledge_evaluation_cases").fetchall()],
+            "knowledge_evaluation_runs": [dict(row) for row in sqlite_connection.execute("SELECT * FROM knowledge_evaluation_runs").fetchall()],
         }
         with self._connect() as connection, connection.cursor() as cursor:
             for item in sources["knowledge_bases"]:
@@ -164,6 +170,48 @@ class PostgresKnowledgeRepository:
                     (
                         item["id"], item["organization_id"], item.get("user_id", ""),
                         item.get("knowledge_base_id", ""), item["query"], item.get("result_count", 0), item["created_at"],
+                    ),
+                )
+            for item in sources["knowledge_evaluation_datasets"]:
+                cursor.execute(
+                    """
+                    INSERT INTO knowledge_evaluation_datasets(
+                        id, organization_id, knowledge_base_id, name, description, created_by_user_id, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    (
+                        item["id"], item["organization_id"], item["knowledge_base_id"], item["name"],
+                        item.get("description", ""), item["created_by_user_id"], item["created_at"], item["updated_at"],
+                    ),
+                )
+            for item in sources["knowledge_evaluation_cases"]:
+                cursor.execute(
+                    """
+                    INSERT INTO knowledge_evaluation_cases(
+                        id, dataset_id, query, expected_document_ids_json, expected_chunk_ids_json, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    (
+                        item["id"], item["dataset_id"], item["query"],
+                        item.get("expected_document_ids_json", "[]"), item.get("expected_chunk_ids_json", "[]"),
+                        item["created_at"], item["updated_at"],
+                    ),
+                )
+            for item in sources["knowledge_evaluation_runs"]:
+                cursor.execute(
+                    """
+                    INSERT INTO knowledge_evaluation_runs(
+                        id, organization_id, knowledge_base_id, dataset_id, created_by_user_id, top_k,
+                        config_json, summary_json, results_json, created_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s)
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    (
+                        item["id"], item["organization_id"], item["knowledge_base_id"], item["dataset_id"],
+                        item["created_by_user_id"], item["top_k"], item.get("config_json", "{}"),
+                        item.get("summary_json", "{}"), item.get("results_json", "[]"), item["created_at"],
                     ),
                 )
             cursor.execute(
@@ -499,6 +547,264 @@ class PostgresKnowledgeRepository:
             )
             return bool(cursor.rowcount)
 
+    # --- retrieval evaluation datasets ---
+
+    def list_evaluation_datasets(self, organization_id: str, knowledge_base_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT d.id, d.knowledge_base_id, d.name, d.description, d.created_at, d.updated_at,
+                       COUNT(DISTINCT c.id) AS case_count,
+                       MAX(r.created_at)::text AS latest_run_at
+                FROM knowledge_evaluation_datasets d
+                LEFT JOIN knowledge_evaluation_cases c ON c.dataset_id = d.id
+                LEFT JOIN knowledge_evaluation_runs r ON r.dataset_id = d.id
+                WHERE d.organization_id = %s AND d.knowledge_base_id = %s
+                GROUP BY d.id
+                ORDER BY d.updated_at DESC
+                """,
+                (organization_id, knowledge_base_id),
+            )
+            rows = cursor.fetchall()
+        return [self._evaluation_dataset(row) for row in rows]
+
+    def get_evaluation_dataset(self, organization_id: str, knowledge_base_id: str, dataset_id: str) -> dict[str, Any] | None:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT d.id, d.knowledge_base_id, d.name, d.description, d.created_at, d.updated_at,
+                       COUNT(DISTINCT c.id) AS case_count,
+                       MAX(r.created_at)::text AS latest_run_at
+                FROM knowledge_evaluation_datasets d
+                LEFT JOIN knowledge_evaluation_cases c ON c.dataset_id = d.id
+                LEFT JOIN knowledge_evaluation_runs r ON r.dataset_id = d.id
+                WHERE d.id = %s AND d.organization_id = %s AND d.knowledge_base_id = %s
+                GROUP BY d.id
+                """,
+                (dataset_id, organization_id, knowledge_base_id),
+            )
+            row = cursor.fetchone()
+        return self._evaluation_dataset(row) if row is not None else None
+
+    def create_evaluation_dataset(
+        self,
+        *,
+        dataset_id: str,
+        organization_id: str,
+        knowledge_base_id: str,
+        name: str,
+        description: str,
+        created_by_user_id: str,
+        now: str,
+    ) -> dict[str, Any]:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO knowledge_evaluation_datasets(
+                    id, organization_id, knowledge_base_id, name, description, created_by_user_id, created_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (dataset_id, organization_id, knowledge_base_id, name, description, created_by_user_id, now, now),
+            )
+        return self.get_evaluation_dataset(organization_id, knowledge_base_id, dataset_id) or {}
+
+    def update_evaluation_dataset(
+        self,
+        *,
+        organization_id: str,
+        knowledge_base_id: str,
+        dataset_id: str,
+        name: str,
+        description: str,
+        now: str,
+    ) -> bool:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE knowledge_evaluation_datasets
+                SET name = %s, description = %s, updated_at = %s
+                WHERE id = %s AND organization_id = %s AND knowledge_base_id = %s
+                """,
+                (name, description, now, dataset_id, organization_id, knowledge_base_id),
+            )
+            return bool(cursor.rowcount)
+
+    def delete_evaluation_dataset(self, organization_id: str, knowledge_base_id: str, dataset_id: str) -> bool:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM knowledge_evaluation_datasets WHERE id = %s AND organization_id = %s AND knowledge_base_id = %s",
+                (dataset_id, organization_id, knowledge_base_id),
+            )
+            return bool(cursor.rowcount)
+
+    def list_evaluation_cases(self, organization_id: str, knowledge_base_id: str, dataset_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT c.id, c.query, c.expected_document_ids_json, c.expected_chunk_ids_json, c.created_at, c.updated_at
+                FROM knowledge_evaluation_cases c
+                JOIN knowledge_evaluation_datasets d ON d.id = c.dataset_id
+                WHERE c.dataset_id = %s AND d.organization_id = %s AND d.knowledge_base_id = %s
+                ORDER BY c.created_at ASC
+                """,
+                (dataset_id, organization_id, knowledge_base_id),
+            )
+            rows = cursor.fetchall()
+        return [self._evaluation_case(row) for row in rows]
+
+    def evaluation_target_ids(
+        self,
+        organization_id: str,
+        knowledge_base_id: str,
+        document_ids: list[str],
+        chunk_ids: list[str],
+    ) -> tuple[set[str], set[str]]:
+        matched_documents: set[str] = set()
+        matched_chunks: set[str] = set()
+        with self._connect() as connection, connection.cursor() as cursor:
+            if document_ids:
+                cursor.execute(
+                    """
+                    SELECT id FROM knowledge_documents
+                    WHERE organization_id = %s AND knowledge_base_id = %s AND id = ANY(%s)
+                    """,
+                    (organization_id, knowledge_base_id, document_ids),
+                )
+                matched_documents = {str(row["id"]) for row in cursor.fetchall()}
+            if chunk_ids:
+                cursor.execute(
+                    """
+                    SELECT id FROM knowledge_chunks
+                    WHERE organization_id = %s AND knowledge_base_id = %s AND id = ANY(%s)
+                    """,
+                    (organization_id, knowledge_base_id, chunk_ids),
+                )
+                matched_chunks = {str(row["id"]) for row in cursor.fetchall()}
+        return matched_documents, matched_chunks
+
+    def create_evaluation_case(
+        self,
+        *,
+        case_id: str,
+        dataset_id: str,
+        query: str,
+        expected_document_ids: list[str],
+        expected_chunk_ids: list[str],
+        now: str,
+    ) -> dict[str, Any]:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO knowledge_evaluation_cases(
+                    id, dataset_id, query, expected_document_ids_json, expected_chunk_ids_json, created_at, updated_at
+                ) VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
+                """,
+                (case_id, dataset_id, query, json.dumps(expected_document_ids), json.dumps(expected_chunk_ids), now, now),
+            )
+        return {
+            "id": case_id,
+            "query": query,
+            "expected_document_ids": expected_document_ids,
+            "expected_chunk_ids": expected_chunk_ids,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    def update_evaluation_case(
+        self,
+        *,
+        organization_id: str,
+        knowledge_base_id: str,
+        dataset_id: str,
+        case_id: str,
+        query: str,
+        expected_document_ids: list[str],
+        expected_chunk_ids: list[str],
+        now: str,
+    ) -> bool:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE knowledge_evaluation_cases c
+                SET query = %s, expected_document_ids_json = %s::jsonb, expected_chunk_ids_json = %s::jsonb, updated_at = %s
+                FROM knowledge_evaluation_datasets d
+                WHERE c.id = %s AND c.dataset_id = %s AND d.id = c.dataset_id
+                  AND d.organization_id = %s AND d.knowledge_base_id = %s
+                """,
+                (
+                    query, json.dumps(expected_document_ids), json.dumps(expected_chunk_ids), now,
+                    case_id, dataset_id, organization_id, knowledge_base_id,
+                ),
+            )
+            return bool(cursor.rowcount)
+
+    def delete_evaluation_case(
+        self, organization_id: str, knowledge_base_id: str, dataset_id: str, case_id: str
+    ) -> bool:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                DELETE FROM knowledge_evaluation_cases c
+                USING knowledge_evaluation_datasets d
+                WHERE c.id = %s AND c.dataset_id = %s AND d.id = c.dataset_id
+                  AND d.organization_id = %s AND d.knowledge_base_id = %s
+                """,
+                (case_id, dataset_id, organization_id, knowledge_base_id),
+            )
+            return bool(cursor.rowcount)
+
+    def create_evaluation_run(
+        self,
+        *,
+        run_id: str,
+        organization_id: str,
+        knowledge_base_id: str,
+        dataset_id: str,
+        created_by_user_id: str,
+        top_k: int,
+        config: dict[str, Any],
+        summary: dict[str, Any],
+        results: list[dict[str, Any]],
+        now: str,
+    ) -> dict[str, Any]:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO knowledge_evaluation_runs(
+                    id, organization_id, knowledge_base_id, dataset_id, created_by_user_id, top_k,
+                    config_json, summary_json, results_json, created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s)
+                """,
+                (
+                    run_id, organization_id, knowledge_base_id, dataset_id, created_by_user_id, top_k,
+                    json.dumps(config, ensure_ascii=False), json.dumps(summary, ensure_ascii=False),
+                    json.dumps(results, ensure_ascii=False), now,
+                ),
+            )
+        return {
+            "id": run_id,
+            "dataset_id": dataset_id,
+            "top_k": top_k,
+            "config": config,
+            "summary": summary,
+            "results": results,
+            "created_at": now,
+        }
+
+    def list_evaluation_runs(self, organization_id: str, knowledge_base_id: str, dataset_id: str, limit: int) -> list[dict[str, Any]]:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, dataset_id, top_k, config_json, summary_json, results_json, created_at
+                FROM knowledge_evaluation_runs
+                WHERE organization_id = %s AND knowledge_base_id = %s AND dataset_id = %s
+                ORDER BY created_at DESC LIMIT %s
+                """,
+                (organization_id, knowledge_base_id, dataset_id, max(1, min(limit, 100))),
+            )
+            rows = cursor.fetchall()
+        return [self._evaluation_run(row) for row in rows]
+
     # --- retrieval ---
 
     def lexical_search(self, organization_id: str, knowledge_base_id: str, query: str, limit: int) -> list[dict[str, Any]]:
@@ -642,4 +948,27 @@ class PostgresKnowledgeRepository:
     def _job(row: Mapping[str, Any]) -> dict[str, Any]:
         item = _row(row) or {}
         item["metadata"] = _json(item.pop("metadata_json", None), {})
+        return item
+
+    @staticmethod
+    def _evaluation_dataset(row: Mapping[str, Any]) -> dict[str, Any]:
+        item = _row(row) or {}
+        item["case_count"] = int(item.get("case_count") or 0)
+        item["latest_run_at"] = str(item.get("latest_run_at") or "")
+        return item
+
+    @staticmethod
+    def _evaluation_case(row: Mapping[str, Any]) -> dict[str, Any]:
+        item = _row(row) or {}
+        item["expected_document_ids"] = [str(value) for value in _json(item.pop("expected_document_ids_json", None), [])]
+        item["expected_chunk_ids"] = [str(value) for value in _json(item.pop("expected_chunk_ids_json", None), [])]
+        return item
+
+    @staticmethod
+    def _evaluation_run(row: Mapping[str, Any]) -> dict[str, Any]:
+        item = _row(row) or {}
+        item["top_k"] = int(item.get("top_k") or 0)
+        item["config"] = _json(item.pop("config_json", None), {})
+        item["summary"] = _json(item.pop("summary_json", None), {})
+        item["results"] = _json(item.pop("results_json", None), [])
         return item

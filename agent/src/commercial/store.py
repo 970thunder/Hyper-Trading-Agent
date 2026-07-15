@@ -236,6 +236,21 @@ def _rerank_retrieval_rows(
     return sorted(ranked, key=lambda item: float(item["score"]), reverse=True)[:limit]
 
 
+def _normalize_evaluation_target_ids(value: Any, field: str) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"{field} must be a list")
+    normalized: list[str] = []
+    for item in value:
+        target_id = str(item or "").strip()
+        if target_id and target_id not in normalized:
+            normalized.append(target_id)
+    if len(normalized) > 20:
+        raise ValueError(f"{field} cannot contain more than 20 items")
+    return normalized
+
+
 def _normalize_knowledge_access(
     value: dict[str, Any] | None,
     *,
@@ -803,6 +818,44 @@ class CommercialStore:
                     result_count INTEGER NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS knowledge_evaluation_datasets (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL,
+                    knowledge_base_id TEXT NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    created_by_user_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(knowledge_base_id, name)
+                );
+                CREATE INDEX IF NOT EXISTS idx_knowledge_evaluation_datasets_base
+                    ON knowledge_evaluation_datasets(organization_id, knowledge_base_id, updated_at DESC);
+                CREATE TABLE IF NOT EXISTS knowledge_evaluation_cases (
+                    id TEXT PRIMARY KEY,
+                    dataset_id TEXT NOT NULL REFERENCES knowledge_evaluation_datasets(id) ON DELETE CASCADE,
+                    query TEXT NOT NULL,
+                    expected_document_ids_json TEXT NOT NULL DEFAULT '[]',
+                    expected_chunk_ids_json TEXT NOT NULL DEFAULT '[]',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_knowledge_evaluation_cases_dataset
+                    ON knowledge_evaluation_cases(dataset_id, created_at ASC);
+                CREATE TABLE IF NOT EXISTS knowledge_evaluation_runs (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL,
+                    knowledge_base_id TEXT NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+                    dataset_id TEXT NOT NULL REFERENCES knowledge_evaluation_datasets(id) ON DELETE CASCADE,
+                    created_by_user_id TEXT NOT NULL,
+                    top_k INTEGER NOT NULL,
+                    config_json TEXT NOT NULL DEFAULT '{}',
+                    summary_json TEXT NOT NULL DEFAULT '{}',
+                    results_json TEXT NOT NULL DEFAULT '[]',
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_knowledge_evaluation_runs_dataset
+                    ON knowledge_evaluation_runs(organization_id, knowledge_base_id, dataset_id, created_at DESC);
                 CREATE TABLE IF NOT EXISTS feedback_events (
                     id TEXT PRIMARY KEY,
                     organization_id TEXT NOT NULL,
@@ -911,6 +964,44 @@ class CommercialStore:
             return
         with self._connect() as conn:
             self._primary_workspace.sync_from_sqlite(conn)
+
+    @staticmethod
+    def _evaluation_dataset_payload(row: Any) -> dict[str, Any]:
+        item = dict(row)
+        item["case_count"] = int(item.get("case_count") or 0)
+        item["latest_run_at"] = str(item.get("latest_run_at") or "")
+        return item
+
+    @staticmethod
+    def _evaluation_case_payload(row: Any) -> dict[str, Any]:
+        item = dict(row)
+        try:
+            documents = json.loads(str(item.pop("expected_document_ids_json") or "[]"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            documents = []
+        try:
+            chunks = json.loads(str(item.pop("expected_chunk_ids_json") or "[]"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            chunks = []
+        item["expected_document_ids"] = [str(value) for value in documents] if isinstance(documents, list) else []
+        item["expected_chunk_ids"] = [str(value) for value in chunks] if isinstance(chunks, list) else []
+        return item
+
+    @staticmethod
+    def _evaluation_run_payload(row: Any) -> dict[str, Any]:
+        item = dict(row)
+        for source, target, fallback in (
+            ("config_json", "config", {}),
+            ("summary_json", "summary", {}),
+            ("results_json", "results", []),
+        ):
+            try:
+                parsed = json.loads(str(item.pop(source) or ""))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                parsed = fallback
+            item[target] = parsed if isinstance(parsed, type(fallback)) else fallback
+        item["top_k"] = int(item.get("top_k") or 0)
+        return item
 
     # --- auth / orgs ---
 
@@ -4098,6 +4189,457 @@ class CommercialStore:
                 }
             )
         return results
+
+    # --- retrieval evaluation datasets ---
+
+    def _get_evaluation_dataset(self, principal: Principal, kb_id: str, dataset_id: str) -> dict[str, Any]:
+        self._ensure_kb(principal, kb_id)
+        if self._primary_knowledge is not None:
+            item = self._primary_knowledge.get_evaluation_dataset(principal.organization_id, kb_id, dataset_id)
+            if item is None:
+                raise KeyError(dataset_id)
+            return item
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT d.id, d.knowledge_base_id, d.name, d.description, d.created_at, d.updated_at,
+                       COUNT(DISTINCT c.id) AS case_count, MAX(r.created_at) AS latest_run_at
+                FROM knowledge_evaluation_datasets d
+                LEFT JOIN knowledge_evaluation_cases c ON c.dataset_id = d.id
+                LEFT JOIN knowledge_evaluation_runs r ON r.dataset_id = d.id
+                WHERE d.id = ? AND d.organization_id = ? AND d.knowledge_base_id = ?
+                GROUP BY d.id
+                """,
+                (dataset_id, principal.organization_id, kb_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError(dataset_id)
+        return self._evaluation_dataset_payload(row)
+
+    def list_knowledge_evaluation_datasets(self, principal: Principal, kb_id: str) -> list[dict[str, Any]]:
+        self._ensure_kb(principal, kb_id)
+        if self._primary_knowledge is not None:
+            return self._primary_knowledge.list_evaluation_datasets(principal.organization_id, kb_id)
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT d.id, d.knowledge_base_id, d.name, d.description, d.created_at, d.updated_at,
+                       COUNT(DISTINCT c.id) AS case_count, MAX(r.created_at) AS latest_run_at
+                FROM knowledge_evaluation_datasets d
+                LEFT JOIN knowledge_evaluation_cases c ON c.dataset_id = d.id
+                LEFT JOIN knowledge_evaluation_runs r ON r.dataset_id = d.id
+                WHERE d.organization_id = ? AND d.knowledge_base_id = ?
+                GROUP BY d.id
+                ORDER BY d.updated_at DESC
+                """,
+                (principal.organization_id, kb_id),
+            ).fetchall()
+        return [self._evaluation_dataset_payload(row) for row in rows]
+
+    def create_knowledge_evaluation_dataset(
+        self,
+        principal: Principal,
+        kb_id: str,
+        *,
+        name: str,
+        description: str = "",
+    ) -> dict[str, Any]:
+        self._ensure_kb(principal, kb_id)
+        dataset_name = name.strip()
+        if not dataset_name:
+            raise ValueError("evaluation dataset name is required")
+        if len(dataset_name) > 160:
+            raise ValueError("evaluation dataset name is too long")
+        dataset_id = _new_id("evalset")
+        now = utcnow()
+        if self._primary_knowledge is not None:
+            try:
+                item = self._primary_knowledge.create_evaluation_dataset(
+                    dataset_id=dataset_id,
+                    organization_id=principal.organization_id,
+                    knowledge_base_id=kb_id,
+                    name=dataset_name,
+                    description=description.strip()[:2000],
+                    created_by_user_id=principal.user_id,
+                    now=now,
+                )
+            except Exception as exc:
+                if "unique" in str(exc).lower():
+                    raise ValueError("an evaluation dataset with this name already exists") from exc
+                raise
+        else:
+            try:
+                with self._connect() as conn:
+                    conn.execute(
+                        """
+                        INSERT INTO knowledge_evaluation_datasets(
+                            id, organization_id, knowledge_base_id, name, description, created_by_user_id, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            dataset_id, principal.organization_id, kb_id, dataset_name, description.strip()[:2000],
+                            principal.user_id, now, now,
+                        ),
+                    )
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("an evaluation dataset with this name already exists") from exc
+            item = self._get_evaluation_dataset(principal, kb_id, dataset_id)
+        self.audit(principal, "knowledge_evaluation_dataset.create", "knowledge_evaluation_dataset", dataset_id, {"knowledge_base_id": kb_id})
+        return item
+
+    def update_knowledge_evaluation_dataset(
+        self,
+        principal: Principal,
+        kb_id: str,
+        dataset_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        current = self._get_evaluation_dataset(principal, kb_id, dataset_id)
+        next_name = str(name if name is not None else current["name"]).strip()
+        if not next_name:
+            raise ValueError("evaluation dataset name is required")
+        if len(next_name) > 160:
+            raise ValueError("evaluation dataset name is too long")
+        next_description = str(description if description is not None else current.get("description") or "").strip()[:2000]
+        now = utcnow()
+        if self._primary_knowledge is not None:
+            try:
+                changed = self._primary_knowledge.update_evaluation_dataset(
+                    organization_id=principal.organization_id,
+                    knowledge_base_id=kb_id,
+                    dataset_id=dataset_id,
+                    name=next_name,
+                    description=next_description,
+                    now=now,
+                )
+            except Exception as exc:
+                if "unique" in str(exc).lower():
+                    raise ValueError("an evaluation dataset with this name already exists") from exc
+                raise
+            if not changed:
+                raise KeyError(dataset_id)
+        else:
+            try:
+                with self._connect() as conn:
+                    cursor = conn.execute(
+                        """
+                        UPDATE knowledge_evaluation_datasets SET name = ?, description = ?, updated_at = ?
+                        WHERE id = ? AND organization_id = ? AND knowledge_base_id = ?
+                        """,
+                        (next_name, next_description, now, dataset_id, principal.organization_id, kb_id),
+                    )
+                    if not cursor.rowcount:
+                        raise KeyError(dataset_id)
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("an evaluation dataset with this name already exists") from exc
+        self.audit(principal, "knowledge_evaluation_dataset.update", "knowledge_evaluation_dataset", dataset_id, {"knowledge_base_id": kb_id})
+        return self._get_evaluation_dataset(principal, kb_id, dataset_id)
+
+    def delete_knowledge_evaluation_dataset(self, principal: Principal, kb_id: str, dataset_id: str) -> None:
+        self._get_evaluation_dataset(principal, kb_id, dataset_id)
+        if self._primary_knowledge is not None:
+            if not self._primary_knowledge.delete_evaluation_dataset(principal.organization_id, kb_id, dataset_id):
+                raise KeyError(dataset_id)
+        else:
+            with self._connect() as conn:
+                conn.execute(
+                    "DELETE FROM knowledge_evaluation_datasets WHERE id = ? AND organization_id = ? AND knowledge_base_id = ?",
+                    (dataset_id, principal.organization_id, kb_id),
+                )
+        self.audit(principal, "knowledge_evaluation_dataset.delete", "knowledge_evaluation_dataset", dataset_id, {"knowledge_base_id": kb_id})
+
+    def _validate_evaluation_targets(
+        self,
+        principal: Principal,
+        kb_id: str,
+        expected_document_ids: list[str],
+        expected_chunk_ids: list[str],
+    ) -> None:
+        if not expected_document_ids and not expected_chunk_ids:
+            raise ValueError("an evaluation case needs an expected document or chunk")
+        if self._primary_knowledge is not None:
+            matching_documents, matching_chunks = self._primary_knowledge.evaluation_target_ids(
+                principal.organization_id,
+                kb_id,
+                expected_document_ids,
+                expected_chunk_ids,
+            )
+        else:
+            matching_documents: set[str] = set()
+            matching_chunks: set[str] = set()
+            with self._connect() as conn:
+                if expected_document_ids:
+                    placeholders = ", ".join("?" for _ in expected_document_ids)
+                    rows = conn.execute(
+                        f"SELECT id FROM knowledge_documents WHERE organization_id = ? AND knowledge_base_id = ? AND id IN ({placeholders})",
+                        (principal.organization_id, kb_id, *expected_document_ids),
+                    ).fetchall()
+                    matching_documents = {str(row["id"]) for row in rows}
+                if expected_chunk_ids:
+                    placeholders = ", ".join("?" for _ in expected_chunk_ids)
+                    rows = conn.execute(
+                        f"SELECT id FROM knowledge_chunks WHERE organization_id = ? AND knowledge_base_id = ? AND id IN ({placeholders})",
+                        (principal.organization_id, kb_id, *expected_chunk_ids),
+                    ).fetchall()
+                    matching_chunks = {str(row["id"]) for row in rows}
+        if set(expected_document_ids) != matching_documents or set(expected_chunk_ids) != matching_chunks:
+            raise ValueError("evaluation targets must belong to the selected knowledge base")
+
+    def list_knowledge_evaluation_cases(self, principal: Principal, kb_id: str, dataset_id: str) -> list[dict[str, Any]]:
+        self._get_evaluation_dataset(principal, kb_id, dataset_id)
+        if self._primary_knowledge is not None:
+            return self._primary_knowledge.list_evaluation_cases(principal.organization_id, kb_id, dataset_id)
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT c.id, c.query, c.expected_document_ids_json, c.expected_chunk_ids_json, c.created_at, c.updated_at
+                FROM knowledge_evaluation_cases c
+                JOIN knowledge_evaluation_datasets d ON d.id = c.dataset_id
+                WHERE c.dataset_id = ? AND d.organization_id = ? AND d.knowledge_base_id = ?
+                ORDER BY c.created_at ASC
+                """,
+                (dataset_id, principal.organization_id, kb_id),
+            ).fetchall()
+        return [self._evaluation_case_payload(row) for row in rows]
+
+    def create_knowledge_evaluation_case(
+        self,
+        principal: Principal,
+        kb_id: str,
+        dataset_id: str,
+        *,
+        query: str,
+        expected_document_ids: Any = None,
+        expected_chunk_ids: Any = None,
+    ) -> dict[str, Any]:
+        self._get_evaluation_dataset(principal, kb_id, dataset_id)
+        normalized_query = query.strip()
+        if not normalized_query:
+            raise ValueError("evaluation query is required")
+        if len(normalized_query) > 2000:
+            raise ValueError("evaluation query is too long")
+        documents = _normalize_evaluation_target_ids(expected_document_ids, "expected_document_ids")
+        chunks = _normalize_evaluation_target_ids(expected_chunk_ids, "expected_chunk_ids")
+        self._validate_evaluation_targets(principal, kb_id, documents, chunks)
+        case_id = _new_id("evalcase")
+        now = utcnow()
+        if self._primary_knowledge is not None:
+            item = self._primary_knowledge.create_evaluation_case(
+                case_id=case_id,
+                dataset_id=dataset_id,
+                query=normalized_query,
+                expected_document_ids=documents,
+                expected_chunk_ids=chunks,
+                now=now,
+            )
+        else:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO knowledge_evaluation_cases(
+                        id, dataset_id, query, expected_document_ids_json, expected_chunk_ids_json, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (case_id, dataset_id, normalized_query, json.dumps(documents), json.dumps(chunks), now, now),
+                )
+            item = {
+                "id": case_id,
+                "query": normalized_query,
+                "expected_document_ids": documents,
+                "expected_chunk_ids": chunks,
+                "created_at": now,
+                "updated_at": now,
+            }
+        self.audit(principal, "knowledge_evaluation_case.create", "knowledge_evaluation_case", case_id, {"knowledge_base_id": kb_id, "dataset_id": dataset_id})
+        return item
+
+    def update_knowledge_evaluation_case(
+        self,
+        principal: Principal,
+        kb_id: str,
+        dataset_id: str,
+        case_id: str,
+        *,
+        query: str | None = None,
+        expected_document_ids: Any = None,
+        expected_chunk_ids: Any = None,
+    ) -> dict[str, Any]:
+        current = next((item for item in self.list_knowledge_evaluation_cases(principal, kb_id, dataset_id) if item["id"] == case_id), None)
+        if current is None:
+            raise KeyError(case_id)
+        normalized_query = str(query if query is not None else current["query"]).strip()
+        if not normalized_query:
+            raise ValueError("evaluation query is required")
+        documents = _normalize_evaluation_target_ids(
+            expected_document_ids if expected_document_ids is not None else current["expected_document_ids"],
+            "expected_document_ids",
+        )
+        chunks = _normalize_evaluation_target_ids(
+            expected_chunk_ids if expected_chunk_ids is not None else current["expected_chunk_ids"],
+            "expected_chunk_ids",
+        )
+        self._validate_evaluation_targets(principal, kb_id, documents, chunks)
+        now = utcnow()
+        if self._primary_knowledge is not None:
+            changed = self._primary_knowledge.update_evaluation_case(
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                dataset_id=dataset_id,
+                case_id=case_id,
+                query=normalized_query,
+                expected_document_ids=documents,
+                expected_chunk_ids=chunks,
+                now=now,
+            )
+            if not changed:
+                raise KeyError(case_id)
+        else:
+            with self._connect() as conn:
+                cursor = conn.execute(
+                    """
+                    UPDATE knowledge_evaluation_cases
+                    SET query = ?, expected_document_ids_json = ?, expected_chunk_ids_json = ?, updated_at = ?
+                    WHERE id = ? AND dataset_id = ?
+                    """,
+                    (normalized_query, json.dumps(documents), json.dumps(chunks), now, case_id, dataset_id),
+                )
+                if not cursor.rowcount:
+                    raise KeyError(case_id)
+        self.audit(principal, "knowledge_evaluation_case.update", "knowledge_evaluation_case", case_id, {"knowledge_base_id": kb_id, "dataset_id": dataset_id})
+        return next(item for item in self.list_knowledge_evaluation_cases(principal, kb_id, dataset_id) if item["id"] == case_id)
+
+    def delete_knowledge_evaluation_case(self, principal: Principal, kb_id: str, dataset_id: str, case_id: str) -> None:
+        self._get_evaluation_dataset(principal, kb_id, dataset_id)
+        if self._primary_knowledge is not None:
+            if not self._primary_knowledge.delete_evaluation_case(principal.organization_id, kb_id, dataset_id, case_id):
+                raise KeyError(case_id)
+        else:
+            with self._connect() as conn:
+                cursor = conn.execute("DELETE FROM knowledge_evaluation_cases WHERE id = ? AND dataset_id = ?", (case_id, dataset_id))
+                if not cursor.rowcount:
+                    raise KeyError(case_id)
+        self.audit(principal, "knowledge_evaluation_case.delete", "knowledge_evaluation_case", case_id, {"knowledge_base_id": kb_id, "dataset_id": dataset_id})
+
+    def run_knowledge_evaluation_dataset(
+        self,
+        principal: Principal,
+        kb_id: str,
+        dataset_id: str,
+        *,
+        top_k: int | None = None,
+    ) -> dict[str, Any]:
+        dataset = self._get_evaluation_dataset(principal, kb_id, dataset_id)
+        cases = self.list_knowledge_evaluation_cases(principal, kb_id, dataset_id)
+        if not cases:
+            raise ValueError("evaluation dataset has no cases")
+        knowledge_base = self._ensure_kb(principal, kb_id)
+        effective_top_k = max(1, min(int(top_k if top_k is not None else knowledge_base["config"].get("top_k") or 8), 20))
+        results: list[dict[str, Any]] = []
+        matched_count = 0
+        reciprocal_rank_sum = 0.0
+        first_match_ranks: list[int] = []
+        for case in cases:
+            retrieved = self.search_knowledge(principal, kb_id, str(case["query"]), effective_top_k)
+            expected_documents = set(case["expected_document_ids"])
+            expected_chunks = set(case["expected_chunk_ids"])
+            first_match_rank: int | None = None
+            for rank, result in enumerate(retrieved, start=1):
+                if str(result["document_id"]) in expected_documents or str(result["chunk_id"]) in expected_chunks:
+                    first_match_rank = rank
+                    break
+            if first_match_rank is not None:
+                matched_count += 1
+                reciprocal_rank_sum += 1.0 / first_match_rank
+                first_match_ranks.append(first_match_rank)
+            results.append(
+                {
+                    "case_id": case["id"],
+                    "query": case["query"],
+                    "expected_document_ids": list(case["expected_document_ids"]),
+                    "expected_chunk_ids": list(case["expected_chunk_ids"]),
+                    "first_match_rank": first_match_rank,
+                    "retrieved": [
+                        {"rank": rank, "document_id": item["document_id"], "chunk_id": item["chunk_id"], "title": item["title"], "score": item["score"]}
+                        for rank, item in enumerate(retrieved, start=1)
+                    ],
+                }
+            )
+        total_cases = len(cases)
+        summary = {
+            "total_cases": total_cases,
+            "matched_cases": matched_count,
+            "hit_rate": round(matched_count / total_cases, 6),
+            "mrr": round(reciprocal_rank_sum / total_cases, 6),
+            "mean_first_match_rank": round(sum(first_match_ranks) / len(first_match_ranks), 4) if first_match_ranks else None,
+        }
+        config_snapshot = {**knowledge_base["config"], "dataset_name": dataset["name"]}
+        run_id = _new_id("evalrun")
+        now = utcnow()
+        if self._primary_knowledge is not None:
+            run = self._primary_knowledge.create_evaluation_run(
+                run_id=run_id,
+                organization_id=principal.organization_id,
+                knowledge_base_id=kb_id,
+                dataset_id=dataset_id,
+                created_by_user_id=principal.user_id,
+                top_k=effective_top_k,
+                config=config_snapshot,
+                summary=summary,
+                results=results,
+                now=now,
+            )
+        else:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO knowledge_evaluation_runs(
+                        id, organization_id, knowledge_base_id, dataset_id, created_by_user_id, top_k,
+                        config_json, summary_json, results_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run_id, principal.organization_id, kb_id, dataset_id, principal.user_id, effective_top_k,
+                        json.dumps(config_snapshot, ensure_ascii=False), json.dumps(summary, ensure_ascii=False),
+                        json.dumps(results, ensure_ascii=False), now,
+                    ),
+                )
+            run = {
+                "id": run_id,
+                "dataset_id": dataset_id,
+                "top_k": effective_top_k,
+                "config": config_snapshot,
+                "summary": summary,
+                "results": results,
+                "created_at": now,
+            }
+        self.audit(
+            principal,
+            "knowledge_evaluation.run",
+            "knowledge_evaluation_dataset",
+            dataset_id,
+            {"knowledge_base_id": kb_id, "run_id": run_id, **summary},
+        )
+        return run
+
+    def list_knowledge_evaluation_runs(
+        self, principal: Principal, kb_id: str, dataset_id: str, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        self._get_evaluation_dataset(principal, kb_id, dataset_id)
+        if self._primary_knowledge is not None:
+            return self._primary_knowledge.list_evaluation_runs(principal.organization_id, kb_id, dataset_id, limit)
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, dataset_id, top_k, config_json, summary_json, results_json, created_at
+                FROM knowledge_evaluation_runs
+                WHERE organization_id = ? AND knowledge_base_id = ? AND dataset_id = ?
+                ORDER BY created_at DESC LIMIT ?
+                """,
+                (principal.organization_id, kb_id, dataset_id, max(1, min(limit, 100))),
+            ).fetchall()
+        return [self._evaluation_run_payload(row) for row in rows]
 
     def get_ingestion_job(self, principal: Principal, kb_id: str, job_id: str) -> dict[str, Any]:
         self._ensure_kb(principal, kb_id)

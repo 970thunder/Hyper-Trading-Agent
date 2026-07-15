@@ -79,7 +79,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Implement pgvector runtime write/search methods with tenant-scoped dual writes and SQLite fallback.
 - [x] Migrate knowledge metadata, documents, jobs, chunks, and retrieval logs to PostgreSQL repositories.
 - [x] Add configurable reranking.
-- [ ] Add RAG evaluation datasets.
+- [x] Add RAG evaluation datasets with tenant-scoped benchmark cases, hit-rate, and MRR history.
 - [ ] Add object-storage lifecycle for original documents.
 
 ## P2 Model, Agent, Audit, And Usage Governance

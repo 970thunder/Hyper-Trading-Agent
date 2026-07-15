@@ -20,10 +20,11 @@ import { KnowledgeBaseList } from "./KnowledgeBaseList";
 import { DocumentsTable } from "./DocumentsTable";
 import { IngestionJobs } from "./IngestionJobs";
 import { SearchEvaluation } from "./SearchEvaluation";
+import { EvaluationDatasets } from "./EvaluationDatasets";
 import { KnowledgeConfiguration } from "./KnowledgeConfiguration";
 import { KnowledgeAccess } from "./KnowledgeAccess";
 
-export type KnowledgeWorkspaceTab = "documents" | "jobs" | "search" | "configuration" | "access";
+export type KnowledgeWorkspaceTab = "documents" | "jobs" | "search" | "evaluation" | "configuration" | "access";
 
 interface KnowledgeWorkspaceProps {
   principal: CommercialPrincipal;
@@ -166,6 +167,7 @@ export function KnowledgeWorkspace({
                 <Tab value="documents">{t("knowledgeWorkspace.tabs.documents")}</Tab>
                 <Tab value="jobs">{t("knowledgeWorkspace.tabs.jobs")}</Tab>
                 <Tab value="search">{t("knowledgeWorkspace.tabs.search")}</Tab>
+                <Tab value="evaluation">{t("knowledgeWorkspace.tabs.evaluation")}</Tab>
                 <Tab value="configuration" disabled={!canManage}>{t("knowledgeWorkspace.tabs.configuration")}</Tab>
                 <Tab value="access" disabled={!canManage}>{t("knowledgeWorkspace.tabs.access")}</Tab>
               </TabList>
@@ -190,6 +192,14 @@ export function KnowledgeWorkspace({
                   results={searchResults}
                   onQueryChange={onSearchQueryChange}
                   onSearch={onSearch}
+                />
+              </TabPanel>
+              <TabPanel value="evaluation" className="mt-3">
+                <EvaluationDatasets
+                  knowledgeBaseId={selected.id}
+                  documents={documents}
+                  config={config}
+                  canManage={canManage}
                 />
               </TabPanel>
               <TabPanel value="configuration" className="mt-3">

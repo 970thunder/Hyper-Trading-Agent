@@ -47,6 +47,56 @@ def test_local_reranker_promotes_title_and_content_match() -> None:
     assert disabled[0]["chunk_id"] == "generic"
 
 
+def test_knowledge_evaluation_dataset_persists_retrieval_metrics(tmp_path: Path) -> None:
+    store = CommercialStore(tmp_path / "commercial.db")
+    owner, _ = store.register_owner(
+        email="owner@example.com",
+        password=PASSWORD,
+        organization_name="Research",
+    )
+    knowledge_base = store.create_knowledge_base(owner, "Research controls")
+    document = store.add_knowledge_document(
+        owner,
+        knowledge_base["id"],
+        title="Drawdown policy",
+        source_uri="uploads/drawdown-policy.md",
+        source_type="file",
+        text="Drawdown control requires an escalation review when the portfolio reaches its threshold.",
+    )
+
+    dataset = store.create_knowledge_evaluation_dataset(
+        owner,
+        knowledge_base["id"],
+        name="Risk controls regression",
+        description="Regression queries for the investment policy.",
+    )
+    case = store.create_knowledge_evaluation_case(
+        owner,
+        knowledge_base["id"],
+        dataset["id"],
+        query="What is the drawdown control escalation threshold?",
+        expected_document_ids=[document["id"]],
+    )
+    run = store.run_knowledge_evaluation_dataset(owner, knowledge_base["id"], dataset["id"], top_k=3)
+
+    assert case["expected_document_ids"] == [document["id"]]
+    assert run["summary"]["total_cases"] == 1
+    assert run["summary"]["matched_cases"] == 1
+    assert run["summary"]["hit_rate"] == 1.0
+    assert run["summary"]["mrr"] == 1.0
+    assert run["results"][0]["first_match_rank"] == 1
+    assert store.list_knowledge_evaluation_runs(owner, knowledge_base["id"], dataset["id"])[0]["id"] == run["id"]
+
+    with pytest.raises(ValueError, match="selected knowledge base"):
+        store.create_knowledge_evaluation_case(
+            owner,
+            knowledge_base["id"],
+            dataset["id"],
+            query="Unknown source",
+            expected_document_ids=["doc_missing"],
+        )
+
+
 def test_knowledge_base_configuration_drives_chunking_and_chunk_inspection(tmp_path: Path) -> None:
     store = CommercialStore(tmp_path / "commercial.db")
     owner, _ = store.register_owner(

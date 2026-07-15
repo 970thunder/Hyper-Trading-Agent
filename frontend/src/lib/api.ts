@@ -313,6 +313,46 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  listCommercialKnowledgeEvaluationDatasets: (knowledgeBaseId: string) =>
+    request<CommercialKnowledgeEvaluationDataset[]>(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/evaluation-datasets`),
+  createCommercialKnowledgeEvaluationDataset: (knowledgeBaseId: string, body: CommercialKnowledgeEvaluationDatasetCreateRequest) =>
+    request<CommercialKnowledgeEvaluationDataset>(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/evaluation-datasets`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateCommercialKnowledgeEvaluationDataset: (knowledgeBaseId: string, datasetId: string, body: CommercialKnowledgeEvaluationDatasetUpdateRequest) =>
+    request<CommercialKnowledgeEvaluationDataset>(
+      `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/evaluation-datasets/${encodeURIComponent(datasetId)}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+  deleteCommercialKnowledgeEvaluationDataset: (knowledgeBaseId: string, datasetId: string) =>
+    request<{ status: string }>(
+      `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/evaluation-datasets/${encodeURIComponent(datasetId)}`,
+      { method: "DELETE" },
+    ),
+  listCommercialKnowledgeEvaluationCases: (knowledgeBaseId: string, datasetId: string) =>
+    request<CommercialKnowledgeEvaluationCase[]>(
+      `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/evaluation-datasets/${encodeURIComponent(datasetId)}/cases`,
+    ),
+  createCommercialKnowledgeEvaluationCase: (knowledgeBaseId: string, datasetId: string, body: CommercialKnowledgeEvaluationCaseCreateRequest) =>
+    request<CommercialKnowledgeEvaluationCase>(
+      `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/evaluation-datasets/${encodeURIComponent(datasetId)}/cases`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  deleteCommercialKnowledgeEvaluationCase: (knowledgeBaseId: string, datasetId: string, caseId: string) =>
+    request<{ status: string }>(
+      `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/evaluation-datasets/${encodeURIComponent(datasetId)}/cases/${encodeURIComponent(caseId)}`,
+      { method: "DELETE" },
+    ),
+  runCommercialKnowledgeEvaluationDataset: (knowledgeBaseId: string, datasetId: string, body: CommercialKnowledgeEvaluationRunRequest = {}) =>
+    request<CommercialKnowledgeEvaluationRun>(
+      `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/evaluation-datasets/${encodeURIComponent(datasetId)}/runs`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  listCommercialKnowledgeEvaluationRuns: (knowledgeBaseId: string, datasetId: string, limit?: number) =>
+    request<CommercialKnowledgeEvaluationRun[]>(
+      `/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/evaluation-datasets/${encodeURIComponent(datasetId)}/runs${limit ? `?limit=${encodeURIComponent(String(limit))}` : ""}`,
+    ),
   getCommercialIngestionJob: (knowledgeBaseId: string, jobId: string) =>
     request<CommercialIngestionJob>(`/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/ingestion-jobs/${encodeURIComponent(jobId)}`),
   listCommercialIngestionJobs: (knowledgeBaseId: string, limit?: number) =>
@@ -1088,6 +1128,77 @@ export interface CommercialKnowledgeSearchResponse {
   query: string;
   count: number;
   results: CommercialKnowledgeSearchResult[];
+}
+
+export interface CommercialKnowledgeEvaluationDataset {
+  id: string;
+  knowledge_base_id: string;
+  name: string;
+  description: string;
+  case_count: number;
+  latest_run_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CommercialKnowledgeEvaluationDatasetCreateRequest {
+  name: string;
+  description?: string;
+}
+
+export interface CommercialKnowledgeEvaluationDatasetUpdateRequest {
+  name?: string;
+  description?: string;
+}
+
+export interface CommercialKnowledgeEvaluationCase {
+  id: string;
+  query: string;
+  expected_document_ids: string[];
+  expected_chunk_ids: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CommercialKnowledgeEvaluationCaseCreateRequest {
+  query: string;
+  expected_document_ids?: string[];
+  expected_chunk_ids?: string[];
+}
+
+export interface CommercialKnowledgeEvaluationRunResult {
+  case_id: string;
+  query: string;
+  expected_document_ids: string[];
+  expected_chunk_ids: string[];
+  first_match_rank: number | null;
+  retrieved: Array<{
+    rank: number;
+    document_id: string;
+    chunk_id: string;
+    title: string;
+    score: number;
+  }>;
+}
+
+export interface CommercialKnowledgeEvaluationRun {
+  id: string;
+  dataset_id: string;
+  top_k: number;
+  config: Record<string, unknown>;
+  summary: {
+    total_cases: number;
+    matched_cases: number;
+    hit_rate: number;
+    mrr: number;
+    mean_first_match_rank: number | null;
+  };
+  results: CommercialKnowledgeEvaluationRunResult[];
+  created_at: string;
+}
+
+export interface CommercialKnowledgeEvaluationRunRequest {
+  top_k?: number;
 }
 
 export interface CommercialIngestionJob {

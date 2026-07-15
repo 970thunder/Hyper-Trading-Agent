@@ -119,6 +119,32 @@ class KnowledgeSearchRequest(BaseModel):
     limit: int | None = Field(None, ge=1, le=20)
 
 
+class KnowledgeEvaluationDatasetCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=160)
+    description: str = Field("", max_length=2000)
+
+
+class KnowledgeEvaluationDatasetUpdateRequest(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=160)
+    description: str | None = Field(None, max_length=2000)
+
+
+class KnowledgeEvaluationCaseCreateRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=2000)
+    expected_document_ids: list[str] = Field(default_factory=list, max_length=20)
+    expected_chunk_ids: list[str] = Field(default_factory=list, max_length=20)
+
+
+class KnowledgeEvaluationCaseUpdateRequest(BaseModel):
+    query: str | None = Field(None, min_length=1, max_length=2000)
+    expected_document_ids: list[str] | None = Field(None, max_length=20)
+    expected_chunk_ids: list[str] | None = Field(None, max_length=20)
+
+
+class KnowledgeEvaluationRunRequest(BaseModel):
+    top_k: int | None = Field(None, ge=1, le=20)
+
+
 class OrganizationMemberCreateRequest(BaseModel):
     email: str
     password: str = Field(..., min_length=8)
@@ -970,6 +996,165 @@ def register_commercial_routes(app: FastAPI) -> None:
         except KeyError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="knowledge base not found") from exc
         return {"status": "ok", "query": payload.query, "count": len(results), "results": results}
+
+    @app.get("/knowledge-bases/{knowledge_base_id}/evaluation-datasets")
+    async def list_knowledge_evaluation_datasets(
+        knowledge_base_id: str,
+        principal: Principal = Depends(_principal_from_cookie),
+    ):
+        try:
+            return _store().list_knowledge_evaluation_datasets(principal, knowledge_base_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="knowledge base not found") from exc
+
+    @app.post("/knowledge-bases/{knowledge_base_id}/evaluation-datasets", status_code=status.HTTP_201_CREATED)
+    async def create_knowledge_evaluation_dataset(
+        knowledge_base_id: str,
+        payload: KnowledgeEvaluationDatasetCreateRequest,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        try:
+            return _store().create_knowledge_evaluation_dataset(
+                principal,
+                knowledge_base_id,
+                name=payload.name,
+                description=payload.description,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="knowledge base not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.patch("/knowledge-bases/{knowledge_base_id}/evaluation-datasets/{dataset_id}")
+    async def update_knowledge_evaluation_dataset(
+        knowledge_base_id: str,
+        dataset_id: str,
+        payload: KnowledgeEvaluationDatasetUpdateRequest,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        try:
+            return _store().update_knowledge_evaluation_dataset(
+                principal,
+                knowledge_base_id,
+                dataset_id,
+                name=payload.name,
+                description=payload.description,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="evaluation dataset not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.delete("/knowledge-bases/{knowledge_base_id}/evaluation-datasets/{dataset_id}")
+    async def delete_knowledge_evaluation_dataset(
+        knowledge_base_id: str,
+        dataset_id: str,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        try:
+            _store().delete_knowledge_evaluation_dataset(principal, knowledge_base_id, dataset_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="evaluation dataset not found") from exc
+        return {"status": "ok"}
+
+    @app.get("/knowledge-bases/{knowledge_base_id}/evaluation-datasets/{dataset_id}/cases")
+    async def list_knowledge_evaluation_cases(
+        knowledge_base_id: str,
+        dataset_id: str,
+        principal: Principal = Depends(_principal_from_cookie),
+    ):
+        try:
+            return _store().list_knowledge_evaluation_cases(principal, knowledge_base_id, dataset_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="evaluation dataset not found") from exc
+
+    @app.post("/knowledge-bases/{knowledge_base_id}/evaluation-datasets/{dataset_id}/cases", status_code=status.HTTP_201_CREATED)
+    async def create_knowledge_evaluation_case(
+        knowledge_base_id: str,
+        dataset_id: str,
+        payload: KnowledgeEvaluationCaseCreateRequest,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        try:
+            return _store().create_knowledge_evaluation_case(
+                principal,
+                knowledge_base_id,
+                dataset_id,
+                query=payload.query,
+                expected_document_ids=payload.expected_document_ids,
+                expected_chunk_ids=payload.expected_chunk_ids,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="evaluation dataset not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.patch("/knowledge-bases/{knowledge_base_id}/evaluation-datasets/{dataset_id}/cases/{case_id}")
+    async def update_knowledge_evaluation_case(
+        knowledge_base_id: str,
+        dataset_id: str,
+        case_id: str,
+        payload: KnowledgeEvaluationCaseUpdateRequest,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        try:
+            return _store().update_knowledge_evaluation_case(
+                principal,
+                knowledge_base_id,
+                dataset_id,
+                case_id,
+                query=payload.query,
+                expected_document_ids=payload.expected_document_ids,
+                expected_chunk_ids=payload.expected_chunk_ids,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="evaluation case not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.delete("/knowledge-bases/{knowledge_base_id}/evaluation-datasets/{dataset_id}/cases/{case_id}")
+    async def delete_knowledge_evaluation_case(
+        knowledge_base_id: str,
+        dataset_id: str,
+        case_id: str,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        try:
+            _store().delete_knowledge_evaluation_case(principal, knowledge_base_id, dataset_id, case_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="evaluation case not found") from exc
+        return {"status": "ok"}
+
+    @app.post("/knowledge-bases/{knowledge_base_id}/evaluation-datasets/{dataset_id}/runs")
+    async def run_knowledge_evaluation_dataset(
+        knowledge_base_id: str,
+        dataset_id: str,
+        payload: KnowledgeEvaluationRunRequest,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        try:
+            return _store().run_knowledge_evaluation_dataset(
+                principal,
+                knowledge_base_id,
+                dataset_id,
+                top_k=payload.top_k,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="evaluation dataset not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get("/knowledge-bases/{knowledge_base_id}/evaluation-datasets/{dataset_id}/runs")
+    async def list_knowledge_evaluation_runs(
+        knowledge_base_id: str,
+        dataset_id: str,
+        limit: int = Query(20, ge=1, le=100),
+        principal: Principal = Depends(_principal_from_cookie),
+    ):
+        try:
+            return _store().list_knowledge_evaluation_runs(principal, knowledge_base_id, dataset_id, limit)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="evaluation dataset not found") from exc
 
     @app.get("/knowledge-bases/{knowledge_base_id}/ingestion-jobs/{job_id}")
     async def get_ingestion_job(
