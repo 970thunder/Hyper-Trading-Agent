@@ -9,6 +9,8 @@ Validates:
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -18,6 +20,7 @@ from backtest.metrics import (
     by_symbol_stats,
     calc_bars_per_year,
     calc_metrics,
+    calc_trade_turnover_series,
     win_rate_and_stats,
 )
 from backtest.models import TradeRecord
@@ -263,6 +266,30 @@ class TestCalcMetrics:
         m = calc_metrics(pd.Series(dtype=float), [], 1_000_000, 252)
         assert m["final_value"] == 1_000_000
         assert m["total_return"] == 0
+
+    def test_non_positive_equity_annualizes_to_full_loss(self) -> None:
+        eq = pd.Series([1_000_000.0, 0.0], index=pd.bdate_range("2025-01-01", periods=2))
+        metrics = calc_metrics(eq, [], 1_000_000, 252)
+        assert metrics["annual_return"] == -1.0
+
+    def test_single_bar_metrics_remain_finite(self) -> None:
+        eq = pd.Series([1_000_000.0], index=pd.bdate_range("2025-01-01", periods=1))
+        metrics = calc_metrics(eq, [], 1_000_000, 252, bench_ret=pd.Series([0.0], index=eq.index))
+        for key in ("sharpe", "sortino", "information_ratio", "annual_return", "max_drawdown", "calmar"):
+            assert math.isfinite(metrics[key]), key
+
+    def test_realized_turnover_uses_executed_trade_margins(self) -> None:
+        dates = pd.bdate_range("2025-01-01", periods=3)
+        equity = pd.Series([1_000.0, 1_000.0, 1_000.0], index=dates)
+        trade = _trade()
+        trade = TradeRecord(
+            **{**trade.__dict__, "entry_time": dates[0], "exit_time": dates[2], "entry_margin": 1_000.0, "exit_margin": 1_000.0},
+        )
+        turnover = calc_trade_turnover_series([trade], equity)
+        metrics = calc_metrics(equity, [trade], 1_000.0, turnover_series=turnover)
+        assert turnover.tolist() == pytest.approx([0.5, 0.0, 0.5])
+        assert metrics["avg_turnover"] == pytest.approx(1 / 3)
+        assert metrics["total_turnover"] == pytest.approx(1.0)
 
     def test_final_value(self) -> None:
         eq = self._growing_equity()

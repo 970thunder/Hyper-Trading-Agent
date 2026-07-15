@@ -444,6 +444,7 @@ class FinancialStatementsTool(BaseTool):
         },
         "required": ["code"],
     }
+    repeatable = True
 
     def execute(self, **kwargs: Any) -> str:
         """Validate inputs, dispatch by market, and return a JSON envelope.

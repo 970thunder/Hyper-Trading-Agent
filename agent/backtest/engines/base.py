@@ -35,6 +35,7 @@ from backtest.metrics import (
     by_exit_reason_stats,
     by_symbol_stats,
     calc_metrics,
+    calc_trade_turnover_series,
 )
 from backtest.models import EquitySnapshot, Position, TradeRecord
 
@@ -462,7 +463,15 @@ class BaseEngine(ABC):
         bench_equity = self.initial_capital * (1 + bench_ret).cumprod()
 
         # 6. Metrics
-        m = calc_metrics(equity_series, self.trades, self.initial_capital, bars_per_year, bench_ret)
+        realized_turnover = calc_trade_turnover_series(self.trades, equity_series)
+        m = calc_metrics(
+            equity_series,
+            self.trades,
+            self.initial_capital,
+            bars_per_year,
+            bench_ret,
+            turnover_series=realized_turnover,
+        )
         m.update(benchmark_metadata)
         m["by_symbol"] = by_symbol_stats(self.trades)
         m["by_exit_reason"] = by_exit_reason_stats(self.trades)
@@ -555,8 +564,20 @@ class BaseEngine(ABC):
         if len(dates) > 0:
             last_ts = dates[-1]
             for c in list(self.positions.keys()):
-                price = self._safe_price(close_df, last_ts, c, self.positions[c].entry_price)
-                self._close_position(c, price, last_ts, "end_of_backtest")
+                pos = self.positions[c]
+                mark_price = self._safe_price(close_df, last_ts, c, pos.entry_price)
+                self._active_symbol = c
+                exit_price = self.apply_slippage(mark_price, -pos.direction)
+                self._close_position(c, exit_price, last_ts, "end_of_backtest")
+
+            if self.equity_snapshots:
+                self.equity_snapshots[-1] = EquitySnapshot(
+                    timestamp=last_ts,
+                    capital=self.capital,
+                    unrealized=0.0,
+                    equity=self.capital,
+                    positions=0,
+                )
 
     def _calc_equity(self, close_df: pd.DataFrame, ts: pd.Timestamp) -> float:
         """Total equity = free cash + sum(margin + unrealised) per position.
@@ -685,6 +706,7 @@ class BaseEngine(ABC):
 
         pnl = self._calc_pnl(symbol, pos.direction, pos.size, pos.entry_price, exit_price)
         margin = self._calc_margin(symbol, pos.size, pos.entry_price, pos.leverage)
+        exit_margin = self._calc_margin(symbol, pos.size, exit_price, pos.leverage)
         pnl_pct = pnl / margin * 100 if margin > 1e-9 else 0.0
         exit_comm = self.calc_commission(pos.size, exit_price, pos.direction, is_open=False)
 
@@ -706,6 +728,8 @@ class BaseEngine(ABC):
             exit_reason=reason,
             holding_bars=holding_bars,
             commission=pos.entry_commission + exit_comm,
+            entry_margin=margin,
+            exit_margin=exit_margin,
         ))
 
     # ── Artifacts ──

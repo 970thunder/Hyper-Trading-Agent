@@ -97,6 +97,7 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
         capture_reasoning=True,
         native_adapter_package="langchain-deepseek",
     ),
+    "nvidia": ProviderCapabilities("nvidia", "NVIDIA_API_KEY", "NVIDIA_BASE_URL"),
     "gemini": ProviderCapabilities(
         "gemini",
         "GEMINI_API_KEY",

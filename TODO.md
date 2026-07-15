@@ -100,6 +100,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 
 ## P3 Agent Execution And Output
 
+- [x] Review current Vibe-Trading upstream fixes and adopt bounded backtest, repeatable-tool, and provider-catalog improvements.
 - [x] ReAct and Plan-Execute execution modes.
 - [x] HITL approval lifecycle.
 - [x] Pause, resume, cancel, and execution snapshots.

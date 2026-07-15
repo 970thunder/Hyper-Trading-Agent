@@ -148,12 +148,45 @@ def by_exit_reason_stats(trades: List[TradeRecord]) -> Dict[str, Dict[str, Any]]
     return result
 
 
+def calc_trade_turnover_series(
+    trades: List[TradeRecord],
+    equity_curve: pd.Series,
+) -> pd.Series:
+    """Calculate per-bar turnover from actual entry and exit allocations.
+
+    Each executed leg contributes its margin-equivalent traded value. Dividing
+    gross traded value by twice portfolio equity preserves the common turnover
+    convention: an entry from cash into a 100% allocation is 0.5, while a full
+    one-asset rotation is 1.0. This uses executed trades rather than target
+    weights, so rejected, rounded, or blocked orders are not overstated.
+    """
+    if equity_curve is None or equity_curve.empty:
+        return pd.Series(dtype=float)
+
+    traded_margin = pd.Series(0.0, index=equity_curve.index, dtype=float)
+    for trade in trades:
+        for timestamp, margin in (
+            (trade.entry_time, trade.entry_margin),
+            (trade.exit_time, trade.exit_margin),
+        ):
+            try:
+                margin_value = float(margin)
+            except (TypeError, ValueError):
+                continue
+            if timestamp in traded_margin.index and np.isfinite(margin_value) and margin_value > 0:
+                traded_margin.loc[timestamp] += margin_value
+
+    denominator = 2.0 * equity_curve.abs().replace(0.0, np.nan)
+    return (traded_margin / denominator).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+
 def calc_metrics(
     equity_curve: pd.Series,
     trades: List[TradeRecord],
     initial_cash: float,
     bars_per_year: Optional[int] = 252,
     bench_ret: Optional[pd.Series] = None,
+    turnover_series: Optional[pd.Series] = None,
 ) -> Dict[str, Any]:
     """Full set of performance metrics.
 
@@ -164,6 +197,7 @@ def calc_metrics(
         bars_per_year: Bars per year for annualisation. None = auto-detect
             from equity curve dates (calendar-day method, for cross-market).
         bench_ret: Benchmark per-bar return series (optional).
+        turnover_series: Actual per-bar execution turnover (optional).
 
     Returns:
         Metrics dictionary (compatible with daily_portfolio format).
@@ -185,8 +219,9 @@ def calc_metrics(
     port_ret = equity_curve.pct_change().fillna(0.0)
 
     total_ret = float(equity_curve.iloc[-1] / initial_cash - 1)
-    ann_ret = float((1 + total_ret) ** (bpy / max(n, 1)) - 1)
-    vol = float(port_ret.std())
+    growth = 1 + total_ret
+    ann_ret = -1.0 if growth <= 0 else float(growth ** (bpy / max(n, 1)) - 1)
+    vol = float(port_ret.std()) if len(port_ret) > 1 else 0.0
     sharpe = float(port_ret.mean() / (vol + 1e-10) * np.sqrt(bpy))
 
     # Drawdown
@@ -202,6 +237,13 @@ def calc_metrics(
     sortino = float(port_ret.mean() / (downside_std + 1e-10) * np.sqrt(bpy))
 
     trade_stats = win_rate_and_stats(trades)
+    turnover_values = (
+        turnover_series.reindex(equity_curve.index).fillna(0.0).clip(lower=0.0)
+        if turnover_series is not None
+        else pd.Series(dtype=float)
+    )
+    avg_turnover = float(turnover_values.mean()) if len(turnover_values) > 0 else 0.0
+    total_turnover = float(turnover_values.sum()) if len(turnover_values) > 0 else 0.0
 
     # Benchmark comparison
     bench_return = 0.0
@@ -211,7 +253,7 @@ def calc_metrics(
         bench_return = float((1 + bench_ret).prod() - 1)
         excess = total_ret - bench_return
         active_ret = port_ret - bench_ret.reindex(port_ret.index).fillna(0.0)
-        active_std = float(active_ret.std())
+        active_std = float(active_ret.std()) if len(active_ret) > 1 else 0.0
         ir = float(active_ret.mean() / (active_std + 1e-10) * np.sqrt(bpy))
 
     return {
@@ -231,6 +273,8 @@ def calc_metrics(
         "benchmark_return": round(bench_return, 6),
         "excess_return": round(excess, 6),
         "information_ratio": round(ir, 4),
+        "avg_turnover": round(avg_turnover, 6),
+        "total_turnover": round(total_turnover, 6),
     }
 
 
@@ -243,4 +287,5 @@ def _empty_metrics(initial_cash: float) -> Dict[str, Any]:
         "win_rate": 0, "profit_loss_ratio": 0, "profit_factor": 0,
         "max_consecutive_loss": 0, "avg_holding_days": 0, "trade_count": 0,
         "benchmark_return": 0, "excess_return": 0, "information_ratio": 0,
+        "avg_turnover": 0.0, "total_turnover": 0.0,
     }
