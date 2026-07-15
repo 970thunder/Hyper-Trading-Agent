@@ -5,6 +5,7 @@ import {
   Building2,
   Database,
   FileClock,
+  Gauge,
   HardDrive,
   RefreshCw,
   ServerCog,
@@ -25,6 +26,7 @@ import {
   type PlatformRuntimeJob,
   type PlatformSummary,
   type PlatformUser,
+  type PlatformUsageSummary,
   type PlatformWorkspaceArtifact,
 } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
@@ -32,7 +34,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { StatusIndicator, type StatusTone } from "@/components/ui/Status";
 import { Tab, TabList, TabPanel, Tabs } from "@/components/ui/Tabs";
 
-type PlatformTab = "overview" | "users" | "organizations" | "knowledge" | "jobs" | "runtime" | "artifacts" | "operations" | "audit";
+type PlatformTab = "overview" | "users" | "organizations" | "usage" | "knowledge" | "jobs" | "runtime" | "artifacts" | "operations" | "audit";
 
 const EMPTY_SUMMARY: PlatformSummary = {
   users: 0,
@@ -85,6 +87,7 @@ export function PlatformAdmin() {
   const [summary, setSummary] = useState<PlatformSummary>(EMPTY_SUMMARY);
   const [users, setUsers] = useState<PlatformUser[]>([]);
   const [organizations, setOrganizations] = useState<PlatformOrganization[]>([]);
+  const [usage, setUsage] = useState<PlatformUsageSummary[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<PlatformKnowledgeBase[]>([]);
   const [jobs, setJobs] = useState<PlatformIngestionJob[]>([]);
   const [runtimeJobs, setRuntimeJobs] = useState<PlatformRuntimeJob[]>([]);
@@ -100,10 +103,11 @@ export function PlatformAdmin() {
     setLoading(true);
     setError("");
     try {
-      const [nextSummary, nextUsers, nextOrganizations, nextKnowledgeBases, nextJobs, nextRuntimeJobs, nextArtifacts, nextOperations, nextAudit] = await Promise.all([
+      const [nextSummary, nextUsers, nextOrganizations, nextUsage, nextKnowledgeBases, nextJobs, nextRuntimeJobs, nextArtifacts, nextOperations, nextAudit] = await Promise.all([
         api.getPlatformSummary(),
         api.listPlatformUsers(),
         api.listPlatformOrganizations(),
+        api.listPlatformUsage(),
         api.listPlatformKnowledgeBases(),
         api.listPlatformIngestionJobs(),
         api.listPlatformRuntimeJobs(),
@@ -114,6 +118,7 @@ export function PlatformAdmin() {
       setSummary(nextSummary);
       setUsers(nextUsers);
       setOrganizations(nextOrganizations);
+      setUsage(nextUsage);
       setKnowledgeBases(nextKnowledgeBases);
       setJobs(nextJobs);
       setRuntimeJobs(nextRuntimeJobs);
@@ -242,6 +247,7 @@ export function PlatformAdmin() {
           <Tab value="overview"><Activity className="h-3.5 w-3.5" />{t("platformAdmin.tabs.overview")}</Tab>
           <Tab value="users"><UsersRound className="h-3.5 w-3.5" />{t("platformAdmin.tabs.users")}</Tab>
           <Tab value="organizations"><Building2 className="h-3.5 w-3.5" />{t("platformAdmin.tabs.organizations")}</Tab>
+          <Tab value="usage"><Gauge className="h-3.5 w-3.5" />{t("platformAdmin.tabs.usage")}</Tab>
           <Tab value="knowledge"><Database className="h-3.5 w-3.5" />{t("platformAdmin.tabs.knowledge")}</Tab>
           <Tab value="jobs"><FileClock className="h-3.5 w-3.5" />{t("platformAdmin.tabs.jobs")}</Tab>
           <Tab value="runtime"><ServerCog className="h-3.5 w-3.5" />{t("platformAdmin.tabs.runtime")}</Tab>
@@ -263,6 +269,8 @@ export function PlatformAdmin() {
         <TabPanel value="users" className="mt-5"><section className="surface-panel overflow-hidden"><TableHeader title={t("platformAdmin.usersTitle")} count={users.length} /><div className="overflow-x-auto"><table className="w-full min-w-[820px] text-sm"><thead><tr>{["user", "organizations", "platformRole", "status", "created", "actions"].map((key) => <th key={key} className="border-b border-border px-4 py-3 text-start text-xs font-medium text-ink-muted">{t(`platformAdmin.columns.${key}`)}</th>)}</tr></thead><tbody>{users.map((user) => <tr key={user.user_id} className="border-b border-border/70 last:border-0 hover:bg-surface-2/70"><td className="px-4 py-3"><div className="font-medium text-ink-strong">{user.display_name || user.email}</div><div className="text-xs text-ink-muted">{user.email}</div></td><td className="px-4 py-3 text-ink-muted">{user.organization_count}</td><td className="px-4 py-3"><StatusIndicator label={user.is_platform_admin ? t("platformAdmin.platformAdmin") : t("platformAdmin.standardUser")} tone={user.is_platform_admin ? "primary" : "neutral"} /></td><td className="px-4 py-3"><StatusIndicator label={user.is_active ? t("platformAdmin.active") : t("platformAdmin.suspended")} tone={statusTone(user.is_active)} /></td><td className="px-4 py-3 text-xs text-ink-muted">{date(user.created_at)}</td><td className="px-4 py-3"><div className="flex gap-2"><Button size="sm" variant="outline" loading={actionId === `user-${user.user_id}`} onClick={() => void toggleUser(user)}>{user.is_active ? t("platformAdmin.suspend") : t("platformAdmin.activate")}</Button><Button size="sm" variant="ghost" loading={actionId === `admin-${user.user_id}`} onClick={() => void togglePlatformAdmin(user)}>{user.is_platform_admin ? t("platformAdmin.revokeAdmin") : t("platformAdmin.grantAdmin")}</Button></div></td></tr>)}</tbody></table></div></section></TabPanel>
 
         <TabPanel value="organizations" className="mt-5"><section className="surface-panel overflow-hidden"><TableHeader title={t("platformAdmin.organizationsTitle")} count={organizations.length} /><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr>{["organization", "members", "knowledge", "models", "status", "actions"].map((key) => <th key={key} className="border-b border-border px-4 py-3 text-start text-xs font-medium text-ink-muted">{t(`platformAdmin.columns.${key}`)}</th>)}</tr></thead><tbody>{organizations.map((organization) => <tr key={organization.id} className="border-b border-border/70 last:border-0 hover:bg-surface-2/70"><td className="px-4 py-3 font-medium text-ink-strong">{organization.name}</td><td className="px-4 py-3 text-ink-muted">{organization.member_count}</td><td className="px-4 py-3 text-ink-muted">{organization.knowledge_base_count}</td><td className="px-4 py-3 text-ink-muted">{organization.model_provider_count}</td><td className="px-4 py-3"><StatusIndicator label={organization.is_active ? t("platformAdmin.active") : t("platformAdmin.suspended")} tone={statusTone(organization.is_active)} /></td><td className="px-4 py-3"><Button size="sm" variant="outline" loading={actionId === `organization-${organization.id}`} onClick={() => void toggleOrganization(organization)}>{organization.is_active ? t("platformAdmin.suspend") : t("platformAdmin.activate")}</Button></td></tr>)}</tbody></table></div></section></TabPanel>
+
+        <TabPanel value="usage" className="mt-5"><PlatformUsageTable rows={usage} t={t} statusTone={statusTone} /></TabPanel>
 
         <TabPanel value="knowledge" className="mt-5"><section className="surface-panel overflow-hidden"><TableHeader title={t("platformAdmin.knowledgeTitle")} count={knowledgeBases.length} /><div className="overflow-x-auto"><table className="w-full min-w-[820px] text-sm"><thead><tr>{["knowledgeBase", "organization", "documents", "chunks", "jobs", "actions"].map((key) => <th key={key} className="border-b border-border px-4 py-3 text-start text-xs font-medium text-ink-muted">{t(`platformAdmin.columns.${key}`)}</th>)}</tr></thead><tbody>{knowledgeBases.map((knowledgeBase) => <tr key={knowledgeBase.id} className="border-b border-border/70 last:border-0 hover:bg-surface-2/70"><td className="px-4 py-3"><div className="font-medium text-ink-strong">{knowledgeBase.name}</div><div className="max-w-[270px] truncate text-xs text-ink-muted">{knowledgeBase.description || "-"}</div></td><td className="px-4 py-3 text-ink-muted">{knowledgeBase.organization_name}</td><td className="px-4 py-3 text-ink-muted">{knowledgeBase.document_count}</td><td className="px-4 py-3 text-ink-muted">{knowledgeBase.chunk_count}</td><td className="px-4 py-3"><StatusIndicator label={t("platformAdmin.failedJobs", { count: knowledgeBase.failed_job_count || 0 })} tone={knowledgeBase.failed_job_count ? "danger" : "success"} /></td><td className="px-4 py-3"><Button size="sm" variant="ghost" loading={actionId === `knowledge-${knowledgeBase.id}`} onClick={() => void removeKnowledgeBase(knowledgeBase)} leftIcon={<Trash2 className="h-3.5 w-3.5" />}>{t("platformAdmin.delete")}</Button></td></tr>)}</tbody></table></div></section></TabPanel>
 
@@ -321,6 +329,41 @@ function PlatformRuntimeJobsTable({
   );
 }
 
+function PlatformUsageTable({
+  rows,
+  t,
+  statusTone,
+}: {
+  rows: PlatformUsageSummary[];
+  t: (key: string, options?: Record<string, unknown>) => string;
+  statusTone: (status: string | number | boolean) => StatusTone;
+}) {
+  const totals = rows.reduce((current, row) => ({
+    calls: current.calls + row.calls,
+    tokens: current.tokens + row.total_tokens,
+    cost: current.cost + row.estimated_cost,
+  }), { calls: 0, tokens: 0, cost: 0 });
+
+  return (
+    <section className="surface-panel overflow-hidden">
+      <TableHeader title={t("platformAdmin.usageTitle")} count={rows.length} />
+      <div className="grid gap-3 border-b border-border/70 bg-surface-2/45 px-4 py-3 sm:grid-cols-3">
+        <Metric label={t("platformAdmin.columns.calls")} value={totals.calls.toLocaleString()} />
+        <Metric label={t("platformAdmin.columns.tokens")} value={totals.tokens.toLocaleString()} />
+        <Metric label={t("platformAdmin.columns.cost")} value={formatCurrency(totals.cost)} />
+      </div>
+      {rows.length === 0 ? <p className="p-4 text-sm text-ink-muted">{t("platformAdmin.emptyUsage")}</p> : (
+        <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead><tr>{["organization", "models", "calls", "tokens", "cost", "latency", "budget"].map((key) => <th key={key} className="border-b border-border px-4 py-3 text-start text-xs font-medium text-ink-muted">{t(`platformAdmin.columns.${key}`)}</th>)}</tr></thead><tbody>{rows.map((row) => {
+          const hardLimited = row.token_hard_limit_reached || row.cost_hard_limit_reached;
+          const softLimited = row.token_soft_limit_reached || row.cost_soft_limit_reached;
+          const budgetLabel = hardLimited ? t("platformAdmin.budgetHard") : softLimited ? t("platformAdmin.budgetSoft") : t("platformAdmin.budgetHealthy");
+          return <tr key={row.organization_id} className="border-b border-border/70 last:border-0 hover:bg-surface-2/70"><td className="px-4 py-3"><div className="font-medium text-ink-strong">{row.organization_name}</div><div className="mt-1 text-xs text-ink-muted">{row.organization_active ? t("platformAdmin.active") : t("platformAdmin.suspended")}</div></td><td className="px-4 py-3 text-ink-muted">{row.model_provider_count}</td><td className="px-4 py-3 font-mono text-ink-strong">{row.calls.toLocaleString()}</td><td className="px-4 py-3 font-mono text-ink-strong">{row.total_tokens.toLocaleString()}</td><td className="px-4 py-3 font-mono text-ink-strong">{formatCurrency(row.estimated_cost)}</td><td className="px-4 py-3 font-mono text-ink-muted">{Math.round(row.average_latency_ms)} ms</td><td className="px-4 py-3"><StatusIndicator label={budgetLabel} tone={statusTone(hardLimited ? "failed" : softLimited ? "pending" : "completed")} /></td></tr>;
+        })}</tbody></table></div>
+      )}
+    </section>
+  );
+}
+
 function PlatformArtifactsTable({
   rows,
   date,
@@ -361,4 +404,8 @@ function formatBytes(value: number) {
   const units = ["B", "KB", "MB", "GB"];
   const index = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)));
   return `${(value / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 4 }).format(value);
 }

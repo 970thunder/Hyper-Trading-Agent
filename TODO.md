@@ -86,6 +86,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Add standalone Swarm Agent management with localized preset/role names and per-Agent model configuration.
 - [x] Add model and Agent deletion confirmation without shifting list-row controls.
 - [x] Add standalone users, knowledge governance, runtime, audit, and usage routes.
+- [x] Add platform-wide organization usage and budget status visibility without exposing provider secrets.
 - [x] Remove organization model, Agent, Knowledge, Runtime, Audit, and Usage API loading from Settings.
 - [ ] Add complete audit links for Runtime retry/cancel and every remaining management action.
 - [x] Add provider token pricing, organization monthly budgets, and soft/hard quota enforcement.

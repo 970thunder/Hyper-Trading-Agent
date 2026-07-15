@@ -1149,6 +1149,14 @@ def register_commercial_routes(app: FastAPI) -> None:
     ):
         return _store().list_platform_organizations(query=query, limit=limit)
 
+    @app.get("/platform-admin/usage")
+    async def platform_usage(
+        limit: int = Query(500, ge=1, le=500),
+        principal: Principal = Depends(_require_platform_admin),
+    ):
+        del principal
+        return _store().list_platform_usage(limit=limit)
+
     @app.patch("/platform-admin/organizations/{organization_id}")
     async def update_platform_organization(
         organization_id: str,

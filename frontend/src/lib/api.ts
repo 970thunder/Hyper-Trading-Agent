@@ -395,6 +395,7 @@ export const api = {
     request<PlatformUser>(`/platform-admin/users/${encodeURIComponent(userId)}/platform-admin`, { method: "DELETE" }),
   listPlatformOrganizations: (query = "") =>
     request<PlatformOrganization[]>(`/platform-admin/organizations${query ? `?query=${encodeURIComponent(query)}` : ""}`),
+  listPlatformUsage: () => request<PlatformUsageSummary[]>("/platform-admin/usage"),
   updatePlatformOrganization: (organizationId: string, body: PlatformOrganizationUpdateRequest) =>
     request<PlatformOrganization>(`/platform-admin/organizations/${encodeURIComponent(organizationId)}`, {
       method: "PATCH",
@@ -765,6 +766,25 @@ export interface PlatformOrganization {
 export interface PlatformOrganizationUpdateRequest {
   name?: string;
   is_active?: boolean;
+}
+
+export interface PlatformUsageSummary {
+  organization_id: string;
+  organization_name: string;
+  organization_active: number | boolean;
+  calls: number;
+  total_tokens: number;
+  estimated_cost: number;
+  average_latency_ms: number;
+  model_provider_count: number;
+  monthly_token_soft_limit: number;
+  monthly_token_hard_limit: number;
+  monthly_cost_soft_limit: number;
+  monthly_cost_hard_limit: number;
+  token_soft_limit_reached: boolean;
+  token_hard_limit_reached: boolean;
+  cost_soft_limit_reached: boolean;
+  cost_hard_limit_reached: boolean;
 }
 
 export interface PlatformKnowledgeBase {

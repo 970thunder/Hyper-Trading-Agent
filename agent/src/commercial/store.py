@@ -3355,6 +3355,52 @@ class CommercialStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_platform_usage(self, *, period_start: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
+        """Return current-period, non-secret usage aggregates for every organization."""
+        start = period_start or current_usage_period_start()
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT o.id AS organization_id,
+                       o.name AS organization_name,
+                       o.is_active AS organization_active,
+                       COUNT(u.id) AS calls,
+                       COALESCE(SUM(u.total_tokens), 0) AS total_tokens,
+                       COALESCE(SUM(u.estimated_cost), 0) AS estimated_cost,
+                       COALESCE(AVG(u.latency_ms), 0) AS average_latency_ms,
+                       COALESCE(p.monthly_token_soft_limit, 0) AS monthly_token_soft_limit,
+                       COALESCE(p.monthly_token_hard_limit, 0) AS monthly_token_hard_limit,
+                       COALESCE(p.monthly_cost_soft_limit, 0) AS monthly_cost_soft_limit,
+                       COALESCE(p.monthly_cost_hard_limit, 0) AS monthly_cost_hard_limit,
+                       (SELECT COUNT(*) FROM model_providers mp WHERE mp.organization_id = o.id) AS model_provider_count
+                FROM organizations o
+                LEFT JOIN model_call_usage u
+                    ON u.organization_id = o.id AND u.created_at >= ?
+                LEFT JOIN organization_usage_policies p ON p.organization_id = o.id
+                GROUP BY o.id
+                ORDER BY estimated_cost DESC, total_tokens DESC, o.name ASC
+                LIMIT ?
+                """,
+                (start, max(1, min(limit, 500))),
+            ).fetchall()
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["calls"] = max(0, int(item["calls"] or 0))
+            item["total_tokens"] = max(0, int(item["total_tokens"] or 0))
+            item["estimated_cost"] = max(0.0, float(item["estimated_cost"] or 0.0))
+            item["average_latency_ms"] = round(max(0.0, float(item["average_latency_ms"] or 0.0)), 1)
+            for field in ("monthly_token_soft_limit", "monthly_token_hard_limit"):
+                item[field] = max(0, int(item[field] or 0))
+            for field in ("monthly_cost_soft_limit", "monthly_cost_hard_limit"):
+                item[field] = max(0.0, float(item[field] or 0.0))
+            item["token_hard_limit_reached"] = bool(item["monthly_token_hard_limit"] and item["total_tokens"] >= item["monthly_token_hard_limit"])
+            item["cost_hard_limit_reached"] = bool(item["monthly_cost_hard_limit"] and item["estimated_cost"] >= item["monthly_cost_hard_limit"])
+            item["token_soft_limit_reached"] = bool(item["monthly_token_soft_limit"] and item["total_tokens"] >= item["monthly_token_soft_limit"])
+            item["cost_soft_limit_reached"] = bool(item["monthly_cost_soft_limit"] and item["estimated_cost"] >= item["monthly_cost_soft_limit"])
+            items.append(item)
+        return items
+
     def list_platform_knowledge_bases(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
         filters = []
         params: list[Any] = []
