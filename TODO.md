@@ -91,7 +91,7 @@ Comprehensive refinement plan: `docs/superpowers/plans/2026-07-14-comprehensive-
 - [x] Add standalone users, knowledge governance, runtime, audit, and usage routes.
 - [x] Add platform-wide organization usage and budget status visibility without exposing provider secrets.
 - [x] Remove organization model, Agent, Knowledge, Runtime, Audit, and Usage API loading from Settings.
-- [ ] Add complete audit links for Runtime retry/cancel and every remaining management action.
+- [x] Add complete audit links for Runtime retry/cancel and every remaining management action.
 - [x] Add provider token pricing, organization monthly budgets, and soft/hard quota enforcement.
 - [x] Add organization usage alert delivery for soft-limit and hard-limit events, acknowledgement, and audit records.
 - [x] Add time-series usage and latency charts backed by aggregated usage endpoints.

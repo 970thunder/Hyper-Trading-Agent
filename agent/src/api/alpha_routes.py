@@ -625,6 +625,20 @@ def _bind_commercial_runtime_job(request: Request, job_id: str, kind: str, metad
     )
 
 
+def _audit_runtime_job_action(request: Request, *, action: str, job_id: str, kind: str, status: str) -> None:
+    """Write a tenant-scoped audit event after a runtime control succeeds."""
+    context = _commercial_runtime_context(request)
+    if context is None:
+        return
+    context[0].audit(
+        context[1],
+        action,
+        "runtime_job",
+        job_id,
+        {"kind": kind, "status": status},
+    )
+
+
 def _require_workspace_runtime_job_access(request: Request, job_id: str) -> None:
     context = _commercial_runtime_context(request)
     if context is None:
@@ -768,6 +782,7 @@ def register_alpha_routes(
                 if str(job.get("status")) not in ("queued", "pending", "running"):
                     raise HTTPException(status_code=400, detail="only queued or running jobs can be cancelled")
                 cancelled = durable_store.cancel_job(job_id)
+                _audit_runtime_job_action(request, action="runtime_job.cancel", job_id=job_id, kind=str(cancelled["kind"]), status="cancelled")
                 return {"status": "cancelled", "job_id": job_id, "kind": cancelled["kind"]}
             rag_job = _find_rag_ingestion_job(request, job_id)
             if rag_job is None:
@@ -776,6 +791,7 @@ def register_alpha_routes(
             if str(job.get("status")) not in ("queued", "pending", "running"):
                 raise HTTPException(status_code=400, detail="only queued or running jobs can be cancelled")
             commercial_store.cancel_ingestion_job(principal, kb_id, job_id)
+            _audit_runtime_job_action(request, action="runtime_job.cancel", job_id=job_id, kind="rag_ingestion", status="cancelled")
             return {"status": "cancelled", "job_id": job_id, "kind": "rag_ingestion"}
         if job.get("status") not in ("queued", "pending", "running"):
             raise HTTPException(status_code=400, detail="only queued or running jobs can be cancelled")
@@ -785,6 +801,7 @@ def register_alpha_routes(
             store[job_id]["_finished_at"] = time.time()
             snapshot = dict(store[job_id])
         _sync_alpha_job_to_durable(_kind, snapshot)
+        _audit_runtime_job_action(request, action="runtime_job.cancel", job_id=job_id, kind=_kind, status="cancelled")
         return {"status": "cancelled", "job_id": job_id}
 
     @app.post("/runtime/jobs/{job_id}/retry", dependencies=[Depends(require_admin)])
@@ -802,6 +819,7 @@ def register_alpha_routes(
                 if str(job.get("status")) not in ("failed", "error"):
                     raise HTTPException(status_code=400, detail="only failed jobs can be retried")
                 retried = durable_store.mark_retry_requested(job_id)
+                _audit_runtime_job_action(request, action="runtime_job.retry", job_id=job_id, kind=str(retried["kind"]), status="queued")
                 return {"status": "queued", "job_id": job_id, "kind": retried["kind"]}
             rag_job = _find_rag_ingestion_job(request, job_id)
             if rag_job is None:
@@ -810,6 +828,7 @@ def register_alpha_routes(
             if str(job.get("status")) not in ("failed", "error"):
                 raise HTTPException(status_code=400, detail="only failed jobs can be retried")
             commercial_store.retry_ingestion_job(principal, kb_id, job_id)
+            _audit_runtime_job_action(request, action="runtime_job.retry", job_id=job_id, kind="rag_ingestion", status="queued")
             return {"status": "queued", "job_id": job_id, "kind": "rag_ingestion"}
         if job.get("status") not in ("failed", "error"):
             raise HTTPException(status_code=400, detail="only failed jobs can be retried")
@@ -853,6 +872,7 @@ def register_alpha_routes(
 
         _RUNNING_TASKS.add(task)
         task.add_done_callback(_RUNNING_TASKS.discard)
+        _audit_runtime_job_action(request, action="runtime_job.retry", job_id=job_id, kind=kind, status="queued")
         return {"status": "queued", "job_id": job_id}
 
     # -----------------------------------------------------------------------
