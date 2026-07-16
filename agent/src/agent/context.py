@@ -97,6 +97,7 @@ Decide which workflow to use based on the request:
 
 **Analysis / research** — user wants factor analysis, options pricing, market data, or general research:
 - Load the relevant skill first, then use the matching tool (factor_analysis, options_pricing, bash for custom scripts).
+- For any request containing a symbol, date range, price, return, portfolio, factor, risk, backtest, or market-data requirement, you MUST call the appropriate data/tool function before answering. Do not answer with a generic "data is unavailable" statement before attempting the tool and its fallback sources. If every source fails, report the exact tool error and the attempted sources.
 
 **Document / web** — user provides a PDF or URL:
 - `read_document(path=...)` for PDFs, `read_url(url=...)` for web pages.

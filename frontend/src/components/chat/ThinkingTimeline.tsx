@@ -23,10 +23,9 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
     if (!isLatest) setExpanded(false);
   }, [isLatest]);
 
-  const { steps, hasError, isRunning, totalMs, latestTool, latestThinking } = useMemo(() => {
+  const { steps, hasError, isRunning, totalMs, latestTool } = useMemo(() => {
     let totalMs = 0;
     let latestTool = "";
-    let latestThinking = "";
     // Merge tool_call + tool_result pairs into "steps"
     const steps: Array<{
       tool: string;
@@ -38,7 +37,6 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
     }> = [];
 
     for (const m of messages) {
-      if (m.type === "thinking" && m.content) latestThinking = m.content;
       if (m.type === "tool_call") {
         steps.push({ tool: m.tool || "", label: toolLabel(m.tool), status: m.status === "running" ? "running" : "ok", elapsed_ms: undefined, args: m.args });
         if (m.status === "running") latestTool = m.tool || "";
@@ -60,7 +58,6 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
       isRunning: steps.some(s => s.status === "running"),
       totalMs,
       latestTool,
-      latestThinking,
     };
   }, [messages]);
 
@@ -90,15 +87,6 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
           {summaryText}
         </span>
       </button>
-
-      {/* Thinking preview when running but collapsed */}
-      {!expanded && isRunning && latestThinking && (
-        <div className="px-3 pb-2 -mt-1">
-          <p className="text-[11px] text-muted-foreground/40 line-clamp-1 pl-5 italic">
-            {latestThinking.slice(-100)}
-          </p>
-        </div>
-      )}
 
       {/* Expanded step list */}
       {expanded && steps.length > 0 && (
@@ -138,14 +126,6 @@ export const ThinkingTimeline = memo(function ThinkingTimeline({ messages, isLat
         </div>
       )}
 
-      {/* Expanded: show thinking content if any (for Q&A without tools) */}
-      {expanded && steps.length === 0 && latestThinking && (
-        <div className="border-t border-border/30 px-3 py-2">
-          <p className="text-xs text-muted-foreground/50 leading-relaxed line-clamp-4">
-            {latestThinking}
-          </p>
-        </div>
-      )}
     </div>
   );
 });

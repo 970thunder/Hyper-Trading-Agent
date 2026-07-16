@@ -36,8 +36,12 @@ function groupMessages(msgs: AgentMessage[]): MsgGroup[] {
   let buf: AgentMessage[] = [];
   const flush = () => { if (buf.length) { out.push({ kind: "timeline", msgs: [...buf] }); buf = []; } };
   for (const m of msgs) {
-    if (["thinking", "tool_call", "tool_result", "compact"].includes(m.type)) {
+    // Hidden provider reasoning is never rendered. Tool calls/results remain
+    // auditable, but each call gets its own row like a terminal operation.
+    if (m.type === "thinking") continue;
+    if (["tool_call", "tool_result", "compact"].includes(m.type)) {
       buf.push(m);
+      if (m.type === "tool_result" || m.type === "compact") flush();
     } else {
       flush();
       out.push({ kind: "single", msg: m });
@@ -602,6 +606,17 @@ export function Agent() {
       const latest = [...act().toolCalls].reverse().find((tc) => tc.tool === toolName && tc.status === "running");
       return latest?.id || toolName;
     };
+    const applyPlanStep = (d: Record<string, unknown>) => {
+      const step = d.step as ExecutionPlanStep | undefined;
+      if (!step?.step_id) return;
+      setExecutionPlan((current) => {
+        const index = current.findIndex((item) => item.step_id === step.step_id);
+        if (index < 0) return [...current, step];
+        const next = [...current];
+        next[index] = { ...next[index], ...step };
+        return next;
+      });
+    };
 
     connect(api.sseUrl(sid, { replay: "active" }), {
       text_delta: (d) => {
@@ -655,6 +670,7 @@ export function Agent() {
           elapsed_s: undefined,
           progress: undefined,
         });
+        scrollToBottom();
         if (toolName === "run_swarm") {
           const fallback = buildSwarmStatusFromToolResultPreview(String(d.preview || ""));
           if (fallback && !act().messages.some((m) => m.type === "swarm_status" && m.swarmRunId === fallback.runId)) {
@@ -738,6 +754,36 @@ export function Agent() {
       "plan.updated": (d) => {
         touch();
         setExecutionPlan(Array.isArray(d.steps) ? d.steps as unknown as ExecutionPlanStep[] : []);
+      },
+
+      "step.started": (d) => {
+        touch();
+        applyPlanStep(d);
+        scrollToBottom();
+      },
+
+      "step.completed": (d) => {
+        touch();
+        applyPlanStep(d);
+        scrollToBottom();
+      },
+
+      "step.failed": (d) => {
+        touch();
+        applyPlanStep(d);
+        scrollToBottom();
+      },
+
+      "step.blocked": (d) => {
+        touch();
+        applyPlanStep(d);
+        scrollToBottom();
+      },
+
+      "snapshot.saved": (d) => { touch(); void d; },
+      "mcp.warning": (d) => {
+        touch();
+        if (d.message) toast.warning(String(d.message));
       },
 
       "approval.required": (d) => {

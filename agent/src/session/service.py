@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import json
 import re
 import threading
 from datetime import datetime, timedelta, timezone
@@ -624,9 +625,17 @@ class SessionService:
             llm = ChatLLM()
             loop = asyncio.get_running_loop()
             try:
+                def emit_delta(delta: str) -> None:
+                    if delta:
+                        self.event_bus.emit(
+                            attempt.session_id,
+                            "text_delta",
+                            {"attempt_id": attempt.attempt_id, "delta": delta},
+                        )
+
                 response = await loop.run_in_executor(
                     _AGENT_EXECUTOR,
-                    lambda: llm.stream_chat(request_messages, tools=None),
+                    lambda: llm.stream_chat(request_messages, tools=None, on_text_chunk=emit_delta),
                 )
             except ProviderStreamError as exc:
                 return {"status": "error", "reason": exc.user_message, "run_dir": ""}
@@ -644,14 +653,38 @@ class SessionService:
         headers = {"Authorization": f"Bearer {provider['api_key']}"}
         timeout_seconds = max(5, min(int(provider.get("timeout_seconds") or 30), 60))
         try:
+            payload["stream"] = True
+            chunks: list[str] = []
             async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-                response = await client.post(endpoint, headers=headers, json=payload)
-            response.raise_for_status()
-            body = response.json()
-            choices = body.get("choices") if isinstance(body, dict) else []
-            message = choices[0].get("message") if isinstance(choices, list) and choices else {}
-            content = message.get("content") if isinstance(message, dict) else ""
-            text = str(content or "").strip()
+                async with client.stream("POST", endpoint, headers=headers, json=payload) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        raw = line[5:].strip()
+                        if not raw or raw == "[DONE]":
+                            continue
+                        try:
+                            body = json.loads(raw)
+                        except json.JSONDecodeError:
+                            continue
+                        choices = body.get("choices") if isinstance(body, dict) else []
+                        choice = choices[0] if isinstance(choices, list) and choices else {}
+                        delta = choice.get("delta") if isinstance(choice, dict) else {}
+                        content = delta.get("content") if isinstance(delta, dict) else ""
+                        if isinstance(content, list):
+                            content = "".join(
+                                str(item.get("text") or "") for item in content if isinstance(item, dict)
+                            )
+                        text_delta = str(content or "")
+                        if text_delta:
+                            chunks.append(text_delta)
+                            self.event_bus.emit(
+                                attempt.session_id,
+                                "text_delta",
+                                {"attempt_id": attempt.attempt_id, "delta": text_delta},
+                            )
+            text = "".join(chunks).strip()
             if not text:
                 return {"status": "error", "reason": "The model returned no response text.", "run_dir": ""}
             return {"status": "success", "content": text, "run_dir": ""}

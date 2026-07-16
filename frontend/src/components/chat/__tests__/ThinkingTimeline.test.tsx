@@ -72,16 +72,13 @@ describe("ThinkingTimeline", () => {
     expect(screen.getByText(/Done · 1 steps/)).toBeInTheDocument();
   });
 
-  it("shows thinking content when expanded with no tools", async () => {
-    const user = userEvent.setup();
+  it("does not render provider reasoning content", () => {
     const msgs: AgentMessage[] = [
       makeMsg({ type: "thinking", content: "Let me analyze this strategy carefully." }),
     ];
 
     render(<ThinkingTimeline messages={msgs} />);
-
-    await user.click(screen.getByRole("button"));
-    expect(screen.getByText("Let me analyze this strategy carefully.")).toBeInTheDocument();
+    expect(screen.queryByText("Let me analyze this strategy carefully.")).not.toBeInTheDocument();
   });
 
   it("starts expanded when isLatest is true", () => {

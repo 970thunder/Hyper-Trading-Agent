@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
-  Brain,
   CheckCircle2,
   Clock3,
   Database,
@@ -82,8 +81,6 @@ function statusLabel(status: ToolCallEntry["status"], t: any): string {
 
 export function AgentExecutionTrace({
   toolCalls,
-  reasoningActive = false,
-  reasoningChars = 0,
   startedAt = null,
   plan = [],
   approval = null,
@@ -98,13 +95,13 @@ export function AgentExecutionTrace({
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
-    if (!reasoningActive && !toolCalls.some((item) => item.status === "running")) return;
+    if (!toolCalls.some((item) => item.status === "running")) return;
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [reasoningActive, toolCalls]);
+  }, [toolCalls]);
 
   const elapsedTotal = startedAt ? formatDuration(now - startedAt) : "";
-  const hasActivity = reasoningActive || reasoningChars > 0 || toolCalls.length > 0 || plan.length > 0 || Boolean(approval);
+  const hasActivity = toolCalls.length > 0 || plan.length > 0 || Boolean(approval) || outputActive;
 
   const summary = useMemo(() => {
     const running = toolCalls.filter((item) => item.status === "running").length;
@@ -112,7 +109,7 @@ export function AgentExecutionTrace({
     if (running > 0) return t("executionTrace.runningSummary", { running, total: toolCalls.length });
     if (failed > 0) return t("executionTrace.failedSummary", { failed, total: toolCalls.length });
     if (toolCalls.length > 0) return t("executionTrace.doneSummary", { total: toolCalls.length });
-    return t("executionTrace.reasoning");
+    return t("executionTrace.running");
   }, [t, toolCalls]);
 
   const stageItems = [
@@ -131,8 +128,8 @@ export function AgentExecutionTrace({
     {
       key: "drafting",
       label: String(t("executionTrace.layers.drafting")),
-      active: outputActive || reasoningActive || reasoningChars > 0,
-      count: Number(Boolean(outputActive || reasoningActive || reasoningChars > 0)),
+      active: outputActive,
+      count: Number(Boolean(outputActive)),
     },
   ];
 
@@ -250,28 +247,6 @@ export function AgentExecutionTrace({
         </div>
       )}
 
-      {(reasoningActive || reasoningChars > 0) && (
-        <div className="flex gap-2 rounded-lg border border-border/55 bg-background/80 px-2.5 py-2 text-xs shadow-sm transition-colors hover:border-primary/30">
-          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-            {reasoningActive ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-[10px] text-muted-foreground">{t("executionTrace.step", { index: 1 })}</span>
-              <span className="font-medium text-foreground">{t("executionTrace.reasoning")}</span>
-              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                {reasoningActive ? t("executionTrace.running") : t("executionTrace.done")}
-              </span>
-              {reasoningChars > 0 && (
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  {t("executionTrace.reasoningChars", { count: reasoningChars })}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {toolCalls.map((entry, index) => {
         const progress = entry.progress;
         const argsSummary = summarizeArgs(entry.arguments);
@@ -279,7 +254,7 @@ export function AgentExecutionTrace({
           ? (entry.elapsed_s != null ? `${entry.elapsed_s.toFixed(0)}s` : formatDuration(now - entry.timestamp))
           : (entry.elapsed_ms != null ? formatDuration(entry.elapsed_ms) : "");
         const kind = toolKind(entry.tool);
-        const stepNumber = index + (reasoningActive || reasoningChars > 0 ? 2 : 1);
+        const stepNumber = index + 1;
         return (
           <div key={entry.id} className="flex gap-2 rounded-lg border border-border/55 bg-background/80 px-2.5 py-2 text-xs shadow-sm transition-colors hover:border-primary/30">
             <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted">
