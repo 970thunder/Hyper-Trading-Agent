@@ -21,7 +21,7 @@ export function AppShell({ desktopSidebar, mobileHeader, banner, children, class
           {mobileHeader}
         </header>
         {banner}
-        <main className={cn("min-h-0 min-w-0 flex-1 overflow-auto", mainClassName)}>
+        <main className={cn("workspace-main min-h-0 min-w-0 flex-1 overflow-auto", mainClassName)}>
           {children}
         </main>
       </div>

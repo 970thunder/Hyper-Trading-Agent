@@ -104,6 +104,11 @@
   --chart-axis: 0 0% 75%;
   --chart-compare-a: #25b1bf;
   --chart-compare-b: #de283b;
+
+  /* Global workspace background: broad fields, never a decorative orb. */
+  --workspace-grid: 200 22% 84%;
+  --workspace-cyan: 188 70% 91%;
+  --workspace-coral: 354 76% 93%;
 }
 
 .dark {
@@ -159,4 +164,8 @@
   --chart-axis: 210 3% 38%;
   --chart-compare-a: #ff983f;
   --chart-compare-b: #25b1bf;
+
+  --workspace-grid: 210 5% 31%;
+  --workspace-cyan: 188 35% 22%;
+  --workspace-coral: 24 45% 21%;
 }
