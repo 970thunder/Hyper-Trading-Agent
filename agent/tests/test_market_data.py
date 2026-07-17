@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import src.market_data as market_data
 from src.market_data import (
     DEFAULT_MAX_ROWS,
     _json_safe,
@@ -22,6 +23,8 @@ from src.market_data import (
     detect_source,
     fetch_market_data,
     fetch_market_data_json,
+    fetch_market_data_snapshot,
+    get_loader,
 )
 
 
@@ -244,3 +247,115 @@ def test_fetch_json_rejects_nan_via_allow_nan_false() -> None:
     )
     parsed = json.loads(payload)
     assert parsed["A.US"][0]["close"] is None
+
+
+# --------------------------------------------------------------------------
+# fetch_market_data_snapshot (HTTP-facing provenance contract)
+# --------------------------------------------------------------------------
+
+
+def test_snapshot_exposes_provenance_and_quality_metadata() -> None:
+    class _SnapshotLoader(_StubLoader):
+        name = "resolved-yahoo"
+
+    snapshot = fetch_market_data_snapshot(
+        codes=["AAPL.US"],
+        start_date="2026-01-01",
+        end_date="2026-01-02",
+        source="yahoo",
+        loader_resolver=lambda _source: _SnapshotLoader,
+    )
+
+    assert snapshot["unresolved"] == []
+    assert snapshot["query"]["symbols"] == ["AAPL.US"]
+    assert len(snapshot["series"]) == 1
+    series = snapshot["series"][0]
+    assert series["requested_source"] == "yahoo"
+    assert series["source"] == "resolved-yahoo"
+    assert series["quality"]["source_bars"] == 2
+    assert series["quality"]["first_bar"] == "2026-01-01T00:00:00"
+    assert series["quality"]["last_bar"] == "2026-01-02T00:00:00"
+    assert series["quality"]["status"] == "complete"
+
+
+def test_snapshot_marks_unresolved_symbols_when_loader_returns_no_frames() -> None:
+    snapshot = fetch_market_data_snapshot(
+        codes=["AAPL.US"],
+        start_date="2026-01-01",
+        end_date="2026-01-02",
+        source="yahoo",
+        loader_resolver=lambda _source: _PartialLoader,
+    )
+
+    # _PartialLoader returns its first requested symbol, so one-symbol input is resolved.
+    assert snapshot["unresolved"] == []
+
+    class _EmptyLoader:
+        name = "empty"
+
+        def fetch(self, *args, **kwargs):
+            return {}
+
+    empty_snapshot = fetch_market_data_snapshot(
+        codes=["AAPL.US"],
+        start_date="2026-01-01",
+        end_date="2026-01-02",
+        source="yahoo",
+        loader_resolver=lambda _source: _EmptyLoader,
+    )
+    assert empty_snapshot["series"] == []
+    assert empty_snapshot["unresolved"] == ["AAPL.US"]
+
+
+def test_snapshot_cache_reuses_first_completed_result(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_MARKET_CACHE", "true")
+    monkeypatch.setenv("VIBE_TRADING_MARKET_CACHE_ROOT", str(tmp_path))
+    calls = 0
+
+    def fake_uncached(**kwargs):
+        nonlocal calls
+        calls += 1
+        return {
+            "query": {"symbols": kwargs["codes"]},
+            "series": [],
+            "unresolved": [],
+            "generated_at": "2025-01-02T00:00:00+00:00",
+            "cache": {},
+        }
+
+    monkeypatch.setattr(market_data, "_fetch_market_data_snapshot_uncached", fake_uncached)
+    first = fetch_market_data_snapshot(
+        codes=["BTC-USDT"], start_date="2025-01-01", end_date="2025-01-02", loader_resolver=get_loader
+    )
+    second = fetch_market_data_snapshot(
+        codes=["BTC-USDT"], start_date="2025-01-01", end_date="2025-01-02", loader_resolver=get_loader
+    )
+
+    assert calls == 1
+    assert first["query_cache"]["status"] == "miss"
+    assert second["query_cache"]["status"] == "hit"
+    assert second["query_cache"]["origin"] == "query"
+
+
+def test_symbol_search_cache_reuses_shared_result(monkeypatch) -> None:
+    import json
+
+    from src.api import market_data_routes
+    from src.tools.symbol_search_tool import SymbolSearchTool
+
+    calls = []
+
+    def fake_execute(self, **kwargs):
+        calls.append(kwargs)
+        return json.dumps({"ok": True, "data": {"query": kwargs["query"], "count": 1, "candidates": [{"symbol": "AAPL.US", "name": "Apple", "market": "us"}], "sources": {"fake": "ok"}}})
+
+    monkeypatch.setattr(SymbolSearchTool, "execute", fake_execute)
+    market_data_routes._symbol_search_cache.clear()
+
+    first = market_data_routes.search_market_symbols("apple", 8)
+    second = market_data_routes.search_market_symbols("apple", 8)
+
+    assert len(calls) == 1
+    assert first["query_cache"]["status"] == "miss"
+    assert second["query_cache"]["status"] == "hit"
+    assert first["candidates"][0]["timezone"] == "America/New_York"

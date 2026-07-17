@@ -7,7 +7,7 @@ import {
   DOCS_VERSIONS
 } from "/docs/content.js";
 
-const REPO = "HKUDS/Vibe-Trading";
+const REPO = "970thunder/Hyper-Trading-Agent";
 const API = `https://api.github.com/repos/${REPO}`;
 const STARS_CACHE_KEY = "vibetrading-github-stars";
 const STARS_TTL_MS = 12 * 60 * 60 * 1000;
@@ -78,10 +78,10 @@ function resolvePage(pageId) {
 }
 
 function setMeta(page, version) {
-  document.title = `${page.title} - Vibe-Trading Docs`;
-  const description = page.description || page.lead || "Vibe-Trading documentation.";
+  document.title = `${page.title} - Hyper-Trading-Agent Docs`;
+  const description = page.description || page.lead || "Hyper-Trading-Agent documentation.";
   document.querySelector('meta[name="description"]')?.setAttribute("content", description);
-  document.querySelector('meta[property="og:title"]')?.setAttribute("content", `${page.title} - Vibe-Trading Docs`);
+  document.querySelector('meta[property="og:title"]')?.setAttribute("content", `${page.title} - Hyper-Trading-Agent Docs`);
   document.querySelector('meta[property="og:description"]')?.setAttribute("content", description);
   const canonical = `https://vibetrading.wiki${canonicalPath(page.id, version)}`;
   document.querySelector('meta[property="og:url"]')?.setAttribute("content", canonical);

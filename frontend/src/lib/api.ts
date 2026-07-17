@@ -102,7 +102,7 @@ export const api = {
   },
   getRunCode: (id: string) => request<Record<string, string>>(`/runs/${id}/code`),
   getRunPine: (id: string) => request<PineScriptResult>(`/runs/${id}/pine`),
-  listSessions: () => request<SessionItem[]>("/sessions"),
+  listSessions: (limit?: number) => request<SessionItem[]>(`/sessions${limit ? `?limit=${encodeURIComponent(String(limit))}` : ""}`),
   createSession: (title?: string, config?: Record<string, unknown>) =>
     request<SessionItem>("/sessions", { method: "POST", body: JSON.stringify({ title: title || "", config }) }),
   deleteSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}`, { method: "DELETE" }),
@@ -200,6 +200,21 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
+  listMarketDataSources: () => request<MarketDataSourcesResponse>("/market-data/sources"),
+  searchMarketSymbols: (query: string, limit = 8) => request<MarketSymbolSearchResponse>(`/market-data/symbol-search?q=${encodeURIComponent(query)}&limit=${limit}`),
+  listPortfolioProfiles: () => request<PortfolioProfilesResponse>("/portfolio/profiles"),
+  getPortfolioSnapshot: (profileId?: string) => request<PortfolioSnapshot>(`/portfolio/snapshot${profileId ? `?profile_id=${encodeURIComponent(profileId)}` : ""}`),
+  getMarketDataHistory: (params: MarketDataHistoryQuery) => {
+    const query = new URLSearchParams({
+      symbols: params.symbols.join(","),
+      start: params.start,
+      end: params.end,
+      source: params.source || "auto",
+      interval: params.interval || "1D",
+    });
+    if (params.max_rows) query.set("max_rows", String(params.max_rows));
+    return request<MarketDataHistoryResponse>(`/market-data/history?${query.toString()}`);
+  },
   getKnowledgeStats: () => request<KnowledgeStats>("/knowledge/stats"),
   listKnowledgeDocuments: () => request<KnowledgeDocument[]>("/knowledge/documents"),
   addKnowledgeDocument: (body: AddKnowledgeDocumentRequest) =>
@@ -386,6 +401,8 @@ export const api = {
     const qs = q.toString();
     return request<AuditLog[]>(`/audit-logs${qs ? `?${qs}` : ""}`);
   },
+  getAdminConversationAudit: (limit = 200) =>
+    request<AdminConversationAuditResponse>(`/admin/audit/conversations?limit=${encodeURIComponent(String(limit))}`),
   listModelUsage: (limit?: number) => request<ModelUsage[]>(`/usage/model-calls${limit ? `?limit=${encodeURIComponent(String(limit))}` : ""}`),
   getUsageSummary: () => request<OrganizationUsageSummary>("/usage/summary"),
   getUsageTimeseries: (days = 30) => request<UsageTimeseriesResponse>(`/usage/timeseries?days=${encodeURIComponent(String(days))}`),
@@ -629,6 +646,141 @@ export interface DataSourceSettings {
 export interface UpdateDataSourceSettingsRequest {
   tushare_token?: string;
   clear_tushare_token?: boolean;
+}
+
+export interface MarketDataHistoryQuery {
+  symbols: string[];
+  start: string;
+  end: string;
+  source?: string;
+  interval?: string;
+  max_rows?: number;
+}
+
+export interface MarketDataBar {
+  trade_date: string;
+  open?: number;
+  high?: number;
+  low?: number;
+  close?: number;
+  volume?: number;
+}
+
+export interface MarketDataQuality {
+  requested_start: string;
+  requested_end: string;
+  first_bar: string | null;
+  last_bar: string | null;
+  source_bars: number;
+  returned_bars: number;
+  truncated: boolean;
+  max_gap_days: number;
+  status: "complete" | "partial";
+}
+
+export interface MarketDataSeries {
+  symbol: string;
+  requested_source: string;
+  source: string;
+  interval: string;
+  cache_hit: boolean;
+  bars: MarketDataBar[];
+  quality: MarketDataQuality;
+}
+
+export interface MarketDataHistoryResponse {
+  query: MarketDataHistoryQuery;
+  series: MarketDataSeries[];
+  unresolved: string[];
+  generated_at: string;
+  cache: MarketDataCache;
+  query_cache?: MarketDataQueryCache;
+}
+
+export interface MarketDataQueryCache {
+  status: "hit" | "miss";
+  saved_at: string;
+  ttl_seconds: number | null;
+  origin?: "query" | "prewarm";
+}
+
+export interface MarketDataSource {
+  id: string;
+  label: string;
+  available: boolean;
+  requires_auth: boolean;
+  markets: string[];
+  fallback_markets: string[];
+  error: string;
+}
+
+export interface MarketDataCache {
+  enabled: boolean;
+  root: string;
+  policy: string;
+}
+
+export interface MarketDataSourcesResponse {
+  sources: MarketDataSource[];
+  fallback_chains: Record<string, string[]>;
+  cache: MarketDataCache;
+}
+
+export interface MarketSymbolCandidate {
+  symbol: string;
+  name: string | null;
+  market: string | null;
+  type: string | null;
+  source: string;
+  cik?: string | null;
+  exchange?: string;
+  timezone?: string;
+  session?: string;
+}
+
+export interface MarketSymbolSearchResponse {
+  query: string;
+  count: number;
+  candidates: MarketSymbolCandidate[];
+  sources: Record<string, string>;
+  query_cache: { status: "hit" | "miss"; ttl_seconds: number };
+}
+
+export interface PortfolioProfile {
+  id: string;
+  label: string;
+  connector: string;
+  environment: string;
+}
+
+export interface PortfolioProfilesResponse { profiles: PortfolioProfile[]; }
+
+export interface PortfolioPosition {
+  symbol: string;
+  quantity: number | null;
+  market_value: number;
+  current_price: number | null;
+  unrealized_pnl: number | null;
+  currency: string;
+  weight: number;
+}
+
+export interface PortfolioSnapshot {
+  profile: PortfolioProfile;
+  as_of: string;
+  summary: {
+    equity: number | null;
+    cash: number | null;
+    gross_exposure: number;
+    net_exposure: number;
+    leverage: number | null;
+    unrealized_pnl: number | null;
+    position_count: number;
+    top_concentration: number | null;
+    risk_level: "low" | "moderate" | "high" | "critical";
+  };
+  positions: PortfolioPosition[];
+  drawdown: { available: boolean; value: number | null; reason?: string };
 }
 
 export interface KnowledgeStats {
@@ -1275,7 +1427,28 @@ export interface ModelUsage {
   session_id?: string;
   attempt_id?: string;
   run_id?: string;
+  metadata?: Record<string, unknown>;
   created_at: string;
+}
+
+export interface AdminConversationAudit {
+  session: SessionItem;
+  actor: Pick<CommercialPrincipal, "user_id" | "email"> & { display_name: string };
+  messages: MessageItem[];
+  usage: ModelUsage[];
+  events: AuditLog[];
+  metrics: {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+    cache_tokens: number;
+    estimated_cost: number;
+  };
+}
+
+export interface AdminConversationAuditResponse {
+  conversations: AdminConversationAudit[];
+  events: AuditLog[];
 }
 
 export interface OrganizationUsagePolicy {

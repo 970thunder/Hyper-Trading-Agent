@@ -22,7 +22,7 @@ except ImportError:
     httpx = None  # type: ignore
 
 DEFAULT_CODEX_URL = "https://chatgpt.com/backend-api/codex/responses"
-DEFAULT_ORIGINATOR = "vibe-trading"
+DEFAULT_ORIGINATOR = "hyper-trading"
 
 
 @dataclass
@@ -104,14 +104,14 @@ def _get_codex_token() -> Any:
     except ImportError as exc:
         raise RuntimeError(
             "OpenAI Codex OAuth requires oauth-cli-kit. Install dependencies, then run: "
-            "vibe-trading provider login openai-codex"
+            "hyper-trading provider login openai-codex"
         ) from exc
     try:
         token = get_token()
     except Exception as exc:
-        raise RuntimeError("OpenAI Codex is not logged in. Run: vibe-trading provider login openai-codex") from exc
+        raise RuntimeError("OpenAI Codex is not logged in. Run: hyper-trading provider login openai-codex") from exc
     if not (token and getattr(token, "access", None) and getattr(token, "account_id", None)):
-        raise RuntimeError("OpenAI Codex is not logged in. Run: vibe-trading provider login openai-codex")
+        raise RuntimeError("OpenAI Codex is not logged in. Run: hyper-trading provider login openai-codex")
     return token
 
 
@@ -141,7 +141,7 @@ def _build_headers(account_id: str, access_token: str) -> dict[str, str]:
         "chatgpt-account-id": account_id,
         "OpenAI-Beta": "responses=experimental",
         "originator": DEFAULT_ORIGINATOR,
-        "User-Agent": "vibe-trading (python)",
+        "User-Agent": "hyper-trading (python)",
         "accept": "text/event-stream",
         "content-type": "application/json",
     }
@@ -336,7 +336,7 @@ def _message_chunks_from_events(events: Iterable[dict[str, Any]]) -> Iterable[Co
 
 
 class OpenAICodexLLM:
-    """Minimal LangChain-compatible adapter for Vibe-Trading's ChatLLM."""
+    """Minimal LangChain-compatible adapter for Hyper-Trading-Agent's ChatLLM."""
 
     def __init__(
         self,

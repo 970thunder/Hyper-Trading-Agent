@@ -1,6 +1,6 @@
-# Contributing to Vibe-Trading
+# Contributing to Hyper-Trading-Agent
 
-Vibe-Trading is a natural-language finance research AI agent (FastAPI + ReAct
+Hyper-Trading-Agent is a natural-language finance research AI agent (FastAPI + ReAct
 agent backend, Vite+React frontend, vectorized daily and options backtesting).
 This guide covers contribution governance: the Developer Certificate of Origin
 (DCO) sign-off requirement, the reviewer checklist for Alpha Zoo factor
@@ -132,7 +132,7 @@ merging. Authors are strongly encouraged to self-check first.
    ```
 4. (Optional but recommended) Run a quick bench:
    ```bash
-   vibe-trading alpha bench --zoo <zoo_id> --universe csi300 --period 2020-2025
+   hyper-trading alpha bench --zoo <zoo_id> --universe csi300 --period 2020-2025
    ```
 5. Open a PR. Every commit must include `Signed-off-by:` (use
    `git commit -s`). Reviewers will walk the checklist above.

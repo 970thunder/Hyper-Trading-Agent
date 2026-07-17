@@ -5,7 +5,19 @@
   "charts": {
     "noPriceData": "No price data",
     "noCorrelationData": "No correlation data",
-    "noEquityData": "No equity data"
+    "noEquityData": "No equity data",
+    "open": "Open",
+    "high": "High",
+    "low": "Low",
+    "close": "Close",
+    "volume": "Volume",
+    "quantity": "Quantity",
+    "saveImage": "Save image",
+    "zoom": "Zoom",
+    "reset": "Reset",
+    "indicators": "Indicators ({{count}})",
+    "channel": "Channel",
+    "clearIndicators": "Clear all indicators"
   },
   "layout": {
     "home": "Home",
@@ -670,6 +682,8 @@
     "forbiddenDescription": "This workspace is reserved for system administrators.",
     "eyebrow": "System operations",
     "title": "Platform administration",
+    "productLabel": "Platform console",
+    "backToApp": "Back to app",
     "description": "Govern users, organizations, knowledge assets, ingestion operations, and system-wide audit activity.",
     "refresh": "Refresh",
     "loadError": "Platform operations could not be loaded.",
@@ -1849,7 +1863,7 @@
     },
     "audit": {
       "title": "Audit log",
-      "description": "Inspect authentication, model, knowledge, tool, approval, and administration events across the organization.",
+      "description": "Review organization conversations, model usage, and operational events. Conversation content is available only to authorized organization administrators.",
       "loadFailed": "Failed to load audit events",
       "search": "Search audit events",
       "searchPlaceholder": "Search action, actor, resource, or metadata",
@@ -1858,7 +1872,33 @@
       "actor": "Actor",
       "resource": "Resource",
       "time": "Time",
-      "empty": "No audit events match the current search."
+      "empty": "No audit events match the current search.",
+      "conversationCount": "Conversations",
+      "modelCallCount": "Model calls",
+      "inputTokens": "Input tokens",
+      "outputTokens": "Output tokens",
+      "totalTokens": "Total tokens",
+      "cacheTokens": "Cache read",
+      "conversations": "Conversations",
+      "events": "Events",
+      "conversation": "Conversation",
+      "member": "Member",
+      "allMembers": "All members",
+      "calls": "Calls",
+      "lastActivity": "Last activity",
+      "actions": "Actions",
+      "untitledConversation": "Untitled conversation",
+      "active": "Active",
+      "notReported": "Not reported",
+      "viewConversation": "View conversation",
+      "conversationsEmpty": "No conversations match the current filters.",
+      "messages": "Messages",
+      "modelCalls": "Model calls",
+      "messagesLoadFailed": "Failed to load conversation messages",
+      "messagesEmpty": "No stored messages are available for this conversation.",
+      "modelCallsEmpty": "No model calls have been recorded for this conversation.",
+      "sessionEventsEmpty": "No linked audit events are available for this conversation.",
+      "latency": "Latency"
     },
     "usage": {
       "title": "Model usage",
@@ -2107,5 +2147,12 @@
       "configuration": "Configuration",
       "access": "Access"
     }
-  }
+  },
+  "marketData": {
+    "prewarmed": "Prewarmed at startup.",
+    "navigation": "Market data", "title": "Historical prices and asset comparison", "subtitle": "Query standardized OHLCV for equities and crypto, with source provenance, cache status, and completeness details.", "query": "Market query", "queryDescription": "Separate symbols with commas, spaces, or semicolons. Examples: BTC-USDT, AAPL.US, 600519.SH.", "symbols": "Symbols", "start": "Start", "end": "End", "source": "Source", "searchSources": "Search sources", "auto": "Auto select", "autoDescription": "Choose the preferred source per market and fall back when unavailable", "general": "General", "available": "Available", "setupNeeded": "Setup needed", "unavailable": "Unavailable", "loading": "Loading", "load": "Load data", "history": "History", "compare": "Compare", "sources": "Sources", "noQuery": "No market query yet", "noQueryDescription": "Enter assets and a date range to load historical prices.", "twoAssets": "Two assets are required", "twoAssetsDescription": "Load two or more symbols to compare normalized performance.",
+    "errors": { "sources": "Unable to load the data source catalog.", "noSymbols": "Enter at least one asset symbol.", "invalidDates": "The start date must not be after the end date.", "noData": "No usable bars were returned. Check the symbols or source configuration.", "request": "Market data request failed." },
+    "actualSource": "Actual source", "requested": "requested", "chartAsset": "Chart asset", "auditedQueries": "Audited queries", "auditedQueriesDescription": "Symbols, query parameters, resolved source, and unresolved assets are retained in the organization audit log.", "dataQuality": "Data quality", "complete": "Complete", "partial": "Partial", "sourceBars": "Source bars", "cache": "Cache", "hit": "Hit", "live": "Live", "firstBar": "First bar", "maxGap": "Max gap", "days": "{{count}} days", "truncated": "The response was sampled at the chart limit. Narrow the date range to inspect every bar.", "normalizedPerformance": "Normalized performance", "normalizedDescription": "Each asset starts at 100 on its first valid close, so different markets and quote currencies can be compared directly.", "comparisonSummary": "Comparison summary", "asset": "Asset", "return": "Return", "bars": "Bars", "registeredSources": "Registered sources", "registeredSourcesDescription": "Availability is checked in the current runtime. Credentialed sources join the fallback chain only after configuration succeeds.", "refresh": "Refresh", "status": "Status", "markets": "Markets", "fallbackMarkets": "Fallback markets", "localCache": "Local cache", "cacheLoading": "Loading cache policy", "fallbackOrder": "Fallback order", "fallbackDescription": "Providers are attempted from left to right.", "retry": "Retry", "barCount": "{{count}} bars", "queryCache": "Shared query cache", "queryCacheHit": "Shared result reused", "queryCacheMiss": "Fresh result saved for reuse", "queryCacheDescription": "Saved {{savedAt}}. Cache lifetime: {{ttl}}.", "noExpiry": "no expiry", "seconds": "{{count}} seconds", "cachePolicy": "Completed daily requests are shared across users. Requests that include today are refreshed after a short lifetime.", "normalizedChartLabel": "Normalized multi-asset performance chart", "marketLabels": { "a_share": "China A-shares", "us_equity": "US equities", "hk_equity": "Hong Kong equities", "crypto": "Crypto assets", "forex": "Foreign exchange", "fund": "Funds", "futures": "Futures", "macro": "Macroeconomics" }
+  },
+  "portfolio": { "navigation": "Portfolio", "title": "Portfolio risk", "subtitle": "Read-only account and position snapshot. This workspace cannot place, modify, or cancel orders.", "connection": "Connection", "searchConnections": "Search connections", "refresh": "Refresh", "loading": "Loading portfolio", "loadError": "Portfolio data could not be loaded for the selected connection.", "equity": "Equity", "cash": "Cash", "grossExposure": "Gross exposure", "netExposure": "Net exposure", "unrealizedPnl": "Unrealized PnL", "positions": "Positions", "positionsDescription": "{{count}} normalized positions from the configured connection.", "asset": "Asset", "quantity": "Quantity", "value": "Market value", "weight": "Weight", "riskSnapshot": "Risk snapshot", "leverage": "Gross leverage", "topConcentration": "Top concentration", "drawdown": "Drawdown", "drawdownUnavailable": "Drawdown requires retained holdings snapshots and is not calculated from one broker read.", "risk": { "low": "Low concentration", "moderate": "Moderate concentration", "high": "High concentration", "critical": "Critical concentration" } }
 }

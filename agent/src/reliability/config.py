@@ -35,4 +35,4 @@ def artifact_root() -> Path:
     raw = os.getenv("VIBE_TRADING_ARTIFACT_ROOT")
     if raw:
         return Path(os.path.expandvars(os.path.expanduser(raw))).resolve(strict=False)
-    return (Path.home() / ".vibe-trading" / "artifacts").resolve(strict=False)
+    return (Path.home() / ".hyper-trading-agent" / "artifacts").resolve(strict=False)

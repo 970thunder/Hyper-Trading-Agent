@@ -136,7 +136,7 @@ def config_path() -> Path:
 
 
 def load_config() -> AlpacaConfig:
-    """Load Alpaca settings from ``~/.vibe-trading/alpaca.json``."""
+    """Load Alpaca settings from ``~/.hyper-trading-agent/alpaca.json``."""
     path = config_path()
     if not path.exists():
         return AlpacaConfig()

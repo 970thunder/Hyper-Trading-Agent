@@ -13,7 +13,7 @@ Output contract — JSON envelope:
      "n_skipped": int,
      "top": [{"id": ..., "ic_mean": ..., "ir": ..., ...}, ...]}
 
-Cache integrity note: the universe panel cache lives in ``~/.vibe-trading/cache/``
+Cache integrity note: the universe panel cache lives in ``~/.hyper-trading-agent/cache/``
 as pickle blobs. Each pickle is paired with a ``<name>.sha256`` sidecar; on
 load we recompute the digest and refuse the cache on mismatch. This guards
 against accidental corruption (truncated writes, partial syncs) — it is NOT a
@@ -94,7 +94,7 @@ def _load_universe_panel(
         universe: ``csi300`` | ``sp500`` | ``btc-usdt``.
         period: ``YYYY-YYYY`` or ``YYYY-MM-DD/YYYY-MM-DD``.
         use_cache: When True (default) reuse a pickle in
-            ``~/.vibe-trading/cache/`` if the same universe+period was fetched
+            ``~/.hyper-trading-agent/cache/`` if the same universe+period was fetched
             before. Set to False to force a re-fetch.
 
     Raises:
@@ -107,7 +107,7 @@ def _load_universe_panel(
         )
     start, end = _parse_period(period)
 
-    cache_dir = Path.home() / ".vibe-trading" / "cache"
+    cache_dir = Path.home() / ".hyper-trading-agent" / "cache"
     cache_path = cache_dir / f"{universe}_{start}_{end}.pkl"
     if use_cache and cache_path.is_file():
         cached = _read_pickle_cache(cache_path)
@@ -386,8 +386,8 @@ def _fetch_sp500_constituents() -> list[str]:
             url,
             headers={
                 "User-Agent": (
-                    "Vibe-Trading/0.1 (research bench; "
-                    "https://github.com/HKUDS/Vibe-Trading)"
+                    "Hyper-Trading-Agent/0.1 (research bench; "
+                    "https://github.com/970thunder/Hyper-Trading-Agent)"
                 )
             },
             timeout=20,
@@ -683,7 +683,7 @@ def _render_html_manual(ctx: dict[str, Any]) -> str:
 
 
 def _default_output_dir() -> Path:
-    return Path.home() / ".vibe-trading" / "reports"
+    return Path.home() / ".hyper-trading-agent" / "reports"
 
 
 def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
@@ -832,7 +832,7 @@ class AlphaBenchTool(BaseTool):
             },
             "output_dir": {
                 "type": "string",
-                "description": "Where to write the HTML report; default ~/.vibe-trading/reports/.",
+                "description": "Where to write the HTML report; default ~/.hyper-trading-agent/reports/.",
             },
         },
         "required": ["universe", "period"],

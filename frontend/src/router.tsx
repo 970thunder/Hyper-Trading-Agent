@@ -1,11 +1,12 @@
 import { Suspense, lazy, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, Navigate } from "react-router-dom";
 import { RequirePlatformAdmin } from "@/components/layout/RequirePlatformAdmin";
 import { RequireRole } from "@/components/layout/RequireRole";
 
 const Layout = lazy(() => import("@/components/layout/Layout").then((module) => ({ default: module.Layout })));
 const AdminShell = lazy(() => import("@/components/admin/AdminShell").then((module) => ({ default: module.AdminShell })));
+const PlatformAdminPage = lazy(() => import("@/pages/PlatformAdminPage").then((module) => ({ default: module.PlatformAdminPage })));
 const Home = lazy(() => import("@/pages/Home").then((module) => ({ default: module.Home })));
 const Agent = lazy(() => import("@/pages/Agent").then((module) => ({ default: module.Agent })));
 const RunDetail = lazy(() => import("@/pages/RunDetail").then((module) => ({ default: module.RunDetail })));
@@ -24,8 +25,9 @@ const Login = lazy(() => import("@/pages/Login").then((module) => ({ default: mo
 const Runtime = lazy(() => import("@/pages/Runtime").then((module) => ({ default: module.Runtime })));
 const Reports = lazy(() => import("@/pages/Reports").then((module) => ({ default: module.Reports })));
 const Correlation = lazy(() => import("@/pages/Correlation").then((module) => ({ default: module.Correlation })));
+const MarketData = lazy(() => import("@/pages/MarketData").then((module) => ({ default: module.MarketData })));
+const Portfolio = lazy(() => import("@/pages/Portfolio").then((module) => ({ default: module.Portfolio })));
 const AlphaZoo = lazy(() => import("@/pages/AlphaZoo").then((module) => ({ default: module.AlphaZoo })));
-const PlatformAdmin = lazy(() => import("@/pages/PlatformAdmin").then((module) => ({ default: module.PlatformAdmin })));
 const Forbidden = lazy(() => import("@/pages/Forbidden").then((module) => ({ default: module.Forbidden })));
 
 function PageLoader() {
@@ -50,6 +52,28 @@ export const router = createBrowserRouter([
     path: "/login",
     element: wrap(Login),
   },
+  // Cross-tenant platform ops: standalone page shell (never under product Layout).
+  {
+    path: "/admin/platform",
+    element: <RequirePlatformAdmin>{wrap(PlatformAdminPage)}</RequirePlatformAdmin>,
+  },
+  { path: "/platform", element: <Navigate to="/admin/platform" replace /> },
+  // Organization administration has its own shell and must not render the
+  // user-facing application navigation alongside its management navigation.
+  {
+    path: "/admin",
+    element: requireRole(AdminShell, ["owner", "admin"]),
+    children: [
+      { index: true, element: wrap(Admin) },
+      { path: "users", element: wrap(AdminUsers) },
+      { path: "models", element: wrap(AdminModels) },
+      { path: "agents", element: wrap(AdminAgents) },
+      { path: "knowledge", element: wrap(AdminKnowledge) },
+      { path: "runtime", element: wrap(AdminRuntime) },
+      { path: "audit", element: wrap(AdminAudit) },
+      { path: "usage", element: wrap(AdminUsage) },
+    ],
+  },
   {
     element: <RequireRole>{wrap(Layout)}</RequireRole>,
     children: [
@@ -58,26 +82,13 @@ export const router = createBrowserRouter([
       { path: "/runtime", element: requireRole(Runtime, ["owner", "admin"]) },
       { path: "/reports", element: requireRole(Reports) },
       { path: "/knowledge", element: requireRole(Knowledge, ["owner", "admin", "member", "viewer"]) },
-      {
-        path: "/admin",
-        element: requireRole(AdminShell, ["owner", "admin"]),
-        children: [
-          { index: true, element: wrap(Admin) },
-          { path: "users", element: wrap(AdminUsers) },
-          { path: "models", element: wrap(AdminModels) },
-          { path: "agents", element: wrap(AdminAgents) },
-          { path: "knowledge", element: wrap(AdminKnowledge) },
-          { path: "runtime", element: wrap(AdminRuntime) },
-          { path: "audit", element: wrap(AdminAudit) },
-          { path: "usage", element: wrap(AdminUsage) },
-        ],
-      },
-      { path: "/platform", element: <RequirePlatformAdmin>{wrap(PlatformAdmin)}</RequirePlatformAdmin> },
       { path: "/forbidden", element: requireRole(Forbidden) },
       { path: "/settings", element: requireRole(Settings) },
       { path: "/runs/:runId", element: requireRole(RunDetail) },
       { path: "/compare", element: requireRole(Compare) },
       { path: "/correlation", element: requireRole(Correlation, ["owner", "admin", "member"]) },
+      { path: "/market-data", element: requireRole(MarketData, ["owner", "admin", "member"]) },
+      { path: "/portfolio", element: <RequirePlatformAdmin>{wrap(Portfolio)}</RequirePlatformAdmin> },
       { path: "/alpha-zoo", element: requireRole(AlphaZoo) },
       { path: "/alpha-zoo/bench", element: requireRole(AlphaZoo) },
       { path: "/alpha-zoo/compare", element: requireRole(AlphaZoo) },

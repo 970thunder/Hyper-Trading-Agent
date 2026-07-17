@@ -25,7 +25,7 @@ services:
       # (sessions.db), user-created skills, shadow accounts, hypothesis
       # registry, broker connector config, agent.json. Without this volume a
       # rebuild/recreate wipes it all (#197).
-      - vibe-home:/home/vibe/.vibe-trading
+      - vibe-home:/home/vibe/.hyper-trading-agent
       - vibe-swarm-runs:/app/agent/.swarm/runs
       - vibe-uploads:/app/agent/uploads
     restart: unless-stopped

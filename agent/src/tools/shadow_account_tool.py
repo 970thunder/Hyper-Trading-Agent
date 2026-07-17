@@ -91,7 +91,7 @@ class ExtractShadowStrategyTool(BaseTool):
         "and produce a Shadow Account profile (3-5 human-readable if-then rules). "
         "Run `analyze_trade_journal` first if the journal hasn't been parsed. "
         "Returns shadow_id + rules preview; profile is persisted to "
-        "~/.vibe-trading/shadow_accounts/."
+        "~/.hyper-trading-agent/shadow_accounts/."
     )
     parameters = {
         "type": "object",

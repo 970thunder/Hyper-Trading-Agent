@@ -515,7 +515,7 @@ def _call_remote(profile: TradingProfile, operation: str, arguments: dict[str, A
             "transport": profile.transport,
             "error": (
                 f"connector profile '{profile.id}' is not authorized. "
-                f"Run `vibe-trading connector authorize {profile.id}` from a desktop session."
+                f"Run `hyper-trading connector authorize {profile.id}` from a desktop session."
             ),
         }
 

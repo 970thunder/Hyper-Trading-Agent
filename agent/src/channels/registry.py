@@ -20,22 +20,22 @@ logger = logging.getLogger(__name__)
 _INTERNAL = frozenset({"base", "bus", "config", "manager", "pairing", "registry", "runtime", "utils"})
 
 _INSTALL_HINTS: dict[str, str] = {
-    "dingtalk": "pip install 'vibe-trading-ai[dingtalk]'",
-    "discord": "pip install 'vibe-trading-ai[discord]'",
+    "dingtalk": "pip install 'hyper-trading-agent[dingtalk]'",
+    "discord": "pip install 'hyper-trading-agent[discord]'",
     "email": "No extra Python package required; configure channels.email in the agent config.",
-    "feishu": "pip install 'vibe-trading-ai[feishu]'",
-    "matrix": "pip install 'vibe-trading-ai[matrix]'",
-    "mochat": "pip install 'vibe-trading-ai[mochat]'",
-    "msteams": "pip install 'vibe-trading-ai[msteams]'",
-    "napcat": "pip install 'vibe-trading-ai[napcat]'",
-    "qq": "pip install 'vibe-trading-ai[qq]'",
+    "feishu": "pip install 'hyper-trading-agent[feishu]'",
+    "matrix": "pip install 'hyper-trading-agent[matrix]'",
+    "mochat": "pip install 'hyper-trading-agent[mochat]'",
+    "msteams": "pip install 'hyper-trading-agent[msteams]'",
+    "napcat": "pip install 'hyper-trading-agent[napcat]'",
+    "qq": "pip install 'hyper-trading-agent[qq]'",
     "signal": "No extra Python package required; install and run signal-cli-rest-api separately.",
-    "slack": "pip install 'vibe-trading-ai[slack]'",
-    "telegram": "pip install 'vibe-trading-ai[telegram]'",
-    "wecom": "pip install 'vibe-trading-ai[wecom]'",
+    "slack": "pip install 'hyper-trading-agent[slack]'",
+    "telegram": "pip install 'hyper-trading-agent[telegram]'",
+    "wecom": "pip install 'hyper-trading-agent[wecom]'",
     "weixin": "No extra Python package required; configure channels.weixin in the agent config.",
-    "whatsapp": "pip install 'vibe-trading-ai[whatsapp]'",
-    "websocket": "pip install 'vibe-trading-ai[channels]'",
+    "whatsapp": "pip install 'hyper-trading-agent[whatsapp]'",
+    "websocket": "pip install 'hyper-trading-agent[channels]'",
 }
 
 _AVAILABILITY_FLAGS: dict[str, tuple[str, ...]] = {
@@ -136,7 +136,7 @@ def inspect_channel(name: str) -> ChannelAvailability:
                 available=False,
                 display_name=str(display),
                 error=missing,
-                install_hint=_INSTALL_HINTS.get(name, f"pip install 'vibe-trading-ai[{name}]'"),
+                install_hint=_INSTALL_HINTS.get(name, f"pip install 'hyper-trading-agent[{name}]'"),
             )
         return ChannelAvailability(name=name, available=True, display_name=str(display))
     except Exception as exc:  # noqa: BLE001 - status API must report every adapter
@@ -145,7 +145,7 @@ def inspect_channel(name: str) -> ChannelAvailability:
             available=False,
             display_name=name.replace("_", " ").title(),
             error=f"{type(exc).__name__}: {exc}",
-            install_hint=_INSTALL_HINTS.get(name, f"pip install 'vibe-trading-ai[{name}]'"),
+            install_hint=_INSTALL_HINTS.get(name, f"pip install 'hyper-trading-agent[{name}]'"),
         )
 
 

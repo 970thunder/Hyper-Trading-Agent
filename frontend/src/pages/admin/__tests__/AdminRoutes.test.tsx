@@ -43,6 +43,30 @@ describe("Dedicated administration routes", () => {
       expect(source).toContain(`path: \"${route}\"`);
     }
     expect(source).toContain('requireRole(AdminShell, ["owner", "admin"])');
+    const adminRouteIndex = source.indexOf('path: "/admin",');
+    const layoutRouteIndex = source.indexOf("element: <RequireRole>{wrap(Layout)}</RequireRole>");
+    expect(adminRouteIndex).toBeGreaterThan(-1);
+    expect(layoutRouteIndex).toBeGreaterThan(-1);
+    expect(adminRouteIndex).toBeLessThan(layoutRouteIndex);
+  });
+
+  it("keeps platform operations at a direct protected admin URL, outside product navigation", () => {
+    const routerSource = readFileSync(resolve(process.cwd(), "src/router.tsx"), "utf8");
+    const layoutSource = readFileSync(resolve(process.cwd(), "src/components/layout/Layout.tsx"), "utf8");
+    const pageSource = readFileSync(resolve(process.cwd(), "src/pages/PlatformAdminPage.tsx"), "utf8");
+
+    expect(routerSource).toContain('path: "/admin/platform"');
+    expect(routerSource).toContain("<RequirePlatformAdmin>{wrap(PlatformAdminPage)}</RequirePlatformAdmin>");
+    expect(pageSource).toContain("PlatformAdminShell");
+    expect(pageSource).toContain("<PlatformAdmin");
+    // Standalone route must be declared before the product Layout branch.
+    const platformRouteIndex = routerSource.indexOf('path: "/admin/platform"');
+    const layoutRouteIndex = routerSource.indexOf("element: <RequireRole>{wrap(Layout)}</RequireRole>");
+    expect(platformRouteIndex).toBeGreaterThan(-1);
+    expect(layoutRouteIndex).toBeGreaterThan(-1);
+    expect(platformRouteIndex).toBeLessThan(layoutRouteIndex);
+    expect(layoutSource).not.toContain('to: "/platform"');
+    expect(layoutSource).not.toContain('to: "/admin/platform"');
   });
 
   it("lets an owner create members from the standalone user management page", async () => {

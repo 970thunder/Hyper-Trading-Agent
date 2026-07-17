@@ -8,9 +8,9 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Database,
+  LineChart,
   FileText,
   Layers,
-  ServerCog,
   ShieldCheck,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
@@ -28,12 +28,12 @@ import { Drawer } from "@/components/ui/Drawer";
 import { IconButton } from "@/components/ui/Button";
 
 type Role = CommercialPrincipal["role"];
-type GatedNavigationItem = NavigationItem & { roles?: Role[]; platformOnly?: boolean };
+type GatedNavigationItem = NavigationItem & { roles?: Role[] };
 
 function visibleItems(items: GatedNavigationItem[], principal: CommercialPrincipal | null): NavigationItem[] {
   return items
-    .filter((item) => (!item.roles || Boolean(principal && item.roles.includes(principal.role))) && (!item.platformOnly || Boolean(principal?.is_platform_admin)))
-    .map(({ roles: _roles, platformOnly: _platformOnly, ...item }) => item);
+    .filter((item) => !item.roles || Boolean(principal && item.roles.includes(principal.role)))
+    .map(({ roles: _roles, ...item }) => item);
 }
 
 export function Layout() {
@@ -172,6 +172,7 @@ export function Layout() {
           { to: "/knowledge", icon: Database, label: t("settings.nav.knowledge"), roles: ["owner", "admin", "member", "viewer"] },
           { to: "/alpha-zoo", icon: Layers, label: t("layout.alphaZoo") },
           { to: "/correlation", icon: BarChart3, label: t("layout.correlation"), roles: ["owner", "admin", "member"] },
+          { to: "/market-data", icon: LineChart, label: t("marketData.navigation"), roles: ["owner", "admin", "member"] },
         ],
       },
       {
@@ -179,7 +180,6 @@ export function Layout() {
         label: t("layout.administrationGroup"),
         items: [
           { to: "/admin", icon: ShieldCheck, label: t("layout.admin"), roles: ["owner", "admin"] },
-          { to: "/platform", icon: ServerCog, label: t("layout.platform"), platformOnly: true },
         ],
       },
     ];

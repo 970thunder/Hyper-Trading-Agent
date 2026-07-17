@@ -1,8 +1,8 @@
 // GET /api/stats — aggregate numbers for the wiki footer.
 //
-//   web  : all-time agent-vs-human page views to vibetrading.wiki, counted
+//   web  : all-time agent-vs-human page views to hyper-trading-agent.wiki, counted
 //          server-side by _middleware.js into D1 (cumulative since launch).
-//   pypi : install counts for `vibe-trading-ai` (pypistats public API), with a
+//   pypi : install counts for `hyper-trading-agent` (pypistats public API), with a
 //          last-good D1 cache so an occasional flaky/rate-limited upstream call
 //          never blanks the footer.
 //
@@ -14,7 +14,7 @@ async function getPypi(env) {
   // 1) live pypistats; on success refresh the D1 last-good cache.
   try {
     const resp = await fetch(
-      "https://pypistats.org/api/packages/vibe-trading-ai/recent",
+      "https://pypistats.org/api/packages/hyper-trading-agent/recent",
       { headers: { "User-Agent": "vibetrading-wiki" } },
     );
     if (resp.ok) {

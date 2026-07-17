@@ -1276,6 +1276,24 @@ class CommercialStore:
             ).fetchall()
         return {str(row["session_id"]) for row in rows}
 
+    def list_workspace_sessions(self, principal: Principal, limit: int = 200) -> list[dict[str, Any]]:
+        """Return organization session ownership records for the admin audit view."""
+        safe_limit = max(1, min(limit, 1000))
+        if self._primary_workspace is not None:
+            return self._primary_workspace.list_sessions(principal.organization_id, safe_limit)
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT session_id, created_by_user_id, created_at
+                FROM workspace_sessions
+                WHERE organization_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (principal.organization_id, safe_limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def delete_workspace_session(self, principal: Principal, session_id: str) -> None:
         if self._primary_workspace is not None:
             self._primary_workspace.delete_session(principal.organization_id, session_id)

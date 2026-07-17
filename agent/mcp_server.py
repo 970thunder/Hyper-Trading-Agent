@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vibe-Trading MCP Server — expose finance research tools to any MCP client.
+"""Hyper-Trading-Agent MCP Server — expose finance research tools to any MCP client.
 
 Works with OpenClaw, Claude Desktop, Cursor, and any MCP-compatible client.
 Zero API key required for HK/US/crypto research markets (yfinance, OKX,
@@ -23,13 +23,13 @@ Usage:
 
 OpenClaw config (~/.openclaw/config.yaml):
     skills:
-      - name: vibe-trading
+      - name: hyper-trading
         command: python /path/to/agent/mcp_server.py
 
 Claude Desktop config:
     {
       "mcpServers": {
-        "vibe-trading": {
+        "hyper-trading": {
           "command": "python",
           "args": ["/path/to/agent/mcp_server.py"]
         }
@@ -63,7 +63,7 @@ from src.market_data import (
     get_loader,
 )
 
-mcp = FastMCP("Vibe-Trading", version=APP_VERSION)
+mcp = FastMCP("Hyper-Trading-Agent", version=APP_VERSION)
 
 logger = logging.getLogger(__name__)
 
@@ -318,7 +318,7 @@ def add_goal_evidence(
         claim_id: Optional claim this evidence supports or contradicts.
         evidence_type: Evidence category, default evidence.
         tool_call_id: Source tool call id for traceability; it does not verify evidence by itself.
-        run_id: Vibe-Trading run id. It verifies evidence only when the run directory exists.
+        run_id: Hyper-Trading-Agent run id. It verifies evidence only when the run directory exists.
         source_provider: Data/provider name such as yfinance, OKX, tushare.
         source_type: Source category such as market_data, document, backtest.
         source_uri: Optional source URL/path.
@@ -1778,7 +1778,7 @@ def extract_shadow_strategy(
 
     Run `analyze_trade_journal` first if the journal hasn't been parsed.
     Returns shadow_id + rules preview. Profile persists to
-    ~/.vibe-trading/shadow_accounts/.
+    ~/.hyper-trading-agent/shadow_accounts/.
 
     Args:
         journal_path: Path to the CSV/Excel broker export.
@@ -1888,11 +1888,11 @@ def scan_shadow_signals(
 
 
 def main():
-    """Entry point for `vibe-trading-mcp` CLI command."""
+    """Entry point for `hyper-trading-mcp` CLI command."""
     global _include_shell_tools, _registry
     import argparse
 
-    parser = argparse.ArgumentParser(description="Vibe-Trading MCP Server")
+    parser = argparse.ArgumentParser(description="Hyper-Trading-Agent MCP Server")
     parser.add_argument("--transport", choices=["stdio", "sse"], default="stdio", help="MCP transport (default: stdio)")
     parser.add_argument("--port", type=int, default=8900, help="SSE port (only used with --transport sse)")
     args = parser.parse_args()

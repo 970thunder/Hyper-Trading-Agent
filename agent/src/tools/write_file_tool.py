@@ -36,8 +36,20 @@ class WriteFileTool(BaseTool):
         Returns:
             JSON string with bytes_written or an error.
         """
-        file_path = kwargs["path"]
-        content = kwargs["content"]
+        file_path = (
+            kwargs.get("path") or kwargs.get("file_path") or kwargs.get("filepath")
+            or kwargs.get("filename") or kwargs.get("file")
+        )
+        if not isinstance(file_path, str) or not file_path.strip():
+            return json.dumps(
+                {"status": "error", "error": "missing required argument 'path' (string): the file path relative to run_dir"},
+                ensure_ascii=False,
+            )
+        content = kwargs.get("content")
+        if content is None:
+            content = kwargs.get("text", kwargs.get("data", ""))
+        if not isinstance(content, str):
+            return json.dumps({"status": "error", "error": "content must be a string"}, ensure_ascii=False)
         run_dir = kwargs.get("run_dir")
 
         try:

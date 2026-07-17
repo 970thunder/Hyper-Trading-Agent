@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import signal
+import tempfile
 import time
 import csv
 import uuid
@@ -43,7 +44,10 @@ RUNS_DIR = Path(__file__).resolve().parent / "runs"
 SESSIONS_DIR = Path(__file__).resolve().parent / "sessions"
 UPLOADS_DIR = Path(__file__).resolve().parent / "uploads"
 AGENT_DIR = Path(__file__).resolve().parent
-ENV_PATH = AGENT_DIR / ".env"
+# Persist Web settings in the user-owned runtime volume. The package-local
+# path remains available as a one-time migration source.
+ENV_PATH = Path.home() / ".hyper-trading-agent" / ".env"
+LEGACY_ENV_PATH = AGENT_DIR / ".env"
 ENV_EXAMPLE_PATH = AGENT_DIR / ".env.example"
 
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
@@ -920,7 +924,8 @@ async def require_settings_write_auth(
 
 
 def _ensure_agent_env_file() -> Path:
-    """Ensure the project-local agent/.env exists."""
+    """Ensure the user-owned settings dotenv exists."""
+    ENV_PATH.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if not ENV_PATH.exists():
         ENV_PATH.write_text("# Created by Hyper-Trading-Agent Web UI settings.\n", encoding="utf-8")
     return ENV_PATH
@@ -994,7 +999,35 @@ def _write_env_values(path: Path, updates: Dict[str, str]) -> None:
         lines.append("# Updated from Web UI")
         for key in missing:
             lines.append(f"{key}={_format_env_value(updates[key])}")
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _atomic_write_env(path, "\n".join(lines) + "\n")
+
+
+def _atomic_write_env(path: Path, content: str) -> None:
+    """Replace a dotenv file atomically, including on Windows.
+
+    ``os.fchmod`` is POSIX-only.  Keep its descriptor-level hardening when
+    available and apply a best-effort portable chmod after closing the file.
+    The latter is intentionally tolerant because Windows ACLs govern the
+    effective permissions and may reject POSIX mode changes.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+            if hasattr(os, "fchmod"):
+                os.fchmod(handle.fileno(), 0o600)
+        try:
+            os.chmod(temporary, 0o600)
+        except OSError:
+            pass
+        os.replace(temporary, path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def _is_configured_secret(value: str, placeholders: set[str]) -> bool:
@@ -1151,6 +1184,18 @@ register_system_routes(app)
 
 # Re-export for test monkeypatch compatibility
 from src.api.system_routes import _terminate_current_process  # noqa: F401, E402
+
+
+# ============================================================================
+# Market data workspace routes - historical charts and source provenance
+# ============================================================================
+
+from src.api.market_data_routes import register_market_data_routes  # noqa: E402
+register_market_data_routes(app)
+
+# Read-only portfolio risk workspace. The route module has no order-write path.
+from src.api.portfolio_routes import register_portfolio_routes  # noqa: E402
+register_portfolio_routes(app)
 
 
 # ============================================================================

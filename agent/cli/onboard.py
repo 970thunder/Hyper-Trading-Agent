@@ -1,10 +1,10 @@
 """First-launch onboarding wizard.
 
-Triggered automatically when ``~/.vibe-trading/.env`` does not exist. Five
+Triggered automatically when ``~/.hyper-trading-agent/.env`` does not exist. Five
 back-steppable steps (provider → model → key → timeout → optional Tushare),
 matching §3.2 of the 2026-05-19 UI/UX design proposal.
 
-Each step persists immediately to ``~/.vibe-trading/.env.partial`` and the
+Each step persists immediately to ``~/.hyper-trading-agent/.env.partial`` and the
 file is atomically renamed to ``.env`` only on completion, so a crash mid-
 wizard never leaves a corrupt ``.env`` behind. API key entry is masked.
 
@@ -66,6 +66,10 @@ PROVIDERS: Final[tuple[Provider, ...]] = (
              "deepseek-v4-pro", "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL",
              "https://api.deepseek.com/v1", "sk-",
              ("deepseek-v4-pro", "deepseek-v4-flash")),
+    Provider("nvidia", "NVIDIA NIM", "hosted NVIDIA API catalog",
+             "nvidia/nemotron-3-ultra-550b-a55b", "NVIDIA_API_KEY", "NVIDIA_BASE_URL",
+             "https://integrate.api.nvidia.com/v1", "nvapi-",
+             ("nvidia/nemotron-3-ultra-550b-a55b",)),
     Provider("ollama", "Ollama", "local, free, no API key",
              "qwen2.5:32b", None, "OLLAMA_BASE_URL",
              "http://localhost:11434", None,
@@ -84,7 +88,7 @@ TIMEOUT_CHOICES: Final[tuple[tuple[str, str], ...]] = (
 # ---------------------------------------------------------------------------
 
 
-def _env_dir() -> Path: return Path.home() / ".vibe-trading"
+def _env_dir() -> Path: return Path.home() / ".hyper-trading-agent"
 def _env_path() -> Path: return _env_dir() / ".env"
 def _partial_path() -> Path: return _env_dir() / ".env.partial"
 
@@ -346,9 +350,9 @@ def _validate_key(provider: Provider, key: str) -> str | None:
 
 def _intro_header(console: Console) -> None:
     console.print()
-    console.print(Text("  Vibe-Trading setup", style=Theme.primary))
+    console.print(Text("  Hyper-Trading-Agent setup", style=Theme.primary))
     console.print(Text(
-        "  We didn't find a config at ~/.vibe-trading/.env.\n"
+        "  We didn't find a config at ~/.hyper-trading-agent/.env.\n"
         "  Let's set up in under a minute.",
         style=Theme.muted,
     ))
@@ -417,7 +421,7 @@ def run_onboarding(*, console: Console | None = None) -> Path | None:
         while True:
             key = _prompt_secret(
                 f"Paste your {provider.label} API key "
-                "(saved to ~/.vibe-trading/.env, never logged)",
+                "(saved to ~/.hyper-trading-agent/.env, never logged)",
                 console=cons,
             )
             if key is BACK or key is CANCEL:

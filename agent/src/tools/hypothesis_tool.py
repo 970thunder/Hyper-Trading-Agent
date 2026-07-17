@@ -47,7 +47,7 @@ class CreateHypothesisTool(BaseTool):
             "skills": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Relevant Vibe-Trading skills",
+                "description": "Relevant Hyper-Trading-Agent skills",
             },
             "invalidation_notes": {"type": "string", "description": "Invalidation notes"},
         },
@@ -96,13 +96,18 @@ class UpdateHypothesisTool(BaseTool):
             "invalidation_notes": {"type": "string"},
         },
         "required": ["hypothesis_id"],
+        "additionalProperties": False,
     }
 
     def execute(self, **kwargs: Any) -> str:
         """Update a hypothesis and return it as JSON."""
         try:
             hypothesis_id = str(kwargs.pop("hypothesis_id", ""))
-            updates = {key: value for key, value in kwargs.items() if value is not None}
+            allowed_fields = {
+                "title", "thesis", "status", "universe", "signal_definition",
+                "data_sources", "skills", "invalidation_notes",
+            }
+            updates = {key: value for key, value in kwargs.items() if key in allowed_fields and value is not None}
             hyp = HypothesisRegistry().update(hypothesis_id, **updates)
             return _ok({"hypothesis": hyp.to_dict()})
         except Exception as exc:

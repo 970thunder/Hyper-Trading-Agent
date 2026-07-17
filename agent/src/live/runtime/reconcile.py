@@ -71,6 +71,10 @@ ReadList = Callable[[], Sequence[Mapping[str, Any]]]
 ReadDict = Callable[[], Mapping[str, Any]]
 
 
+class CorruptRuntimeState(RuntimeError):
+    """Raised when an existing durable runtime state cannot be trusted."""
+
+
 class DeltaKind:
     """Classification labels for a single reconciliation delta.
 
@@ -529,21 +533,13 @@ def _load_state(broker: str) -> dict[str, Any] | None:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        corrupt = path.with_name(f"{path.name}.corrupt-{int(datetime.now().timestamp())}")
-        try:
-            os.replace(path, corrupt)
-        except OSError:
-            pass
-        logger.warning(
-            "reconcile(%s): runtime_state.json unreadable (%s); renamed to %s, cold start",
-            broker,
-            exc,
-            corrupt.name,
-        )
-        return None
+        raise CorruptRuntimeState(
+            f"reconcile({broker}): runtime_state.json is unreadable; repair is required"
+        ) from exc
     if not isinstance(raw, dict):
-        logger.warning("reconcile(%s): runtime_state.json is not an object; cold start", broker)
-        return None
+        raise CorruptRuntimeState(
+            f"reconcile({broker}): runtime_state.json is not an object; repair is required"
+        )
     return raw
 
 

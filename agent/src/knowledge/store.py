@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_KNOWLEDGE_DIR = Path.home() / ".vibe-trading" / "knowledge"
+DEFAULT_KNOWLEDGE_DIR = Path.home() / ".hyper-trading-agent" / "knowledge"
 DEFAULT_DB_PATH = DEFAULT_KNOWLEDGE_DIR / "knowledge.db"
 DEFAULT_CHUNK_CHARS = 1400
 DEFAULT_CHUNK_OVERLAP = 180

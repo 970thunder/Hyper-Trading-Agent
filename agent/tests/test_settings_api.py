@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         encoding="utf-8",
     )
     monkeypatch.setattr(api_server, "ENV_PATH", env_path)
+    monkeypatch.setattr(api_server, "LEGACY_ENV_PATH", tmp_path / "legacy.env")
     monkeypatch.setattr(api_server, "ENV_EXAMPLE_PATH", env_example)
     monkeypatch.setattr(api_server, "_baostock_supported", lambda: False)
     monkeypatch.setattr(api_server, "_baostock_installed", lambda: False)
@@ -112,6 +114,51 @@ def test_update_llm_settings_persists_project_env(
     assert "OPENROUTER_API_KEY=or-secret-value" in env_text
     assert "LANGCHAIN_REASONING_EFFORT=max" in env_text
     assert "sk-or-v1-your-key-here" not in env_text
+
+
+def test_update_llm_settings_migrates_legacy_env_to_canonical_path(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    canonical = tmp_path / "runtime" / ".env"
+    legacy = tmp_path / "legacy.env"
+    legacy.write_text("TUSHARE_TOKEN=legacy-token\nDEEPSEEK_API_KEY=legacy-key\n", encoding="utf-8")
+    monkeypatch.setattr(api_server, "ENV_PATH", canonical)
+    monkeypatch.setattr(api_server, "LEGACY_ENV_PATH", legacy)
+
+    response = client.put(
+        "/settings/llm",
+        json={
+            "provider": "nvidia",
+            "model_name": "nvidia/nemotron-3-ultra-550b-a55b",
+            "base_url": "https://integrate.api.nvidia.com/v1",
+            "api_key": "nvapi-test-key",
+        },
+    )
+
+    assert response.status_code == 200
+    saved = canonical.read_text(encoding="utf-8")
+    assert "TUSHARE_TOKEN=legacy-token" in saved
+    assert "NVIDIA_API_KEY=nvapi-test-key" in saved
+
+
+def test_update_llm_settings_supports_platforms_without_fchmod(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Saving Web UI settings must work on Windows where os.fchmod is absent."""
+    monkeypatch.delattr(os, "fchmod", raising=False)
+
+    response = client.put(
+        "/settings/llm",
+        json={
+            "provider": "deepseek",
+            "model_name": "deepseek-chat",
+            "base_url": "https://api.deepseek.com/v1",
+            "api_key": "test-secret-value",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "DEEPSEEK_API_KEY=test-secret-value" in (tmp_path / ".env").read_text(encoding="utf-8")
 
 
 def test_update_llm_settings_preserves_runtime_api_key_when_input_blank(

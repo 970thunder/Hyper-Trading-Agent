@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import i18n from "@/i18n";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { ChevronDown } from "lucide-react";
 import type { PriceBar, TradeMarker, IndicatorPoint } from "@/lib/api";
@@ -33,6 +33,7 @@ interface Props {
 }
 
 export function CandlestickChart({ data, markers, indicators, height = 500 }: Props) {
+  const { t: translate } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ReturnType<typeof echarts.init> | null>(null);
   const [sub, setSub] = useState<Sub>("vol");
@@ -141,7 +142,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
     const marks = (markers || []).map(m => ({
       coord: [m.time, m.price],
       value: m.side === "BUY" ? "B" : "S",
-      name: [`${m.side} @ ${m.price}`, m.qty ? `Qty: ${m.qty}` : "", m.reason || ""].filter(Boolean).join("\n"),
+      name: [`${m.side} @ ${m.price}`, m.qty ? `${translate("charts.quantity")}: ${m.qty}` : "", m.reason || ""].filter(Boolean).join("\n"),
       itemStyle: { color: m.side === "BUY" ? t.upColor : t.downColor },
       label: { color: "#fff", fontSize: 10, fontWeight: "bold" as const },
     }));
@@ -209,10 +210,10 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
               const chg = close - open;
               const pct = open ? ((chg / open) * 100).toFixed(2) : "0.00";
               const clr = chg >= 0 ? t.upColor : t.downColor;
-              html += `<br/>O: ${open.toFixed(2)}&nbsp; H: ${high.toFixed(2)}`;
-              html += `<br/>L: ${low.toFixed(2)}&nbsp; C: <span style="color:${clr}"><b>${close.toFixed(2)}</b> ${chg >= 0 ? "+" : ""}${chg.toFixed(2)} (${chg >= 0 ? "+" : ""}${pct}%)</span>`;
+              html += `<br/>${translate("charts.open")}: ${open.toFixed(2)}&nbsp; ${translate("charts.high")}: ${high.toFixed(2)}`;
+              html += `<br/>${translate("charts.low")}: ${low.toFixed(2)}&nbsp; ${translate("charts.close")}: <span style="color:${clr}"><b>${close.toFixed(2)}</b> ${chg >= 0 ? "+" : ""}${chg.toFixed(2)} (${chg >= 0 ? "+" : ""}${pct}%)</span>`;
             } else if (p.seriesName === "Vol") {
-              html += `<br/>Vol: ${abbreviateNum(Number(p.value))}`;
+              html += `<br/>${translate("charts.volume")}: ${abbreviateNum(Number(p.value))}`;
             } else if (p.value != null) {
               html += `<br/>${p.marker} ${p.seriesName}: ${Number(p.value).toFixed(2)}`;
             }
@@ -221,7 +222,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
         },
       },
       toolbox: {
-        feature: { saveAsImage: { title: "Save" }, dataZoom: { title: { zoom: "Zoom", back: "Reset" } }, restore: { title: "Reset" } },
+        feature: { saveAsImage: { title: translate("charts.saveImage") }, dataZoom: { title: { zoom: translate("charts.zoom"), back: translate("charts.reset") } }, restore: { title: translate("charts.reset") } },
         right: 8, top: 0, iconStyle: { borderColor: t.textColor },
       },
       legend: { data: legendNames, textStyle: { color: t.textColor, fontSize: 10 }, right: 80, top: 2, type: "scroll", itemWidth: 12, itemHeight: 8, itemGap: 8 },
@@ -252,10 +253,10 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
         ...subSeries,
       ],
     }, true);
-  }, [data, markers, baseData, indicatorCache, extraIndicators, sub, range, overlays, dark]);
+  }, [data, markers, baseData, indicatorCache, extraIndicators, sub, range, overlays, dark, translate]);
 
   if (data.length === 0) {
-    return <div className="text-muted-foreground text-sm p-4">{i18n.t("charts.noPriceData")}</div>;
+    return <div className="text-muted-foreground text-sm p-4">{translate("charts.noPriceData")}</div>;
   }
 
   return (
@@ -276,13 +277,13 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
             onClick={() => setShowMenu(!showMenu)}
             className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
-            Indicators ({overlays.size}) <ChevronDown className="h-3 w-3" />
+            {translate("charts.indicators", { count: overlays.size })} <ChevronDown className="h-3 w-3" />
           </button>
           {showMenu && (
             <div className="absolute top-full left-0 mt-1 z-50 bg-card border rounded-lg shadow-lg p-2 min-w-[160px]" onMouseLeave={() => setShowMenu(false)}>
               {["MA", "Channel"].map(group => (
                 <div key={group}>
-                  <p className="text-[9px] text-muted-foreground/50 uppercase tracking-wider px-1 pt-1">{group}</p>
+                  <p className="text-[9px] text-muted-foreground/50 uppercase tracking-wider px-1 pt-1">{group === "Channel" ? translate("charts.channel") : group}</p>
                   {OVERLAY_OPTIONS.filter(o => o.group === group).map(o => (
                     <label key={o.id} className="flex items-center gap-2 px-1 py-0.5 rounded hover:bg-muted/30 cursor-pointer">
                       <input type="checkbox" checked={overlays.has(o.id)} onChange={() => toggleOverlay(o.id)} className="h-3 w-3 rounded accent-primary" />
@@ -293,7 +294,7 @@ export function CandlestickChart({ data, markers, indicators, height = 500 }: Pr
               ))}
               <div className="border-t mt-1 pt-1">
                 <button onClick={() => { setOverlays(new Set()); setShowMenu(false); }} className="text-[10px] text-muted-foreground hover:text-foreground px-1 py-0.5 w-full text-left rounded hover:bg-muted/30">
-                  Bare K (clear all)
+                  {translate("charts.clearIndicators")}
                 </button>
               </div>
             </div>

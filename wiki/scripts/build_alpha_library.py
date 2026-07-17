@@ -3,7 +3,7 @@
 
 Pipeline:
     1. Load ``wiki/alpha-library/manifest.json`` (produced by
-       ``vibe-trading alpha export-manifest``).
+       ``hyper-trading alpha export-manifest``).
     2. Emit one HTML page per alpha at
        ``wiki/alpha-library/content/<zoo>/<alpha_id>.html``.
     3. Emit one zoo overview page at
@@ -112,7 +112,7 @@ def parse_manifest(path: Path) -> dict[str, Any]:
     if not path.is_file():
         print(
             f"build_alpha_library: manifest not found at {path}\n"
-            "  run: vibe-trading alpha export-manifest --out "
+            "  run: hyper-trading alpha export-manifest --out "
             "wiki/alpha-library/manifest.json --force",
             file=sys.stderr,
         )
@@ -146,10 +146,10 @@ _ALPHA_PAGE_TEMPLATE = """<!doctype html>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="{{ csp }}">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ alpha.id }} | {{ zoo_display.name }} | Vibe-Trading</title>
+  <title>{{ alpha.id }} | {{ zoo_display.name }} | Hyper-Trading-Agent</title>
   <meta name="description" content="{{ alpha.id }} — {{ zoo_display.name }} alpha definition.">
   <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://vibetrading.wiki/alpha-library/content/{{ zoo.zoo_id }}/{{ alpha.id }}.html">
+  <link rel="canonical" href="https://hyper-trading-agent.wiki/alpha-library/content/{{ zoo.zoo_id }}/{{ alpha.id }}.html">
   <link rel="stylesheet" href="../../../styles.css">
   <style>
     .alpha-page { width: min(880px, calc(100% - 32px)); margin: 48px auto 96px; }
@@ -206,9 +206,9 @@ _ALPHA_PAGE_TEMPLATE = """<!doctype html>
     {% endif %}
 
     <h2>Run it</h2>
-    <pre class="formula"><code>pip install vibe-trading-ai
-vibe-trading alpha show {{ alpha.id }}
-vibe-trading alpha bench --zoo {{ zoo.zoo_id }} --universe csi300 --period 2020-2025</code></pre>
+    <pre class="formula"><code>pip install hyper-trading-agent
+hyper-trading alpha show {{ alpha.id }}
+hyper-trading alpha bench --zoo {{ zoo.zoo_id }} --universe csi300 --period 2020-2025</code></pre>
   </main>
 </body>
 </html>
@@ -221,10 +221,10 @@ _ZOO_PAGE_TEMPLATE = """<!doctype html>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="{{ csp }}">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ zoo_display.name }} | Alpha Library | Vibe-Trading</title>
+  <title>{{ zoo_display.name }} | Alpha Library | Hyper-Trading-Agent</title>
   <meta name="description" content="{{ zoo_display.tagline }}">
   <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://vibetrading.wiki/alpha-library/content/{{ zoo.zoo_id }}/index.html">
+  <link rel="canonical" href="https://hyper-trading-agent.wiki/alpha-library/content/{{ zoo.zoo_id }}/index.html">
   <link rel="stylesheet" href="../../../styles.css">
   <style>
     .zoo-page { width: min(1100px, calc(100% - 32px)); margin: 48px auto 96px; }

@@ -9,11 +9,30 @@ read failure reads as ``0`` (fail-open on the count only, never on the order).
 from __future__ import annotations
 
 import json
+import os
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
+from typing import BinaryIO, Iterator
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None  # type: ignore[assignment]
+
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - POSIX
+    msvcrt = None  # type: ignore[assignment]
 
 from src.live.paths import broker_dir
 
 _COUNTER_FILENAME = "trade_counter.json"
+_LOCK_FILENAME = ".order_submit.lock"
+
+
+class DailyOrderLockUnavailable(RuntimeError):
+    """Raised when another process owns a broker order-submission permit."""
 
 
 def _counter_path(broker: str):
@@ -23,6 +42,52 @@ def _counter_path(broker: str):
 def _utc_today() -> str:
     """Return today's UTC calendar date as ``YYYY-MM-DD``."""
     return datetime.now(timezone.utc).date().isoformat()
+
+
+def _try_lock(handle: BinaryIO) -> None:
+    if fcntl is not None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return
+    if msvcrt is not None:  # pragma: no cover - Windows
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        return
+    raise OSError("no supported advisory lock backend")
+
+
+def _unlock(handle: BinaryIO) -> None:
+    if fcntl is not None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    elif msvcrt is not None:  # pragma: no cover - Windows
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+
+
+@contextmanager
+def daily_order_lock(broker: str) -> Iterator[None]:
+    """Serialize check, submission, and counter increment for one broker."""
+    path = broker_dir(broker) / _LOCK_FILENAME
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        handle = path.open("a+b")
+        _try_lock(handle)
+    except OSError as exc:
+        try:
+            handle.close()  # type: ignore[name-defined]
+        except UnboundLocalError:
+            pass
+        raise DailyOrderLockUnavailable(f"another {broker} order submission is already in progress") from exc
+    try:
+        yield
+    finally:
+        try:
+            _unlock(handle)
+        finally:
+            handle.close()
 
 
 def read_daily_count(broker: str) -> int:
@@ -48,7 +113,7 @@ def increment_daily_count(broker: str) -> int:
     count = read_daily_count(broker) + 1
     path = _counter_path(broker)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    tmp = path.with_name(f".{path.name}.tmp")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps({"date": today, "count": count}, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)
     return count

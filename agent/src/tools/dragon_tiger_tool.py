@@ -20,6 +20,7 @@ from typing import Any
 
 from backtest.loaders import eastmoney_client
 from src.agent.tools import BaseTool
+from src.tools import tushare_fallbacks
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +209,11 @@ class DragonTigerTool(BaseTool):
             data = self._collect(trade_date, code)
         except Exception as exc:  # noqa: BLE001 - surface any fetch failure as an envelope
             logger.warning("dragon-tiger fetch failed for %s/%s: %s", trade_date, code, exc)
-            return self._error(f"eastmoney dragon-tiger fetch failed: {exc}")
+            try:
+                fallback = tushare_fallbacks.fetch_dragon_tiger(trade_date, code)
+                return json.dumps({"ok": True, "market": "a_share", "source": "tushare", "warnings": [f"eastmoney failed ({exc}); used tushare fallback"], "data": fallback}, ensure_ascii=False)
+            except Exception as fallback_exc:
+                return self._error(f"eastmoney dragon-tiger fetch failed: {exc}; tushare fallback failed: {fallback_exc}")
 
         return json.dumps(
             {"ok": True, "market": "a_share", "source": "eastmoney", "data": data},

@@ -253,7 +253,7 @@ function BrowseView() {
       </div>
 
       {/* Filter bar */}
-      <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card p-4 shadow-sm md:flex-row md:items-end">
+      <div className="flex flex-col gap-3 rounded-lg border border-[hsl(var(--border-subtle))] bg-surface-1 p-4 shadow-xs md:flex-row md:items-end">
         <div className="flex-1 min-w-0">
           <label htmlFor="alpha-search" className="text-xs text-muted-foreground block mb-1">
             {i18n.t("alphaZoo.search")}
@@ -271,7 +271,7 @@ function BrowseView() {
                 setVisibleCount(PAGE_SIZE);
               }}
               placeholder={i18n.t("alphaZoo.searchPlaceholder")}
-              className="w-full pl-9 pr-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="h-9 w-full rounded-md border border-border bg-surface-1 py-2 pl-9 pr-3 text-sm text-ink-strong shadow-xs outline-none transition-[color,background-color,border-color,box-shadow] duration-fast placeholder:text-ink-disabled hover:border-ink-disabled focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
             />
           </div>
         </div>
@@ -321,7 +321,7 @@ function BrowseView() {
         </div>
         <Link
           to={compareHref}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium hover:bg-muted hover:text-foreground transition"
+          className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-surface-1 px-3 text-sm font-medium text-ink-strong shadow-xs transition-[color,background-color,border-color,box-shadow,transform] duration-fast hover:border-ink-disabled hover:bg-surface-2 hover:shadow-sm active:translate-y-px"
           title={i18n.t("alphaZoo.compareTooltip")}
         >
           <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden="true" /> {i18n.t("alphaZoo.compare")}
@@ -329,7 +329,7 @@ function BrowseView() {
         </Link>
         <Link
           to="/alpha-zoo/bench"
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
+          className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-primary bg-primary px-3 text-sm font-medium text-primary-foreground shadow-xs transition-[color,background-color,border-color,box-shadow,transform] duration-fast hover:bg-primary/90 hover:shadow-sm active:translate-y-px"
         >
           <Play className="h-3.5 w-3.5" aria-hidden="true" /> {i18n.t("alphaZoo.runBenchmark")}
         </Link>
@@ -337,12 +337,12 @@ function BrowseView() {
 
       {/* Table */}
       {/* TODO(v0.2): switch to react-window if alpha count exceeds 5000 */}
-      <div className="border rounded-lg overflow-hidden">
+      <div className="overflow-hidden rounded-lg border border-[hsl(var(--border-subtle))] bg-surface-1 shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-sm" aria-label={i18n.t("alphaZoo.alphaCatalogue")}>
             <caption className="sr-only">{i18n.t("alphaZoo.alphaCatalogue")}</caption>
             <thead>
-              <tr className="border-b bg-muted/40">
+              <tr className="border-b border-[hsl(var(--border-subtle))] bg-surface-2/55 text-xs text-ink-muted">
                 <th className="w-10 px-3 py-2.5">
                   <span className="sr-only">{i18n.t("alphaZoo.selectForCompare")}</span>
                 </th>
@@ -382,7 +382,7 @@ function BrowseView() {
                   <tr
                     key={`${a.zoo}:${a.id}`}
                     className={cn(
-                      "border-b last:border-0 hover:bg-muted/20",
+                      "border-b border-[hsl(var(--border-subtle))] transition-colors duration-fast last:border-0 hover:bg-surface-2/45",
                       selected.has(a.id) && "bg-primary/5",
                     )}
                   >
@@ -425,14 +425,14 @@ function BrowseView() {
           </table>
         </div>
         {!loading && visible.length < filtered.length && (
-          <div className="border-t p-3 flex items-center justify-between text-xs text-muted-foreground">
+          <div className="flex items-center justify-between border-t border-[hsl(var(--border-subtle))] p-3 text-xs text-ink-muted">
             <span>
               {i18n.t("alphaZoo.showingOf", { visible: visible.length, total: filtered.length })}
             </span>
             <button
               type="button"
               onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
-              className="px-3 py-1 rounded-md border hover:bg-muted hover:text-foreground transition"
+              className="rounded-md border border-border bg-surface-1 px-3 py-1 text-xs font-medium text-ink-strong transition-[color,background-color,border-color,box-shadow] duration-fast hover:border-ink-disabled hover:bg-surface-2 hover:shadow-xs"
             >
               {i18n.t("alphaZoo.loadMore")}
             </button>
@@ -804,7 +804,7 @@ function BenchView() {
       {/* Form */}
       <form
         onSubmit={startBench}
-        className="border rounded-lg p-4 bg-card grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end"
+        className="grid grid-cols-1 items-end gap-3 rounded-lg border border-[hsl(var(--border-subtle))] bg-surface-1 p-4 shadow-xs sm:grid-cols-2 lg:grid-cols-5"
       >
         <div>
           <label htmlFor="bench-zoo" className="text-xs text-muted-foreground block mb-1">{i18n.t("alphaZoo.zoo")}</label>
@@ -836,7 +836,7 @@ function BenchView() {
             onChange={(e) => setPeriod(e.target.value)}
             disabled={busy}
             placeholder="2020-2025"
-            className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
+            className="h-9 w-full rounded-md border border-border bg-surface-1 px-3 text-sm text-ink-strong shadow-xs outline-none transition-[color,background-color,border-color,box-shadow] duration-fast placeholder:text-ink-disabled hover:border-ink-disabled focus:border-primary/60 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
           />
         </div>
         <div>
@@ -853,14 +853,14 @@ function BenchView() {
               setTop(e.target.value === "" ? 20 : Number(e.target.value))
             }
             disabled={busy}
-            className="w-full px-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
+            className="h-9 w-full rounded-md border border-border bg-surface-1 px-3 text-sm text-ink-strong shadow-xs outline-none transition-[color,background-color,border-color,box-shadow] duration-fast placeholder:text-ink-disabled hover:border-ink-disabled focus:border-primary/60 focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
           />
         </div>
         <div className="flex flex-col gap-1">
           <button
             type="submit"
             disabled={busy}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition disabled:opacity-50"
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-primary bg-primary px-3 text-sm font-medium text-primary-foreground shadow-xs transition-[color,background-color,border-color,box-shadow,transform] duration-fast hover:bg-primary/90 hover:shadow-sm active:translate-y-px disabled:pointer-events-none disabled:opacity-50"
           >
             {busy ? (
               <>

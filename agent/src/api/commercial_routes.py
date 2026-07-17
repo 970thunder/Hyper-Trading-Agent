@@ -247,6 +247,25 @@ def _runtime_redis_client():
 _PLATFORM_SENSITIVE_METADATA_KEYWORDS = ("api_key", "authorization", "cookie", "password", "secret", "token")
 
 
+def _cache_tokens(metadata: dict[str, Any]) -> int:
+    """Normalize provider-specific cache token fields for audit totals."""
+    usage = metadata.get("usage") if isinstance(metadata.get("usage"), dict) else {}
+    input_details = usage.get("input_tokens_details") if isinstance(usage.get("input_tokens_details"), dict) else {}
+    values = (
+        metadata.get("cached_tokens"),
+        metadata.get("cache_tokens"),
+        metadata.get("cache_read_tokens"),
+        usage.get("cached_tokens"),
+        input_details.get("cached_tokens"),
+    )
+    for value in values:
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
 def _sanitize_platform_metadata(value: Any) -> Any:
     """Preserve operational context while keeping runtime payload secrets out of the API."""
     if isinstance(value, dict):
@@ -1267,6 +1286,97 @@ def register_commercial_routes(app: FastAPI) -> None:
             date_from=from_,
             date_to=to,
         )
+
+    @app.get("/admin/audit/conversations")
+    async def admin_conversation_audit(
+        limit: int = Query(200, ge=1, le=500),
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        """Return the full, organization-scoped conversation audit ledger.
+
+        The ordinary session endpoints intentionally apply workspace access on
+        each request.  The admin console needs a single authoritative view of
+        all organization conversations, including the owner, archived message
+        content, model usage, cache metrics, and related audit events.
+        """
+        host = _host()
+        service = host._get_session_service() if host is not None and hasattr(host, "_get_session_service") else None
+        if service is None:
+            raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Session runtime not enabled")
+
+        store = _store()
+        ownership = store.list_workspace_sessions(principal, limit=limit)
+        members = {str(member["user_id"]): member for member in store.list_organization_members(principal)}
+        usage = store.list_usage(principal, limit=500)
+        logs = store.list_audit_logs(principal, limit=500)
+        usage_by_session: dict[str, list[dict[str, Any]]] = {}
+        for item in usage:
+            usage_by_session.setdefault(str(item.get("session_id") or ""), []).append(item)
+        logs_by_session: dict[str, list[dict[str, Any]]] = {}
+        for item in logs:
+            session_id = str(item.get("target_id") or "") if item.get("target_type") == "session" else str((item.get("metadata") or {}).get("session_id") or "")
+            if session_id:
+                logs_by_session.setdefault(session_id, []).append(item)
+
+        conversations: list[dict[str, Any]] = []
+        for binding in ownership:
+            session_id = str(binding["session_id"])
+            session = service.get_session(session_id)
+            if session is None:
+                # A deleted runtime record must stay visible as an audit trace.
+                session_payload: dict[str, Any] = {
+                    "session_id": session_id,
+                    "title": "",
+                    "status": "deleted",
+                    "created_at": binding.get("created_at", ""),
+                    "updated_at": binding.get("created_at", ""),
+                    "last_attempt_id": None,
+                }
+                messages: list[dict[str, Any]] = []
+            else:
+                session_payload = {
+                    "session_id": session.session_id,
+                    "title": session.title,
+                    "status": session.status.value,
+                    "created_at": session.created_at,
+                    "updated_at": session.updated_at,
+                    "last_attempt_id": session.last_attempt_id,
+                }
+                messages = [
+                    {
+                        "message_id": message.message_id,
+                        "session_id": message.session_id,
+                        "role": message.role,
+                        "content": message.content,
+                        "created_at": message.created_at,
+                        "linked_attempt_id": message.linked_attempt_id,
+                        "metadata": message.metadata or {},
+                    }
+                    for message in service.get_messages(session_id, limit=1000)
+                ]
+            actor_id = str(binding.get("created_by_user_id") or "")
+            actor = members.get(actor_id, {})
+            session_usage = usage_by_session.get(session_id, [])
+            cache_tokens = sum(_cache_tokens(item.get("metadata") or {}) for item in session_usage)
+            conversations.append({
+                "session": session_payload,
+                "actor": {
+                    "user_id": actor_id,
+                    "display_name": actor.get("display_name") or "",
+                    "email": actor.get("email") or "",
+                },
+                "messages": messages,
+                "usage": session_usage,
+                "events": logs_by_session.get(session_id, []),
+                "metrics": {
+                    "input_tokens": sum(int(item.get("prompt_tokens") or 0) for item in session_usage),
+                    "output_tokens": sum(int(item.get("completion_tokens") or 0) for item in session_usage),
+                    "total_tokens": sum(int(item.get("total_tokens") or 0) for item in session_usage),
+                    "cache_tokens": cache_tokens,
+                    "estimated_cost": sum(float(item.get("estimated_cost") or 0) for item in session_usage),
+                },
+            })
+        return {"conversations": conversations, "events": logs}
 
     @app.get("/usage/model-calls")
     async def model_usage(limit: int = 100, principal: Principal = Depends(_require_role("owner", "admin"))):

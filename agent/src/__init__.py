@@ -1,1 +1,1 @@
-"""Vibe-Trading core package."""
+"""Hyper-Trading-Agent core package."""

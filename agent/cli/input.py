@@ -250,8 +250,8 @@ def _build_keybindings(state: _CtrlCState) -> KeyBindings:
 
 
 def _default_history_path() -> Path:
-    """Where ``~/.vibe-trading/history`` lives by default."""
-    home = Path.home() / ".vibe-trading"
+    """Where ``~/.hyper-trading-agent/history`` lives by default."""
+    home = Path.home() / ".hyper-trading-agent"
     return home / "history"
 
 
@@ -260,7 +260,7 @@ def make_session(history_path: Optional[Path] = None) -> PromptSession:
 
     Args:
         history_path: Override for the persistent history file. ``None``
-            uses ``~/.vibe-trading/history``.
+            uses ``~/.hyper-trading-agent/history``.
 
     Returns:
         A ready-to-use ``PromptSession`` wired to the slash completer,

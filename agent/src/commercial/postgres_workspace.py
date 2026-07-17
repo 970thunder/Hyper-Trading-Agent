@@ -163,6 +163,22 @@ class PostgresWorkspaceRepository:
             rows = cursor.fetchall()
         return {str(row["session_id"]) for row in rows}
 
+    def list_sessions(self, organization_id: str, limit: int) -> list[dict[str, str]]:
+        """Return workspace session ownership records for administrative audit."""
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT session_id, created_by_user_id, created_at
+                FROM workspace_sessions
+                WHERE organization_id = %s
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (organization_id, max(1, min(limit, 1000))),
+            )
+            rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
     def delete_session(self, organization_id: str, session_id: str) -> None:
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute("DELETE FROM workspace_sessions WHERE session_id = %s AND organization_id = %s", (session_id, organization_id))

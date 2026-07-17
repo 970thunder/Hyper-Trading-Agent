@@ -119,7 +119,7 @@ services:
     volumes:
       - vibe-runs:/app/agent/runs
       - vibe-sessions:/app/agent/sessions
-      - vibe-home:/home/vibe/.vibe-trading
+      - vibe-home:/home/vibe/.hyper-trading-agent
       - vibe-uploads:/app/agent/uploads
     restart: unless-stopped
 
@@ -158,7 +158,7 @@ services:
     volumes:
       - vibe-runs:/app/agent/runs
       - vibe-sessions:/app/agent/sessions
-      - vibe-home:/home/vibe/.vibe-trading
+      - vibe-home:/home/vibe/.hyper-trading-agent
       - vibe-uploads:/app/agent/uploads
     healthcheck:
       disable: true

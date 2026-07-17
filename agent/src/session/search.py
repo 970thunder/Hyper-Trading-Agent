@@ -4,7 +4,7 @@ Stores an inverted index of all conversation messages. The primary data
 remains in the file-based SessionStore; this module provides a fast search
 layer on top.
 
-Database location: ~/.vibe-trading/sessions.db (WAL mode for concurrent reads).
+Database location: ~/.hyper-trading-agent/sessions.db (WAL mode for concurrent reads).
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
-_DB_PATH = Path.home() / ".vibe-trading" / "sessions.db"
+_DB_PATH = Path.home() / ".hyper-trading-agent" / "sessions.db"
 
 
 @dataclass(frozen=True)

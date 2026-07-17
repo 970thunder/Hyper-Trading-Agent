@@ -1,7 +1,7 @@
 # Agent Contributor Guide
 
 This guide is for AI-assisted and automation-assisted contributors working on
-Vibe-Trading. It does not replace `CONTRIBUTING.md`, `SECURITY.md`, or the pull
+Hyper-Trading-Agent. It does not replace `CONTRIBUTING.md`, `SECURITY.md`, or the pull
 request template. It makes the repo's agent-facing safety and verification
 expectations explicit.
 
@@ -10,8 +10,8 @@ expectations explicit.
 - Backend and package code live under `agent/`.
 - Frontend code lives under `frontend/`.
 - Public wiki content lives under `wiki/` and has separate GitHub Actions checks.
-- MCP entry point: `vibe-trading-mcp` / `agent/mcp_server.py`.
-- CLI entry point: `vibe-trading` / `agent/cli/`.
+- MCP entry point: `hyper-trading-mcp` / `agent/mcp_server.py`.
+- CLI entry point: `hyper-trading` / `agent/cli/`.
 - Broker connector, mandate, order gate, halt, and audit-ledger logic are safety
   critical even when a change appears small.
 - Community commits must include the DCO `Signed-off-by:` trailer; see
@@ -44,7 +44,7 @@ Get explicit maintainer or operator approval before running commands that:
 
 - place, cancel, approve, flatten, or otherwise affect broker orders,
 - authorize broker, OAuth, MCP, exchange, payment, wallet, or cloud accounts,
-- write real credentials into `agent/.env`, `~/.vibe-trading/`, token caches, or
+- write real credentials into `agent/.env`, `~/.hyper-trading-agent/`, token caches, or
   external services,
 - start externally reachable API, MCP, SSE, webhook, or dashboard servers,
 - deploy the wiki, publish packages, trigger releases, or change CI secrets,

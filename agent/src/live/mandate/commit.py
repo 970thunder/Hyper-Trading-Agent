@@ -413,8 +413,6 @@ def commit_mandate(
             "expires_at": expires_iso,
         },
     }
-    _atomic_write_json(broker_dir(broker) / _MANDATE_FILENAME, mandate_doc)
-
     consent_record = {
         "consent_record_id": consent_record_id,
         "mandate_id": mandate_id,
@@ -431,7 +429,9 @@ def commit_mandate(
         "created_at": created_iso,
         "expires_at": expires_iso,
     }
+    # Persist consent evidence before publishing executable authority.
     _atomic_write_json(_consent_dir(broker) / f"{consent_record_id}.json", consent_record)
+    _atomic_write_json(broker_dir(broker) / _MANDATE_FILENAME, mandate_doc)
 
     # One-shot: the proposal can never be committed again.
     _invalidate_proposal(broker, proposal_id)

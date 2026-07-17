@@ -301,6 +301,24 @@ def _positions_market_value(positions: object) -> float | None:
     return total
 
 
+def _post_trade_gross_exposure(
+    positions: object, *, symbol: str, signed_order_notional: float,
+) -> float | None:
+    """Calculate gross exposure after applying an order to its own symbol."""
+    rows = _coerce_position_rows(positions)
+    if rows is None:
+        return None
+    by_symbol: dict[str, float] = {}
+    for row in rows:
+        row_symbol = _position_symbol(row)
+        value = _position_signed_market_value(row)
+        if row_symbol is None or value is None:
+            return None
+        by_symbol[row_symbol] = by_symbol.get(row_symbol, 0.0) + value
+    by_symbol[symbol] = by_symbol.get(symbol, 0.0) + signed_order_notional
+    return sum(abs(value) for value in by_symbol.values())
+
+
 def _coerce_position_rows(positions: object) -> list[dict] | None:
     """Normalize a positions payload to a list of position dicts."""
     if isinstance(positions, list):
@@ -348,6 +366,32 @@ def _position_market_value(row: dict) -> float | None:
     if qty is None or price is None:
         return None
     return abs(qty) * price
+
+
+def _position_symbol(row: dict) -> str | None:
+    for key in ("symbol", "ticker", "code", "instrument"):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().upper()
+    return None
+
+
+def _position_signed_market_value(row: dict) -> float | None:
+    value = _position_market_value(row)
+    if value is None:
+        return None
+    for key in ("quantity", "qty", "shares"):
+        if key in row:
+            quantity = _as_float(row[key])
+            if quantity is None or (quantity == 0 and value != 0):
+                return None
+            return abs(value) if quantity >= 0 else -abs(value)
+    side = str(row.get("side", "")).strip().lower()
+    if side in {"long", "buy"}:
+        return abs(value)
+    if side in {"short", "sell"}:
+        return -abs(value)
+    return value if value < 0 else None
 
 
 def _account_balance_market_value(balance: object) -> float | None:
@@ -471,16 +515,17 @@ def check_mandate(
 
     # 5–6. Exposure + leverage need observable positions; fail-closed on any
     #      unparseable position. A sell reduces gross exposure (signed by side).
-    current_exposure = _positions_market_value(positions)
-    if current_exposure is None:
+    signed_order = notional if intent.side == "buy" else -notional
+    post_exposure = _post_trade_gross_exposure(
+        positions, symbol=symbol, signed_order_notional=signed_order,
+    )
+    if post_exposure is None:
         return _breach(
             broker=broker, remote_tool=remote_tool, intent=intent,
             kind=BREACH_KIND_QUANTITATIVE, limit="max_total_exposure_usd",
             limit_value=caps.max_total_exposure_usd, attempted_value=0.0,
             detail="current positions could not be read (fail-closed)",
         )
-    signed = notional if intent.side == "buy" else -notional
-    post_exposure = current_exposure + signed
     if post_exposure > caps.max_total_exposure_usd:
         return _breach(
             broker=broker, remote_tool=remote_tool, intent=intent,
@@ -550,7 +595,7 @@ def _check_universe_floors(
     """Enforce market-cap / liquidity floors via the data loaders (fail-closed).
 
     Both floors are optional (``None`` == no floor). When a floor is set, the
-    figure is fetched from Vibe-Trading's existing loaders (with auto-fallback);
+    figure is fetched from Hyper-Trading-Agent's existing loaders (with auto-fallback);
     if no loader can return a usable figure, the order is DENIED rather than
     waved through (SPEC §5 fail-closed contract).
 

@@ -18,6 +18,17 @@ def _body(raw: str) -> dict:
     return json.loads(raw)
 
 
+def test_write_file_recovers_aliases_and_reports_missing_path(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
+    tool = WriteFileTool()
+    result = _body(tool.execute(file_path="aliased.txt", text="content", run_dir=str(tmp_path)))
+    assert result["status"] == "ok"
+    assert (tmp_path / "aliased.txt").read_text(encoding="utf-8") == "content"
+    missing = _body(tool.execute(content="content", run_dir=str(tmp_path)))
+    assert missing["status"] == "error"
+    assert "missing required argument 'path'" in missing["error"]
+
+
 def test_write_file_rejects_unconfigured_absolute_run_dir(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", raising=False)
 
@@ -75,13 +86,13 @@ def test_tilde_expansion_resolves_to_mock_home(tmp_path: Path, monkeypatch) -> N
     monkeypatch.setenv("USERPROFILE", str(mock_home))
 
     # Configure mock home as allowed write root
-    monkeypatch.setenv("VIBE_TRADING_ALLOWED_WRITE_ROOTS", str(mock_home / ".vibe-trading"))
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_WRITE_ROOTS", str(mock_home / ".hyper-trading-agent"))
     allowed_write = allowed_write_roots()
     assert any(p.is_relative_to(mock_home) for p in allowed_write)
 
     # Resolve safe path using tilde
-    resolved = resolve_safe_path("~/.vibe-trading/scripts/strat.py", None, allowed_write, purpose="write")
-    assert resolved == mock_home / ".vibe-trading" / "scripts" / "strat.py"
+    resolved = resolve_safe_path("~/.hyper-trading-agent/scripts/strat.py", None, allowed_write, purpose="write")
+    assert resolved == mock_home / ".hyper-trading-agent" / "scripts" / "strat.py"
 
 
 def test_read_write_separation_prevent_cross_escalation(tmp_path: Path, monkeypatch) -> None:

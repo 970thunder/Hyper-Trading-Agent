@@ -1,11 +1,11 @@
 ---
-name: vibe-trading
+name: hyper-trading
 version: 0.1.10
 description: Professional finance research toolkit — backtesting (7 engines + benchmark comparison panel), factor analysis, Alpha Zoo (452 pre-built alphas across qlib158/alpha101/gtja191/academic), options pricing, 79 finance skills, 29 multi-agent swarm teams, Trade Journal analyzer, and Shadow Account (extract → backtest → render) across 18 market-data sources (tushare, yfinance, okx, akshare, baostock, tencent, mootdx, ccxt, futu, local, eastmoney, sina, stooq, yahoo, plus optional-key finnhub/alphavantage/tiingo/fmp).
 dependencies:
   python: ">=3.11"
   pip:
-    - vibe-trading-ai
+    - hyper-trading-agent
 env:
   - name: TUSHARE_TOKEN
     description: "Tushare API token for China A-share data (optional — HK/US/crypto work without any key)"
@@ -17,35 +17,35 @@ env:
     description: "LLM model name for run_swarm (e.g. deepseek/deepseek-v4-pro). Only needed if using run_swarm."
     required: false
 mcp:
-  command: vibe-trading-mcp
+  command: hyper-trading-mcp
   args: []
 ---
 
-# Vibe-Trading
+# Hyper-Trading-Agent
 
 Professional finance research toolkit with AI-powered backtesting (7 engines), multi-agent teams, 79 specialized skills, the **Alpha Zoo** (452 pre-built quantitative alphas across qlib158 / alpha101 / gtja191 / academic with one-line CLI benchmarking), and the Shadow Account loop — extract your implicit trading rules from a journal, backtest them across A股/港股/美股/crypto, then see where they would have served you better.
 
 ## Setup
 
 ```bash
-pip install vibe-trading-ai
+pip install hyper-trading-agent
 ```
 
-> **Package name vs commands:** The PyPI package is `vibe-trading-ai`. Once installed, you get:
+> **Package name vs commands:** The PyPI package is `hyper-trading-agent`. Once installed, you get:
 >
 > | Command | Purpose |
 > |---------|---------|
-> | `vibe-trading` | Interactive CLI / TUI |
-> | `vibe-trading serve` | Launch FastAPI web server |
-> | `vibe-trading-mcp` | Start MCP server (for Claude Desktop, OpenClaw, Cursor, etc.) |
+> | `hyper-trading` | Interactive CLI / TUI |
+> | `hyper-trading serve` | Launch FastAPI web server |
+> | `hyper-trading-mcp` | Start MCP server (for Claude Desktop, OpenClaw, Cursor, etc.) |
 
 Add to your agent's MCP config:
 
 ```json
 {
   "mcpServers": {
-    "vibe-trading": {
-      "command": "vibe-trading-mcp"
+    "hyper-trading": {
+      "command": "hyper-trading-mcp"
     }
   }
 }
@@ -109,7 +109,7 @@ One-line cross-sectional IC / IR / alive-reversed-dead categorisation across fou
 - **gtja191** (191 alphas) — Guotai Junan 2014 "191 Short-period Trading Alpha Factors" research report.
 - **academic** (6 factors) — Fama-French 5 + Carhart momentum (honest price-based proxies).
 
-Each alpha ships with `__alpha_meta__` (formula LaTeX + theme + universe + warmup + columns required), guarded by an AST purity gate + 300-row lookahead sentinel test. Use the `vibe-trading alpha {list,show,bench,compare,export-manifest}` CLI, the `/alpha/*` REST routes (browser at `/alpha-zoo`), or compose multi-factor signals via `ZooSignalEngine.from_zoo(...)`.
+Each alpha ships with `__alpha_meta__` (formula LaTeX + theme + universe + warmup + columns required), guarded by an AST purity gate + 300-row lookahead sentinel test. Use the `hyper-trading alpha {list,show,bench,compare,export-manifest}` CLI, the `/alpha/*` REST routes (browser at `/alpha-zoo`), or compose multi-factor signals via `ZooSignalEngine.from_zoo(...)`.
 
 ### Finance Skills (79)
 Comprehensive knowledge base covering:
@@ -188,20 +188,20 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 ## Quick Start
 
 ```bash
-pip install vibe-trading-ai
+pip install hyper-trading-agent
 ```
 
-That's it — no API keys needed for HK/US/crypto markets. Start using `backtest`, `get_market_data`, `analyze_options`, `analyze_trade_journal`, `extract_shadow_strategy`, `web_search`, the **Alpha Zoo** (`vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025`), and all 79 skills immediately.
+That's it — no API keys needed for HK/US/crypto markets. Start using `backtest`, `get_market_data`, `analyze_options`, `analyze_trade_journal`, `extract_shadow_strategy`, `web_search`, the **Alpha Zoo** (`hyper-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025`), and all 79 skills immediately.
 
 ## Loading Tools from External MCP Servers
 
 The built-in agent can load tools from your own external MCP servers in addition to its local toolset.
 
-> **Note:** This is the *MCP client* path — the opposite of the MCP plugin listed above. The plugin above makes Vibe-Trading's tools available to your agents. This section lets Vibe-Trading's own agent call tools from *your* servers.
+> **Note:** This is the *MCP client* path — the opposite of the MCP plugin listed above. The plugin above makes Hyper-Trading-Agent's tools available to your agents. This section lets Hyper-Trading-Agent's own agent call tools from *your* servers.
 
 ### Setup
 
-Create `~/.vibe-trading/agent.json`:
+Create `~/.hyper-trading-agent/agent.json`:
 
 ```json
 {
@@ -216,7 +216,7 @@ Create `~/.vibe-trading/agent.json`:
 }
 ```
 
-Ordinary external MCP tools appear automatically in every `vibe-trading run` / `vibe-trading chat` call. They are injected after local tools under stable names: `mcp_<server>_<tool>`. Live-broker MCP servers are consumed through the connector-scoped `trading_*` tools instead of exposing raw `mcp_<broker>_*` tools to the agent.
+Ordinary external MCP tools appear automatically in every `hyper-trading run` / `hyper-trading chat` call. They are injected after local tools under stable names: `mcp_<server>_<tool>`. Live-broker MCP servers are consumed through the connector-scoped `trading_*` tools instead of exposing raw `mcp_<broker>_*` tools to the agent.
 
 ### Official IBKR MCP read-only probe
 
@@ -231,8 +231,8 @@ Add Interactive Brokers' official MCP endpoint as a read-only external server:
       "auth": {
         "type": "oauth",
         "scopes": ["mcp.read"],
-        "clientName": "Vibe-Trading",
-        "cacheDir": "~/.vibe-trading/live/ibkr/oauth"
+        "clientName": "Hyper-Trading-Agent",
+        "cacheDir": "~/.hyper-trading-agent/live/ibkr/oauth"
       },
       "enabledTools": ["*"]
     }
@@ -240,9 +240,9 @@ Add Interactive Brokers' official MCP endpoint as a read-only external server:
 }
 ```
 
-Authorize it with `vibe-trading connector authorize ibkr-live-official-mcp-readonly`. The wildcard is accepted
+Authorize it with `hyper-trading connector authorize ibkr-live-official-mcp-readonly`. The wildcard is accepted
 only for this `mcp.read` probe. Generic `trading_account` and `trading_positions`
-calls stay disabled until IBKR publishes stable read tool names that Vibe-Trading
+calls stay disabled until IBKR publishes stable read tool names that Hyper-Trading-Agent
 can map safely; `mcp.write` requires an explicit tool allowlist and live
 order-guard handling. If IBKR issues a pre-registered OAuth client, add
 `clientId` and `clientSecret` inside `auth`.
@@ -253,16 +253,16 @@ The public trading surface is connector-first. Choose a connector profile, then
 paper/live is just an attribute under that connector.
 
 ```bash
-pip install "vibe-trading-ai[ibkr]"
-vibe-trading connector list
-vibe-trading connector use ibkr-paper-local
-vibe-trading connector configure ibkr-paper-local --yes
-vibe-trading connector check
-vibe-trading connector account
-vibe-trading connector positions
-vibe-trading connector orders
-vibe-trading connector quote AAPL
-vibe-trading connector history AAPL --duration "30 D" --bar-size "1 day"
+pip install "hyper-trading-agent[ibkr]"
+hyper-trading connector list
+hyper-trading connector use ibkr-paper-local
+hyper-trading connector configure ibkr-paper-local --yes
+hyper-trading connector check
+hyper-trading connector account
+hyper-trading connector positions
+hyper-trading connector orders
+hyper-trading connector quote AAPL
+hyper-trading connector history AAPL --duration "30 D" --bar-size "1 day"
 ```
 
 Default ports are TWS paper `7497`, IB Gateway paper `4002`, TWS live-readonly
@@ -309,7 +309,7 @@ With the opt-in active, pass `mcpServers` inside `session.config` to extend or r
 }
 ```
 
-Without `ALLOW_SESSION_MCP_SERVERS=1`, any `mcpServers` key in `session.config` is silently stripped before config loading. The global operator config on disk (`~/.vibe-trading/agent.json`) is always respected regardless of this flag.
+Without `ALLOW_SESSION_MCP_SERVERS=1`, any `mcpServers` key in `session.config` is silently stripped before config loading. The global operator config on disk (`~/.hyper-trading-agent/agent.json`) is always respected regardless of this flag.
 
 ### v1 limits
 

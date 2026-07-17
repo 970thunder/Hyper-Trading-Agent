@@ -21,6 +21,7 @@ from typing import Any
 
 from backtest.loaders.eastmoney_client import get_json, resolve_secid
 from src.agent.tools import BaseTool
+from src.tools import tushare_fallbacks
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ def _fetch_symbol_flow(symbol: str, *, period: str, days: int) -> dict[str, Any]
     """Fetch one symbol's capital-flow series and shape it into a result dict.
 
     Args:
-        symbol: Vibe-Trading symbol (e.g. ``"600519.SH"``, ``"AAPL.US"``).
+        symbol: Hyper-Trading-Agent symbol (e.g. ``"600519.SH"``, ``"AAPL.US"``).
         period: ``"daily"`` or ``"min"``.
         days: Number of most-recent daily bars to keep (ignored for ``"min"``).
 
@@ -98,6 +99,13 @@ def _fetch_symbol_flow(symbol: str, *, period: str, days: int) -> dict[str, Any]
     """
     secid = resolve_secid(symbol)
     if secid is None:
+        if period == "daily":
+            try:
+                fallback = tushare_fallbacks.fetch_fund_flow(symbol, days=days)
+                fallback["warning"] = "eastmoney symbol resolution failed; used tushare fallback"
+                return fallback
+            except Exception as exc:
+                return {"symbol": symbol, "error": "unresolvable symbol", "fallback_error": str(exc)}
         return {"symbol": symbol, "error": "unresolvable symbol"}
 
     is_daily = period == "daily"
@@ -113,6 +121,13 @@ def _fetch_symbol_flow(symbol: str, *, period: str, days: int) -> dict[str, Any]
         payload = get_json(url, params=params)
     except Exception as exc:  # noqa: BLE001 - one bad symbol must not kill the batch
         logger.warning("fund flow fetch failed for %s: %s", symbol, exc)
+        if is_daily:
+            try:
+                fallback = tushare_fallbacks.fetch_fund_flow(symbol, days=days)
+                fallback["warning"] = f"eastmoney failed ({exc}); used tushare fallback"
+                return fallback
+            except Exception as fallback_exc:
+                return {"symbol": symbol, "error": str(exc), "fallback_error": str(fallback_exc)}
         return {"symbol": symbol, "error": str(exc)}
 
     data = payload.get("data") if isinstance(payload, dict) else None
@@ -220,6 +235,7 @@ class FundFlowTool(BaseTool):
             "ok": True,
             "market": "stock",
             "source": "eastmoney",
+            "fallback_sources": ["tushare"],
             "period": period,
             "buckets": list(_BUCKETS),
             "data": results,

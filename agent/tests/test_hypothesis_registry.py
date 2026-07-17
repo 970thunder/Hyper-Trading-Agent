@@ -130,6 +130,15 @@ def test_tool_wrappers_use_env_isolated_storage(storage_path: Path) -> None:
     ))
     assert updated["hypothesis"]["status"] == "validated"
 
+    # Tool callers may send model-invented fields; only the documented update
+    # schema reaches the registry.
+    filtered = json.loads(UpdateHypothesisTool().execute(
+        hypothesis_id=hypothesis_id,
+        unsupported_debug_field="ignore-me",
+    ))
+    assert filtered["status"] == "ok"
+    assert "unsupported_debug_field" not in filtered["hypothesis"]
+
     linked = json.loads(LinkBacktestTool().execute(
         hypothesis_id=hypothesis_id,
         run_card_path="/tmp/tool_run_card.json",

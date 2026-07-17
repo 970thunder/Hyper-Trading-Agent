@@ -44,8 +44,8 @@ def test_oauth_config_round_trip_snake_and_camel() -> None:
         {
             "type": "oauth",
             "scopes": ["trading.read"],
-            "client_name": "Vibe-Trading",
-            "cache_dir": "~/.vibe-trading/live/robinhood/oauth",
+            "client_name": "Hyper-Trading-Agent",
+            "cache_dir": "~/.hyper-trading-agent/live/robinhood/oauth",
             "callback_port": 8765,
             "client_id": "client-id",
             "client_secret": "client-secret",
@@ -56,8 +56,8 @@ def test_oauth_config_round_trip_snake_and_camel() -> None:
         {
             "type": "oauth",
             "scopes": ["trading.read"],
-            "clientName": "Vibe-Trading",
-            "cacheDir": "~/.vibe-trading/live/robinhood/oauth",
+            "clientName": "Hyper-Trading-Agent",
+            "cacheDir": "~/.hyper-trading-agent/live/robinhood/oauth",
             "callbackPort": 8765,
             "clientId": "client-id",
             "clientSecret": "client-secret",
@@ -65,7 +65,7 @@ def test_oauth_config_round_trip_snake_and_camel() -> None:
         }
     )
     assert snake == camel
-    assert snake.client_name == "Vibe-Trading"
+    assert snake.client_name == "Hyper-Trading-Agent"
     assert snake.callback_port == 8765
     assert snake.client_id == "client-id"
     assert snake.client_secret == "client-secret"
@@ -130,7 +130,7 @@ def test_ibkr_seed_is_official_readonly_oauth_probe() -> None:
     assert ibkr.url == "https://api.ibkr.com/v1/api/mcp"
     assert ibkr.auth is not None and ibkr.auth.type == "oauth"
     assert ibkr.auth.scopes == ["mcp.read"]
-    assert ibkr.auth.cache_dir == "~/.vibe-trading/live/ibkr/oauth"
+    assert ibkr.auth.cache_dir == "~/.hyper-trading-agent/live/ibkr/oauth"
     assert ibkr.enabled_tools == ["*"]
     assert "ibkr" in LIVE_BROKER_SERVER_KEYS
 
@@ -237,7 +237,7 @@ def test_build_client_yields_oauth_streamable_transport() -> None:
             "auth": {
                 "type": "oauth",
                 "scopes": ["trading.read"],
-                "client_name": "Vibe-Trading",
+                "client_name": "Hyper-Trading-Agent",
                 "callback_port": 8765,
                 "client_id": "client-id",
                 "client_secret": "client-secret",
@@ -251,7 +251,7 @@ def test_build_client_yields_oauth_streamable_transport() -> None:
     assert isinstance(transport.auth, OAuth)
     # Scopes / name / port flow through from config to the OAuth provider.
     assert transport.auth._scopes == ["trading.read"]
-    assert transport.auth._client_name == "Vibe-Trading"
+    assert transport.auth._client_name == "Hyper-Trading-Agent"
     assert transport.auth._callback_port == 8765
     assert transport.auth._client_id == "client-id"
     assert transport.auth._client_secret == "client-secret"

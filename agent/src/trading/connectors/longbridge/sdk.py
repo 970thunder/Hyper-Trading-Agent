@@ -127,7 +127,7 @@ def build_config(profile_config: Mapping[str, Any] | None = None, overrides: Map
     """Resolve the effective config: saved file ← profile defaults ← CLI overrides.
 
     Credentials (``app_key`` / ``app_secret`` / ``access_token``) come from the
-    saved ``~/.vibe-trading/longbridge.json``; the selected connector profile
+    saved ``~/.hyper-trading-agent/longbridge.json``; the selected connector profile
     supplies the ``profile`` / ``region`` intent; CLI/tool overrides win last.
 
     Args:
@@ -152,7 +152,7 @@ def config_path() -> Path:
 
 
 def load_config() -> LongbridgeConfig:
-    """Load Longbridge settings from ``~/.vibe-trading/longbridge.json``."""
+    """Load Longbridge settings from ``~/.hyper-trading-agent/longbridge.json``."""
     path = config_path()
     if not path.exists():
         return LongbridgeConfig()

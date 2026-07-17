@@ -665,6 +665,8 @@
     "forbiddenDescription": "该工作区仅面向系统平台管理员。",
     "eyebrow": "系统运维",
     "title": "平台管理后台",
+    "productLabel": "平台运营控制台",
+    "backToApp": "返回应用",
     "description": "统一管理用户、组织、知识资产、入库任务和全局审计活动。",
     "refresh": "刷新",
     "loadError": "无法加载平台运营数据。",
@@ -1688,7 +1690,19 @@
   "charts": {
     "noPriceData": "暂无价格数据",
     "noCorrelationData": "暂无相关性数据",
-    "noEquityData": "暂无收益曲线数据"
+    "noEquityData": "暂无收益曲线数据",
+    "open": "开盘",
+    "high": "最高",
+    "low": "最低",
+    "close": "收盘",
+    "volume": "成交量",
+    "quantity": "数量",
+    "saveImage": "保存图片",
+    "zoom": "缩放",
+    "reset": "重置",
+    "indicators": "指标（{{count}}）",
+    "channel": "通道",
+    "clearIndicators": "清除全部指标"
   },
   "login": {
     "product": "Hyper Trading Agent",
@@ -1842,7 +1856,7 @@
     },
     "audit": {
       "title": "审计日志",
-      "description": "检查组织内登录、模型、知识库、工具、审批和管理操作记录。",
+      "description": "查看组织内的对话、模型用量和运维事件。对话正文仅向具有组织管理权限的管理员开放。",
       "loadFailed": "审计事件加载失败",
       "search": "搜索审计事件",
       "searchPlaceholder": "搜索操作、执行人、资源或元数据",
@@ -1851,7 +1865,33 @@
       "actor": "执行人",
       "resource": "资源",
       "time": "时间",
-      "empty": "没有符合当前条件的审计事件。"
+      "empty": "没有符合当前条件的审计事件。",
+      "conversationCount": "对话数",
+      "modelCallCount": "模型调用",
+      "inputTokens": "输入 Token",
+      "outputTokens": "输出 Token",
+      "totalTokens": "总 Token",
+      "cacheTokens": "缓存读取",
+      "conversations": "对话审计",
+      "events": "系统事件",
+      "conversation": "对话",
+      "member": "成员",
+      "allMembers": "所有成员",
+      "calls": "调用次数",
+      "lastActivity": "最后活动",
+      "actions": "操作",
+      "untitledConversation": "未命名对话",
+      "active": "进行中",
+      "notReported": "未上报",
+      "viewConversation": "查看对话",
+      "conversationsEmpty": "没有符合当前筛选条件的对话。",
+      "messages": "消息记录",
+      "modelCalls": "模型调用",
+      "messagesLoadFailed": "对话消息加载失败",
+      "messagesEmpty": "该对话没有可用的已保存消息。",
+      "modelCallsEmpty": "该对话尚未记录模型调用。",
+      "sessionEventsEmpty": "该对话没有关联审计事件。",
+      "latency": "延迟"
     },
     "usage": {
       "title": "模型用量",
@@ -2100,5 +2140,12 @@
       "configuration": "参数配置",
       "access": "访问权限"
     }
-  }
+  },
+  "marketData": {
+    "prewarmed": "已在服务启动时预热。",
+    "navigation": "\u5e02\u573a\u6570\u636e", "title": "\u5386\u53f2\u884c\u60c5\u4e0e\u591a\u8d44\u4ea7\u5bf9\u6bd4", "subtitle": "\u67e5\u8be2\u80a1\u7968\u4e0e\u6570\u5b57\u8d44\u4ea7\u7684\u6807\u51c6\u5316 OHLCV \u6570\u636e\uff0c\u67e5\u770b\u6570\u636e\u6765\u6e90\u3001\u7f13\u5b58\u72b6\u6001\u4e0e\u5b8c\u6574\u6027\u3002", "query": "\u884c\u60c5\u67e5\u8be2", "queryDescription": "\u4f7f\u7528\u9017\u53f7\u3001\u7a7a\u683c\u6216\u5206\u53f7\u5206\u9694\u4ee3\u7801\u3002\u4f8b\u5982\uff1aBTC-USDT\u3001AAPL.US\u3001600519.SH\u3002", "symbols": "\u8d44\u4ea7\u4ee3\u7801", "start": "\u5f00\u59cb\u65e5\u671f", "end": "\u7ed3\u675f\u65e5\u671f", "source": "\u6570\u636e\u6e90", "searchSources": "\u641c\u7d22\u6570\u636e\u6e90", "auto": "\u81ea\u52a8\u9009\u62e9", "autoDescription": "\u6309\u5e02\u573a\u9009\u62e9\u9996\u9009\u6570\u636e\u6e90\uff0c\u4e0d\u53ef\u7528\u65f6\u81ea\u52a8\u56de\u9000", "general": "\u901a\u7528", "available": "\u53ef\u7528", "setupNeeded": "\u9700\u8981\u914d\u7f6e", "unavailable": "\u4e0d\u53ef\u7528", "loading": "\u52a0\u8f7d\u4e2d", "load": "\u67e5\u8be2\u884c\u60c5", "history": "\u5386\u53f2\u8d70\u52bf", "compare": "\u591a\u8d44\u4ea7\u5bf9\u6bd4", "sources": "\u6570\u636e\u6e90\u4e2d\u5fc3", "noQuery": "\u5c1a\u672a\u67e5\u8be2\u884c\u60c5", "noQueryDescription": "\u8f93\u5165\u8d44\u4ea7\u4ee3\u7801\u4e0e\u65e5\u671f\u8303\u56f4\u540e\u5373\u53ef\u52a0\u8f7d\u5386\u53f2\u884c\u60c5\u3002", "twoAssets": "\u81f3\u5c11\u9700\u8981\u4e24\u4e2a\u8d44\u4ea7", "twoAssetsDescription": "\u67e5\u8be2\u4e24\u4e2a\u6216\u66f4\u591a\u4ee3\u7801\u540e\uff0c\u53ef\u5bf9\u6bd4\u5f52\u4e00\u5316\u6536\u76ca\u3002",
+    "errors": { "sources": "\u65e0\u6cd5\u52a0\u8f7d\u6570\u636e\u6e90\u76ee\u5f55\u3002", "noSymbols": "\u8bf7\u8f93\u5165\u81f3\u5c11\u4e00\u4e2a\u8d44\u4ea7\u4ee3\u7801\u3002", "invalidDates": "\u5f00\u59cb\u65e5\u671f\u4e0d\u80fd\u665a\u4e8e\u7ed3\u675f\u65e5\u671f\u3002", "noData": "\u672a\u83b7\u53d6\u5230\u53ef\u7528 K \u7ebf\uff0c\u8bf7\u68c0\u67e5\u4ee3\u7801\u6216\u6570\u636e\u6e90\u914d\u7f6e\u3002", "request": "\u5e02\u573a\u6570\u636e\u8bf7\u6c42\u5931\u8d25\u3002" },
+    "actualSource": "\u5b9e\u9645\u6570\u636e\u6e90", "requested": "\u8bf7\u6c42", "chartAsset": "\u56fe\u8868\u8d44\u4ea7", "auditedQueries": "\u5df2\u5ba1\u8ba1\u67e5\u8be2", "auditedQueriesDescription": "\u8d44\u4ea7\u4ee3\u7801\u3001\u67e5\u8be2\u53c2\u6570\u3001\u89e3\u6790\u540e\u7684\u6570\u636e\u6e90\u548c\u672a\u89e3\u6790\u8d44\u4ea7\u4f1a\u4fdd\u7559\u5728\u7ec4\u7ec7\u5ba1\u8ba1\u65e5\u5fd7\u4e2d\u3002", "dataQuality": "\u6570\u636e\u8d28\u91cf", "complete": "\u5b8c\u6574", "partial": "\u90e8\u5206", "sourceBars": "\u539f\u59cb K \u7ebf", "cache": "\u7f13\u5b58", "hit": "\u547d\u4e2d", "live": "\u5b9e\u65f6", "firstBar": "\u9996\u6839 K \u7ebf", "maxGap": "\u6700\u5927\u95f4\u9694", "days": "{{count}} \u5929", "truncated": "\u7ed3\u679c\u5df2\u6309\u56fe\u8868\u4e0a\u9650\u62bd\u6837\uff0c\u8bf7\u7f29\u5c0f\u65e5\u671f\u8303\u56f4\u67e5\u770b\u6bcf\u4e00\u6839 K \u7ebf\u3002", "normalizedPerformance": "\u5f52\u4e00\u5316\u6536\u76ca\u5bf9\u6bd4", "normalizedDescription": "\u6240\u6709\u8d44\u4ea7\u4ee5\u9996\u4e2a\u6709\u6548\u6536\u76d8\u4ef7\u4e3a 100\uff0c\u53ef\u76f4\u63a5\u5bf9\u6bd4\u4e0d\u540c\u5e02\u573a\u548c\u8ba1\u4ef7\u5e01\u79cd\u7684\u8d70\u52bf\u3002", "comparisonSummary": "\u5bf9\u6bd4\u6458\u8981", "asset": "\u8d44\u4ea7", "return": "\u533a\u95f4\u6536\u76ca", "bars": "K \u7ebf\u6570\u91cf", "registeredSources": "\u5df2\u6ce8\u518c\u6570\u636e\u6e90", "registeredSourcesDescription": "\u663e\u793a\u5f53\u524d\u8fd0\u884c\u73af\u5883\u4e2d\u7684\u52a0\u8f7d\u5668\u53ef\u7528\u6027\u3002\u9700\u51ed\u636e\u7684\u6570\u636e\u6e90\u5728\u914d\u7f6e\u6210\u529f\u540e\u624d\u4f1a\u52a0\u5165\u56de\u9000\u94fe\u3002", "refresh": "\u5237\u65b0", "status": "\u72b6\u6001", "markets": "\u8986\u76d6\u5e02\u573a", "fallbackMarkets": "\u56de\u9000\u5e02\u573a", "localCache": "\u672c\u5730\u7f13\u5b58", "cacheLoading": "\u6b63\u5728\u8bfb\u53d6\u7f13\u5b58\u7b56\u7565", "fallbackOrder": "\u56de\u9000\u987a\u5e8f", "fallbackDescription": "\u6309\u4ece\u5de6\u5230\u53f3\u7684\u987a\u5e8f\u4f9d\u6b21\u5c1d\u8bd5\u3002", "retry": "\u91cd\u8bd5", "barCount": "{{count}} \u6839 K \u7ebf", "queryCache": "\u5171\u4eab\u67e5\u8be2\u7f13\u5b58", "queryCacheHit": "\u5df2\u590d\u7528\u5171\u4eab\u7ed3\u679c", "queryCacheMiss": "\u5df2\u83b7\u53d6\u65b0\u7ed3\u679c\u5e76\u4fdd\u5b58\u4f9b\u590d\u7528", "queryCacheDescription": "\u4fdd\u5b58\u4e8e {{savedAt}}\u3002\u7f13\u5b58\u6709\u6548\u671f\uff1a{{ttl}}\u3002", "noExpiry": "\u4e0d\u8fc7\u671f", "seconds": "{{count}} \u79d2", "cachePolicy": "\u5df2\u5b8c\u6210\u7684\u65e5\u7ebf\u67e5\u8be2\u4f1a\u5728\u6240\u6709\u7528\u6237\u95f4\u5171\u4eab\uff1b\u5305\u542b\u5f53\u65e5\u7684\u67e5\u8be2\u4f1a\u5728\u77ed\u6682\u6709\u6548\u671f\u540e\u5237\u65b0\u3002", "normalizedChartLabel": "\u591a\u8d44\u4ea7\u5f52\u4e00\u5316\u6536\u76ca\u56fe\u8868", "marketLabels": { "a_share": "A \u80a1", "us_equity": "\u7f8e\u80a1", "hk_equity": "\u6e2f\u80a1", "crypto": "\u52a0\u5bc6\u8d44\u4ea7", "forex": "\u5916\u6c47", "fund": "\u57fa\u91d1", "futures": "\u671f\u8d27", "macro": "\u5b8f\u89c2\u6570\u636e" }
+  },
+  "portfolio": { "navigation": "投资组合", "title": "投资组合风险", "subtitle": "只读账户与持仓快照。本工作区不能下单、修改或撤销订单。", "connection": "交易连接", "searchConnections": "搜索交易连接", "refresh": "刷新", "loading": "正在加载投资组合", "loadError": "无法加载所选连接的投资组合数据。", "equity": "账户权益", "cash": "现金", "grossExposure": "总敞口", "netExposure": "净敞口", "unrealizedPnl": "未实现盈亏", "positions": "持仓", "positionsDescription": "来自已配置连接的 {{count}} 个标准化持仓。", "asset": "资产", "quantity": "数量", "value": "市值", "weight": "权重", "riskSnapshot": "风险快照", "leverage": "总杠杆", "topConcentration": "最大集中度", "drawdown": "回撤", "drawdownUnavailable": "回撤需要保留持仓历史，不能从单次券商读取中计算。", "risk": { "low": "低集中度", "moderate": "中等集中度", "high": "高集中度", "critical": "极高集中度" } }
 }

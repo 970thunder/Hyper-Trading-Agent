@@ -16,16 +16,16 @@
     })();
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vibe-Trading 中文入门教程 | Vibe-Trading Wiki</title>
-  <meta name="description" content="面向非金融专业读者的 Vibe-Trading 中文入门教程：理解因子、策略、回测、多市场数据源、券商连接器与 Shadow Account。">
+  <title>Hyper-Trading-Agent 中文入门教程 | Hyper-Trading-Agent Wiki</title>
+  <meta name="description" content="面向非金融专业读者的 Hyper-Trading-Agent 中文入门教程：理解因子、策略、回测、多市场数据源、券商连接器与 Shadow Account。">
   <meta name="robots" content="index, follow, max-image-preview:large">
   <meta property="og:type" content="article">
-  <meta property="og:site_name" content="Vibe-Trading Wiki">
-  <meta property="og:title" content="Vibe-Trading 中文入门教程">
-  <meta property="og:description" content="从金融术语到项目使用路径，帮助非金融背景读者读懂并开始使用 Vibe-Trading。">
-  <meta property="og:image" content="https://vibetrading.wiki/assets/icon.png">
-  <meta property="og:url" content="https://vibetrading.wiki/tutorials/vibe-trading-beginner-zh.html">
-  <link rel="canonical" href="https://vibetrading.wiki/tutorials/vibe-trading-beginner-zh.html">
+  <meta property="og:site_name" content="Hyper-Trading-Agent Wiki">
+  <meta property="og:title" content="Hyper-Trading-Agent 中文入门教程">
+  <meta property="og:description" content="从金融术语到项目使用路径，帮助非金融背景读者读懂并开始使用 Hyper-Trading-Agent。">
+  <meta property="og:image" content="https://hyper-trading-agent.wiki/assets/icon.png">
+  <meta property="og:url" content="https://hyper-trading-agent.wiki/tutorials/hyper-trading-agent-beginner-zh.html">
+  <link rel="canonical" href="https://hyper-trading-agent.wiki/tutorials/hyper-trading-agent-beginner-zh.html">
   <link rel="icon" type="image/png" href="/assets/icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -303,19 +303,19 @@
 <body>
   <header class="site-header" id="site-header">
     <div class="site-header__inner">
-      <a class="brand" href="/home/" aria-label="Vibe-Trading home">
+      <a class="brand" href="/home/" aria-label="Hyper-Trading-Agent home">
         <img class="brand__mark" src="/assets/icon.png" alt="" width="40" height="40">
-        <span class="brand__text">Vibe-Trading</span>
+        <span class="brand__text">Hyper-Trading-Agent</span>
       </a>
       <nav class="site-nav" aria-label="Primary">
         <a href="/docs/">Docs</a>
         <a href="/tutorials/">Tutorials</a>
         <a href="/alpha-library/">Alpha Library</a>
         <a href="/research-lab/">Research Lab</a>
-        <a href="https://github.com/HKUDS/Vibe-Trading">Source</a>
+        <a href="https://github.com/970thunder/Hyper-Trading-Agent">Source</a>
       </nav>
       <div class="site-actions">
-        <a class="star-pill" href="https://github.com/HKUDS/Vibe-Trading" aria-label="Vibe-Trading on GitHub">
+        <a class="star-pill" href="https://github.com/970thunder/Hyper-Trading-Agent" aria-label="Hyper-Trading-Agent on GitHub">
           <span aria-hidden="true">Star</span>
           <strong id="star-count">--</strong>
         </a>
@@ -329,8 +329,8 @@
   <main class="tutorial">
     <header>
       <p class="eyebrow">中文教程 · Beginner Guide</p>
-      <h1>从金融术语到项目使用：读懂 Vibe-Trading</h1>
-      <p class="lede">这份教程写给没有金融专业背景、交易经验也不多的读者。它不教你“稳赚策略”，而是帮助你理解 Vibe-Trading 里的因子、策略、回测、数据源、券商连接器和 Shadow Account 分别是什么，以及如何按安全顺序把它用起来。</p>
+      <h1>从金融术语到项目使用：读懂 Hyper-Trading-Agent</h1>
+      <p class="lede">这份教程写给没有金融专业背景、交易经验也不多的读者。它不教你“稳赚策略”，而是帮助你理解 Hyper-Trading-Agent 里的因子、策略、回测、数据源、券商连接器和 Shadow Account 分别是什么，以及如何按安全顺序把它用起来。</p>
       <div class="meta-list" aria-label="Guide scope">
         <span>多市场</span>
         <span>数据源</span>
@@ -358,9 +358,9 @@
 
     <section id="mental-model">
       <h2>1. 先建立项目地图</h2>
-      <p>Vibe-Trading 可以先理解成“交易研究工作台”。你用自然语言提出问题，项目把问题拆成数据读取、因子计算、策略生成、回测、报告和账户连接等步骤。它不是券商，也不托管资金；核心价值是让研究步骤能运行、能复查、能沉淀。</p>
+      <p>Hyper-Trading-Agent 可以先理解成“交易研究工作台”。你用自然语言提出问题，项目把问题拆成数据读取、因子计算、策略生成、回测、报告和账户连接等步骤。它不是券商，也不托管资金；核心价值是让研究步骤能运行、能复查、能沉淀。</p>
 
-      <div class="workflow-flow" aria-label="Vibe-Trading workflow">
+      <div class="workflow-flow" aria-label="Hyper-Trading-Agent workflow">
         <div class="flow-step">
           <span>01 Prompt</span>
           <p>你提出问题，例如“回测一组大盘股的动量策略”。</p>
@@ -525,7 +525,7 @@
 
     <section id="factors">
       <h2>3. 因子和 Alpha Zoo</h2>
-      <p>因子是 Vibe-Trading 里最容易让非金融读者困惑的部分。你可以把它理解成“排序公式”：每天给很多股票各打一个分，然后看分数高的一组未来表现是否更好。</p>
+      <p>因子是 Hyper-Trading-Agent 里最容易让非金融读者困惑的部分。你可以把它理解成“排序公式”：每天给很多股票各打一个分，然后看分数高的一组未来表现是否更好。</p>
 
       <div class="callout">
         <p>重要：因子不是策略。因子只回答“哪个标的分数更高”。策略还要回答“买多少、什么时候买、什么时候卖、交易成本多少、是否允许集中持仓、是否能成交”。</p>
@@ -575,9 +575,9 @@
       </ul>
 
       <p>先用 CLI 浏览，而不是直接读 456 个源码文件：</p>
-      <pre><code>vibe-trading alpha list --zoo academic
-vibe-trading alpha show academic_mkt_rf
-vibe-trading alpha bench --zoo academic --universe sp500 --period 2020-2025 --top 10</code></pre>
+      <pre><code>hyper-trading alpha list --zoo academic
+hyper-trading alpha show academic_mkt_rf
+hyper-trading alpha bench --zoo academic --universe sp500 --period 2020-2025 --top 10</code></pre>
 
       <p><code>alpha bench</code> 会把因子放到一个 universe 上测试。项目内置的分类逻辑是：IC 均值大于 0.02、IC 为正的比例至少 55%、t 统计显著时归为 <code>alive</code>；IC 显著为负时归为 <code>reversed</code>；其他归为 <code>dead</code>。这不是“可以买入”的结论，只是研究阶段的第一道筛选。</p>
     </section>
@@ -586,7 +586,7 @@ vibe-trading alpha bench --zoo academic --universe sp500 --period 2020-2025 --to
       <h2>4. 策略和 Signal Engine</h2>
       <p>策略是把研究想法变成可执行规则。一个很朴素的策略可以是：“如果 20 日均线高于 60 日均线，就持有；否则空仓。”多因子策略则可能是：“在一个股票池里，用动量、质量、波动率三个因子合成分数，买前 20 只，每月调仓一次。”</p>
 
-      <p>在 Vibe-Trading 里，策略通常落到一个 run dir：</p>
+      <p>在 Hyper-Trading-Agent 里，策略通常落到一个 run dir：</p>
       <pre><code>my_run/
   config.json
   code/
@@ -604,7 +604,7 @@ vibe-trading alpha bench --zoo academic --universe sp500 --period 2020-2025 --to
       <p>回测不是预测器，而是历史模拟器。它的价值是让你在投入真实资金前，先看清一套规则在历史数据里经历过什么：赚了多少、最大亏了多少、交易频率多高、是否只是某一年有效、是否被手续费吃掉。</p>
 
       <h3>回测入口</h3>
-      <pre><code>vibe-trading run -p "Backtest a momentum strategy on a broad equity universe from 2020 to 2025. Include benchmark comparison, drawdown, turnover, and a short explanation."</code></pre>
+      <pre><code>hyper-trading run -p "Backtest a momentum strategy on a broad equity universe from 2020 to 2025. Include benchmark comparison, drawdown, turnover, and a short explanation."</code></pre>
 
       <p>如果 agent 生成了 run dir，最终会调用 <code>backtest</code> 工具。这个工具会校验 <code>config.json</code> 和 <code>code/signal_engine.py</code>，再运行 <code>agent/backtest/runner.py</code>。</p>
 
@@ -642,9 +642,9 @@ vibe-trading alpha bench --zoo academic --universe sp500 --period 2020-2025 --to
       <h2>7. 券商连接器</h2>
       <p>connector 和 loader 要分清：loader 读行情，connector 连接券商账户。connector 的典型能力包括读取账户、持仓、委托、报价、历史 K 线，以及在允许的 profile 下下单或撤单。</p>
 
-      <pre><code>vibe-trading connector list
-vibe-trading connector use &lt;profile-id&gt;
-vibe-trading connector check</code></pre>
+      <pre><code>hyper-trading connector list
+hyper-trading connector use &lt;profile-id&gt;
+hyper-trading connector check</code></pre>
 
       <p>看 connector 时，不要先问“能不能自动交易”，先看 profile 的安全属性：</p>
       <table class="term-grid">
@@ -683,8 +683,8 @@ vibe-trading connector check</code></pre>
 
       <p>当前交易流水解析支持若干常见券商导出格式和 generic CSV。它会输出持仓天数、胜率、盈亏比、回撤、处置效应、过度交易、追涨、锚定等行为诊断。随后 Shadow Account 会提取 3 到 5 条 if-then 规则，生成策略代码，跑多市场回测，最后渲染 HTML/PDF 报告。</p>
 
-      <pre><code>vibe-trading --upload trades_export.csv
-vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, and compare it with my actual trades."</code></pre>
+      <pre><code>hyper-trading --upload trades_export.csv
+hyper-trading run -p "Analyze my trading behavior, extract my shadow strategy, and compare it with my actual trades."</code></pre>
 
       <p>如果你想给某个新券商补齐这条路径，优先方向是：把官方 API 或用户导出的交易记录归一化成项目里的 <code>TradeRecord</code> 格式，然后复用现有 Trade Journal 和 Shadow Account 流程。</p>
     </section>
@@ -701,13 +701,13 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
       </ol>
 
       <p>一组适合入门的命令：</p>
-      <pre><code>pip install vibe-trading-ai
-vibe-trading init
-vibe-trading
-vibe-trading serve --port 8899
-vibe-trading alpha list --zoo academic
-vibe-trading alpha bench --zoo academic --universe sp500 --period 2020-2025 --top 10
-vibe-trading connector list</code></pre>
+      <pre><code>pip install hyper-trading-agent
+hyper-trading init
+hyper-trading
+hyper-trading serve --port 8899
+hyper-trading alpha list --zoo academic
+hyper-trading alpha bench --zoo academic --universe sp500 --period 2020-2025 --top 10
+hyper-trading connector list</code></pre>
     </section>
 
     <section id="contribute">
@@ -723,18 +723,18 @@ vibe-trading connector list</code></pre>
       </ul>
 
       <div class="callout warning">
-        <p>这份教程和 Vibe-Trading 都不是投资建议。任何真实交易都应先经过你自己的判断、券商确认、模拟盘验证和风险控制。</p>
+        <p>这份教程和 Hyper-Trading-Agent 都不是投资建议。任何真实交易都应先经过你自己的判断、券商确认、模拟盘验证和风险控制。</p>
       </div>
     </section>
   </main>
 
   <footer class="site-footer">
-    <span>Vibe-Trading Wiki</span>
+    <span>Hyper-Trading-Agent Wiki</span>
     <a href="/docs/">Docs</a>
     <a href="/tutorials/">Tutorials</a>
     <a href="/alpha-library/">Alpha Library</a>
     <a href="/research-lab/">Research Lab</a>
-    <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
+    <a href="https://github.com/970thunder/Hyper-Trading-Agent">GitHub</a>
   </footer>
 </body>
 </html>

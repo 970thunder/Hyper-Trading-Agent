@@ -41,9 +41,11 @@ RUN apt-get update \
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
-# Python deps (install before copying code for layer caching)
+# Python deps (install before copying code for layer caching). The lock is
+# hash-verified to prevent a resolver drift from changing a release image.
 COPY agent/requirements.txt agent/requirements.txt
-RUN pip install --no-cache-dir -r agent/requirements.txt
+COPY requirements-lock.txt requirements-lock.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements-lock.txt
 
 # Copy project
 COPY pyproject.toml LICENSE README.md ./

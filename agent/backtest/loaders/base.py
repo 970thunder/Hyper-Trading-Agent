@@ -239,7 +239,7 @@ def loader_cache_root() -> Path:
     raw = os.getenv(LOADER_CACHE_ROOT_ENV)
     if raw and raw.strip():
         return Path(raw).expanduser()
-    return Path.home() / ".vibe-trading" / "cache" / "loaders"
+    return Path.home() / ".hyper-trading-agent" / "cache" / "loaders"
 
 
 def make_loader_cache_key(

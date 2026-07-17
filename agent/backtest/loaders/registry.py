@@ -48,6 +48,8 @@ VALID_SOURCES: set[str] = {
     "alphavantage",
     "tiingo",
     "fmp",
+    "longbridge",
+    "feitu",
     "local",
     "auto",
 }
@@ -92,6 +94,8 @@ def _ensure_registered() -> None:
         "backtest.loaders.alphavantage_loader",
         "backtest.loaders.tiingo_loader",
         "backtest.loaders.fmp_loader",
+        "backtest.loaders.longbridge",
+        "backtest.loaders.feitu_loader",
         "backtest.loaders.local_loader",
     ]
     import importlib
@@ -104,7 +108,7 @@ def _ensure_registered() -> None:
 
 # Sources that must NEVER silently fall through to a network loader when the
 # caller asked for them explicitly. ``local`` reads the user's own configured
-# files (``~/.vibe-trading/data-bridge/config.yaml``); its ``markets`` set spans
+# files (``~/.hyper-trading-agent/data-bridge/config.yaml``); its ``markets`` set spans
 # every market only so the cross-market auto-resolver can *reach* it, not so an
 # unavailable ``local`` request can degrade into an unrelated network source.
 # An explicit ``local`` request that is unavailable is a config problem the user
@@ -122,9 +126,9 @@ _NO_NETWORK_FALLBACK_SOURCES: frozenset[str] = frozenset({"local"})
 # that must be politely throttled; Finnhub/AlphaVantage/Tiingo/FMP are key-gated
 # REST fallbacks placed deeper in the chain.
 FALLBACK_CHAINS: dict[str, list[str]] = {
-    "a_share":   ["tencent", "mootdx", "eastmoney", "baostock", "akshare", "tushare", "local"],
-    "us_equity": ["yahoo", "stooq", "sina", "eastmoney", "yfinance", "tiingo", "fmp", "finnhub", "alphavantage", "akshare", "local"],
-    "hk_equity": ["eastmoney", "yahoo", "futu", "yfinance", "akshare", "local"],
+    "a_share":   ["tencent", "mootdx", "eastmoney", "baostock", "feitu", "akshare", "tushare", "local"],
+    "us_equity": ["yahoo", "stooq", "sina", "eastmoney", "yfinance", "tiingo", "fmp", "finnhub", "alphavantage", "longbridge", "akshare", "local"],
+    "hk_equity": ["eastmoney", "yahoo", "feitu", "futu", "yfinance", "longbridge", "akshare", "local"],
     "crypto":    ["okx", "ccxt", "yfinance", "local"],
     "futures":   ["tushare", "akshare", "local"],
     "fund":      ["tushare", "akshare", "local"],
@@ -205,7 +209,7 @@ def get_loader_cls_with_fallback(source: str) -> Type[Any]:
         raise NoAvailableSourceError(
             f"Data source '{source}' is unavailable and does not fall back to a "
             f"network source. Check your local Data Bridge config "
-            f"(~/.vibe-trading/data-bridge/config.yaml) — it must exist and list "
+            f"(~/.hyper-trading-agent/data-bridge/config.yaml) — it must exist and list "
             f"at least one source."
         )
 

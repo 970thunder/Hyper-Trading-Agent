@@ -20,6 +20,7 @@ import pytest
 
 import src.live.paths as paths
 from src.live.runtime.reconcile import (
+    CorruptRuntimeState,
     DeltaKind,
     ReconcileReport,
     reconcile,
@@ -28,7 +29,7 @@ from src.live.runtime.reconcile import (
 
 @pytest.fixture()
 def live_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Point the live runtime root at an isolated tmp dir (no real ~/.vibe-trading)."""
+    """Point the live runtime root at an isolated tmp dir (no real ~/.hyper-trading-agent)."""
     monkeypatch.setattr(paths, "get_runtime_root", lambda: tmp_path)
     return tmp_path
 
@@ -293,21 +294,18 @@ def test_unsafe_reconcile_does_not_advance_state(live_runtime: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# corrupt state is renamed aside, treated as cold start
+# corrupt state blocks reconciliation until an operator repairs it
 # ---------------------------------------------------------------------------
 
 
-def test_corrupt_state_renamed_and_cold_starts(live_runtime: Path) -> None:
-    """A truncated/corrupt state file is renamed .corrupt-* and treated as cold."""
+def test_corrupt_state_fails_closed_and_remains_for_repair(live_runtime: Path) -> None:
+    """A truncated state must not be silently reclassified as a cold start."""
     path = paths.broker_dir("robinhood") / "runtime_state.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{not json", encoding="utf-8")
 
     rp, rb, ro = _readers(positions=[{"symbol": "NVDA", "qty": 1}])
-    report = reconcile("robinhood", rp, rb, ro)
+    with pytest.raises(CorruptRuntimeState, match="repair is required"):
+        reconcile("robinhood", rp, rb, ro)
 
-    assert report.had_prior_state is False  # corrupt -> cold start
-    assert report.is_safe is True
-    corrupt = list(path.parent.glob("runtime_state.json.corrupt-*"))
-    assert corrupt, "corrupt state file should be renamed aside"
-    assert path.is_file()  # a fresh clean state was written
+    assert path.read_text(encoding="utf-8") == "{not json"

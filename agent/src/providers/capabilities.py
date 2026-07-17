@@ -41,14 +41,14 @@ class ProviderCapabilities:
 
 
 # Distribution name from pyproject.toml [project].name.
-_DISTRIBUTION_NAME = "vibe-trading-ai"
+_DISTRIBUTION_NAME = "hyper-trading-agent"
 
 
 def _package_version() -> str:
     """Return the installed distribution version for User-Agent headers.
 
     Returns:
-        Installed ``vibe-trading-ai`` version string, or ``"dev"`` when the
+        Installed ``hyper-trading-agent`` version string, or ``"dev"`` when the
         package metadata is unavailable (e.g. an uninstalled source checkout).
     """
     try:
@@ -57,7 +57,7 @@ def _package_version() -> str:
         return "dev"
 
 
-_KIMI_USER_AGENT = f"Vibe-Trading/{_package_version()}"
+_VIBE_USER_AGENT = f"Hyper-Trading-Agent/{_package_version()}"
 
 
 _MOONSHOT_CAPABILITIES = ProviderCapabilities(
@@ -67,7 +67,12 @@ _MOONSHOT_CAPABILITIES = ProviderCapabilities(
     capture_reasoning=True,
     send_reasoning_content=True,
     normalize_assistant_content=True,
-    default_headers={"User-Agent": _KIMI_USER_AGENT},
+    default_headers={"User-Agent": _VIBE_USER_AGENT},
+)
+
+_NVIDIA_CAPABILITIES = ProviderCapabilities(
+    "nvidia", "NVIDIA_API_KEY", "NVIDIA_BASE_URL",
+    default_headers={"User-Agent": _VIBE_USER_AGENT},
 )
 
 _ZHIPU_CAPABILITIES = ProviderCapabilities("zhipu", "ZHIPU_API_KEY", "ZHIPU_BASE_URL")
@@ -97,7 +102,8 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
         capture_reasoning=True,
         native_adapter_package="langchain-deepseek",
     ),
-    "nvidia": ProviderCapabilities("nvidia", "NVIDIA_API_KEY", "NVIDIA_BASE_URL"),
+    "nvidia": _NVIDIA_CAPABILITIES,
+    "nvidia-nim": _NVIDIA_CAPABILITIES,
     "gemini": ProviderCapabilities(
         "gemini",
         "GEMINI_API_KEY",
@@ -128,6 +134,8 @@ def _infer_from_model(model: str) -> str | None:
         return "gemini"
     if lowered.startswith("deepseek"):
         return "deepseek"
+    if lowered.startswith("nvidia/"):
+        return "nvidia"
     if lowered.startswith("glm"):
         return "zhipu"
     if "kimi" in lowered or "moonshot" in lowered:
