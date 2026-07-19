@@ -28,8 +28,9 @@ WORKDIR /app
 #   Cairo/gdk-pixbuf) per its official Debian install list; without them the
 #   lazy `from weasyprint import HTML` in reporter.py fails and PDF rendering
 #   silently downgrades to HTML-only. fonts-dejavu-core gives non-blank PDFs.
-RUN apt-get update \
-    && apt-get install -y --fix-missing --no-install-recommends \
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update \
+    && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 install -y --fix-missing --no-install-recommends \
     build-essential \
     postgresql-client \
     libpango-1.0-0 \
