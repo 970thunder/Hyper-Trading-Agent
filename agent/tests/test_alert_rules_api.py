@@ -71,3 +71,43 @@ def test_alert_events_are_deduplicated_acknowledgeable_and_resolved(tmp_path, mo
     assert "alert_event.trigger" in actions
     assert "alert_event.acknowledge" in actions
     assert "alert_event.resolve" in actions
+
+
+def test_alert_channels_queue_in_app_delivery_and_reject_unsafe_webhooks(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_MODE", "1")
+    monkeypatch.setenv("VIBE_TRADING_COMMERCIAL_DB", str(tmp_path / "commercial.db"))
+    owner = TestClient(api_server.app)
+    assert owner.post("/auth/register", json={"email": "owner@example.com", "password": "password123", "organization_name": "Alerts"}).status_code == 200
+
+    channel = owner.post("/alerts/channels", json={"name": "Operations inbox", "channel_type": "in_app"})
+    assert channel.status_code == 201
+    assert channel.json()["endpoint"] == ""
+    assert owner.post(
+        "/alerts/channels",
+        json={"name": "Unsafe", "channel_type": "webhook", "endpoint": "http://127.0.0.1:8080/hook"},
+    ).status_code == 400
+
+    rule = owner.post(
+        "/alerts/rules",
+        json={
+            "name": "Feed freshness", "alert_type": "data_quality",
+            "condition": {"operator": "eq", "value": False}, "channels": [channel.json()["id"]],
+        },
+    )
+    assert rule.status_code == 201
+    triggered = owner.post(
+        "/alerts/evaluate",
+        json={"observations": [{"alert_type": "data_quality", "target": "us-feed", "value": False}]},
+    )
+    assert triggered.status_code == 200
+    deliveries = owner.get("/alerts/deliveries").json()["deliveries"]
+    assert len(deliveries) == 1
+    assert deliveries[0]["channel_id"] == channel.json()["id"]
+    assert deliveries[0]["status"] == "delivered"
+    assert deliveries[0]["attempt_count"] == 1
+
+    store = CommercialStore()
+    principal, _ = store.login(email="owner@example.com", password="password123")
+    actions = [row["action"] for row in store.list_audit_logs(principal, limit=20)]
+    assert "alert_channel.create" in actions
+    assert "alert_delivery.queue" in actions

@@ -14,6 +14,7 @@ from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Response, st
 from pydantic import BaseModel, Field
 
 from src.commercial.store import CommercialStore, Principal, embedding_backend_status as get_embedding_backend_status
+from src.channels.utils import validate_url_target
 from src.memory.persistent import PersistentMemory, commercial_memory_directory
 from src.memory.policy import MemoryPolicy
 from src.runtime_jobs.backend import REDIS_POSTGRES_RUNTIME_BACKEND, _redis_client_from_url, _redis_url, build_runtime_job_backend
@@ -209,6 +210,17 @@ class AlertEvaluationRequest(BaseModel):
     observations: list[AlertObservationRequest] = Field(..., min_length=1, max_length=500)
 
 
+class AlertNotificationChannelCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=160)
+    channel_type: str = Field(..., max_length=32)
+    endpoint: str = Field("", max_length=2048)
+
+
+class AlertDeliveryDispatchRequest(BaseModel):
+    limit: int = Field(50, ge=1, le=100)
+    retry_failed: bool = False
+
+
 class FeedbackCreateRequest(BaseModel):
     target_type: str
     target_id: str
@@ -238,6 +250,49 @@ def _host():
 
 def _store() -> CommercialStore:
     return CommercialStore()
+
+
+async def _dispatch_alert_deliveries(
+    store: CommercialStore,
+    principal: Principal,
+    *,
+    limit: int,
+    retry_failed: bool,
+) -> list[dict[str, Any]]:
+    deliveries = store.list_dispatchable_alert_deliveries(principal, limit=limit, include_failed=retry_failed)
+    outcomes: list[dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0), follow_redirects=False) as client:
+        for delivery in deliveries:
+            if str(delivery.get("channel_type")) != "webhook":
+                continue
+            endpoint = str(delivery.get("endpoint") or "")
+            ok, error = validate_url_target(endpoint)
+            if not ok:
+                outcomes.append(store.record_alert_delivery_attempt(
+                    principal, str(delivery["id"]), delivered=False, error_message=f"unsafe webhook endpoint: {error}",
+                ))
+                continue
+            payload = {
+                "event_id": str(delivery["event_id"]),
+                "rule_id": str(delivery["rule_id"]),
+                "rule_name": str(delivery["rule_name"]),
+                "alert_type": str(delivery["alert_type"]),
+                "metadata": json.loads(str(delivery["metadata_json"] or "{}")),
+            }
+            try:
+                response = await client.post(endpoint, json=payload)
+                outcomes.append(store.record_alert_delivery_attempt(
+                    principal,
+                    str(delivery["id"]),
+                    delivered=200 <= response.status_code < 300,
+                    response_status=response.status_code,
+                    error_message="" if 200 <= response.status_code < 300 else f"webhook returned HTTP {response.status_code}",
+                ))
+            except httpx.HTTPError as exc:
+                outcomes.append(store.record_alert_delivery_attempt(
+                    principal, str(delivery["id"]), delivered=False, error_message=str(exc),
+                ))
+    return outcomes
 
 
 def _persistent_memory(principal: Principal) -> PersistentMemory:
@@ -1448,9 +1503,40 @@ def register_commercial_routes(app: FastAPI) -> None:
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
+    @app.get("/alerts/channels")
+    async def list_alert_channels(principal: Principal = Depends(_require_role("owner", "admin"))):
+        return {"channels": _store().list_alert_notification_channels(principal)}
+
+    @app.post("/alerts/channels", status_code=status.HTTP_201_CREATED)
+    async def create_alert_channel(
+        payload: AlertNotificationChannelCreateRequest,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        if payload.channel_type.strip().lower() == "webhook":
+            safe, error = validate_url_target(payload.endpoint)
+            if not safe:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"unsafe webhook endpoint: {error}")
+        try:
+            return _store().create_alert_notification_channel(principal, payload.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     @app.get("/alerts/events")
     async def list_alert_events(limit: int = 100, principal: Principal = Depends(_require_role("owner", "admin"))):
         return {"events": _store().list_alert_events(principal, limit=limit)}
+
+    @app.get("/alerts/deliveries")
+    async def list_alert_deliveries(limit: int = 100, principal: Principal = Depends(_require_role("owner", "admin"))):
+        return {"deliveries": _store().list_alert_deliveries(principal, limit=limit)}
+
+    @app.post("/alerts/deliveries/dispatch")
+    async def dispatch_alert_deliveries(
+        payload: AlertDeliveryDispatchRequest,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        return {"deliveries": await _dispatch_alert_deliveries(
+            _store(), principal, limit=payload.limit, retry_failed=payload.retry_failed,
+        )}
 
     @app.post("/alerts/evaluate")
     async def evaluate_alerts(

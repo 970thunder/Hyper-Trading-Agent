@@ -16,6 +16,7 @@ feature changes state, and link the implementation and verification evidence.
 | Governance | Organization audit records for market-data queries | `market_data.history.fetch` audit event |
 | Admin | Conversation, token, cache, and model-call audit workspace | `/admin/audit` |
 | Portfolio | Organization-scoped read-only connections, external credential references, retained risk snapshots, and drawdown history | `/portfolio/connections`, `test_portfolio_organization_snapshots.py` |
+| Alerts | Organization-scoped rules, event lifecycle, and notification delivery queue | `/alerts`, `test_alert_rules_api.py` |
 
 ## In Progress
 
@@ -23,7 +24,6 @@ feature changes state, and link the implementation and verification evidence.
 | --- | --- | --- |
 | Market data | Instrument metadata | Add authoritative asset-class, currency, corporate-action, and holiday-calendar metadata to symbol-search results. |
 | Market data | Data quality | Add session calendars, adjustment mode, gap annotation, and source freshness SLA. |
-| Alerts | Organization-scoped rule evaluation and event lifecycle | Configure notification channels, delivery retries, and delivery audit records. |
 
 ## Planned
 

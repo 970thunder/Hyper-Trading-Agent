@@ -783,6 +783,37 @@ class CommercialStore:
                     resolved_by_user_id TEXT NOT NULL DEFAULT ''
                 );
                 CREATE INDEX IF NOT EXISTS idx_alert_events_organization ON alert_events(organization_id, status, created_at DESC);
+                CREATE TABLE IF NOT EXISTS alert_notification_channels (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    name TEXT NOT NULL,
+                    channel_type TEXT NOT NULL CHECK(channel_type IN ('in_app', 'webhook')),
+                    endpoint TEXT NOT NULL DEFAULT '',
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(organization_id, name)
+                );
+                CREATE INDEX IF NOT EXISTS idx_alert_notification_channels_organization
+                    ON alert_notification_channels(organization_id, enabled, updated_at DESC);
+                CREATE TABLE IF NOT EXISTS alert_deliveries (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    event_id TEXT NOT NULL REFERENCES alert_events(id) ON DELETE CASCADE,
+                    channel_id TEXT NOT NULL REFERENCES alert_notification_channels(id) ON DELETE CASCADE,
+                    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'delivered', 'failed')),
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    last_attempt_at TEXT NOT NULL DEFAULT '',
+                    next_attempt_at TEXT NOT NULL DEFAULT '',
+                    response_status INTEGER,
+                    error_message TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(event_id, channel_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_alert_deliveries_dispatch
+                    ON alert_deliveries(organization_id, status, next_attempt_at, created_at DESC);
                 CREATE TABLE IF NOT EXISTS portfolio_connections (
                     id TEXT PRIMARY KEY,
                     organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -1662,6 +1693,158 @@ class CommercialStore:
 
     # --- Organization alert rules ---
 
+    @staticmethod
+    def _alert_channel_payload(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": str(row["id"]), "name": str(row["name"]), "channel_type": str(row["channel_type"]),
+            "endpoint": str(row["endpoint"]), "enabled": bool(row["enabled"]),
+            "created_at": str(row["created_at"]), "updated_at": str(row["updated_at"]),
+        }
+
+    def create_alert_notification_channel(self, principal: Principal, payload: dict[str, Any]) -> dict[str, Any]:
+        name = str(payload.get("name") or "").strip()
+        channel_type = str(payload.get("channel_type") or "").strip().lower()
+        endpoint = str(payload.get("endpoint") or "").strip()
+        if not name or len(name) > 160:
+            raise ValueError("alert channel name is required and must be at most 160 characters")
+        if channel_type not in {"in_app", "webhook"}:
+            raise ValueError("unsupported alert notification channel type")
+        if channel_type == "webhook" and not endpoint:
+            raise ValueError("webhook notification channels require an endpoint")
+        if channel_type == "in_app":
+            endpoint = ""
+        if len(endpoint) > 2048:
+            raise ValueError("alert channel endpoint is too long")
+        channel_id, now = _new_id("anc"), utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO alert_notification_channels(
+                    id, organization_id, name, channel_type, endpoint, enabled, created_by_user_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)""",
+                (channel_id, principal.organization_id, name, channel_type, endpoint, principal.user_id, now, now),
+            )
+            row = conn.execute(
+                "SELECT * FROM alert_notification_channels WHERE id = ? AND organization_id = ?",
+                (channel_id, principal.organization_id),
+            ).fetchone()
+        result = self._alert_channel_payload(row)
+        self.audit(principal, "alert_channel.create", "alert_notification_channel", channel_id, {"channel_type": channel_type})
+        return result
+
+    def list_alert_notification_channels(self, principal: Principal) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM alert_notification_channels WHERE organization_id = ? ORDER BY updated_at DESC, name ASC",
+                (principal.organization_id,),
+            ).fetchall()
+        return [self._alert_channel_payload(row) for row in rows]
+
+    def _queue_alert_deliveries(self, principal: Principal, event: dict[str, Any], rule: dict[str, Any]) -> int:
+        channels = json.loads(str(rule.get("channels_json") or "[]"))
+        if not isinstance(channels, list):
+            channels = []
+        with self._connect() as conn:
+            if channels:
+                placeholders = ",".join("?" for _ in channels)
+                rows = conn.execute(
+                    f"""SELECT * FROM alert_notification_channels
+                        WHERE organization_id = ? AND enabled = 1 AND id IN ({placeholders})""",
+                    (principal.organization_id, *[str(channel) for channel in channels]),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM alert_notification_channels WHERE organization_id = ? AND enabled = 1",
+                    (principal.organization_id,),
+                ).fetchall()
+            now = utcnow()
+            created = 0
+            for row in rows:
+                delivery_id = _new_id("ald")
+                channel_type = str(row["channel_type"])
+                status = "delivered" if channel_type == "in_app" else "pending"
+                cursor = conn.execute(
+                    """INSERT OR IGNORE INTO alert_deliveries(
+                        id, organization_id, event_id, channel_id, status, attempt_count, last_attempt_at,
+                        next_attempt_at, response_status, error_message, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, '', ?, ?)""",
+                    (delivery_id, principal.organization_id, event["id"], row["id"], status,
+                     1 if status == "delivered" else 0, now if status == "delivered" else "", "", now, now),
+                )
+                created += int(cursor.rowcount > 0)
+        if created:
+            self.audit(principal, "alert_delivery.queue", "alert_event", event["id"], {"delivery_count": created})
+        return created
+
+    @staticmethod
+    def _alert_delivery_payload(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": str(row["id"]), "event_id": str(row["event_id"]), "channel_id": str(row["channel_id"]),
+            "channel_name": str(row["channel_name"]), "channel_type": str(row["channel_type"]),
+            "status": str(row["status"]), "attempt_count": int(row["attempt_count"]),
+            "last_attempt_at": str(row["last_attempt_at"]), "next_attempt_at": str(row["next_attempt_at"]),
+            "response_status": row["response_status"], "error_message": str(row["error_message"]),
+            "created_at": str(row["created_at"]), "updated_at": str(row["updated_at"]),
+        }
+
+    def list_alert_deliveries(self, principal: Principal, limit: int = 100) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT d.*, c.name AS channel_name, c.channel_type FROM alert_deliveries d
+                   JOIN alert_notification_channels c ON c.id = d.channel_id
+                   WHERE d.organization_id = ? ORDER BY d.created_at DESC LIMIT ?""",
+                (principal.organization_id, max(1, min(limit, 500))),
+            ).fetchall()
+        return [self._alert_delivery_payload(row) for row in rows]
+
+    def list_dispatchable_alert_deliveries(self, principal: Principal, limit: int = 50, *, include_failed: bool = False) -> list[dict[str, Any]]:
+        statuses = "('pending', 'failed')" if include_failed else "('pending')"
+        now = utcnow()
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""SELECT d.*, c.name AS channel_name, c.channel_type, c.endpoint, e.rule_id, e.metadata_json,
+                           r.name AS rule_name, r.alert_type
+                    FROM alert_deliveries d
+                    JOIN alert_notification_channels c ON c.id = d.channel_id
+                    JOIN alert_events e ON e.id = d.event_id
+                    JOIN alert_rules r ON r.id = e.rule_id
+                    WHERE d.organization_id = ? AND d.status IN {statuses}
+                      AND (d.next_attempt_at = '' OR d.next_attempt_at <= ?)
+                    ORDER BY d.created_at ASC LIMIT ?""",
+                (principal.organization_id, now, max(1, min(limit, 100))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def record_alert_delivery_attempt(
+        self, principal: Principal, delivery_id: str, *, delivered: bool, response_status: int | None = None, error_message: str = "",
+    ) -> dict[str, Any]:
+        now = utcnow()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM alert_deliveries WHERE id = ? AND organization_id = ?",
+                (delivery_id, principal.organization_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError(delivery_id)
+            attempts = int(row["attempt_count"]) + 1
+            status = "delivered" if delivered else ("failed" if attempts >= 3 else "pending")
+            retry_after = "" if delivered or attempts >= 3 else (datetime.now(timezone.utc) + timedelta(seconds=2 ** attempts)).isoformat()
+            conn.execute(
+                """UPDATE alert_deliveries SET status = ?, attempt_count = ?, last_attempt_at = ?, next_attempt_at = ?,
+                   response_status = ?, error_message = ?, updated_at = ? WHERE id = ? AND organization_id = ?""",
+                (status, attempts, now, retry_after, response_status, error_message[:1000], now, delivery_id, principal.organization_id),
+            )
+            updated = conn.execute(
+                """SELECT d.*, c.name AS channel_name, c.channel_type FROM alert_deliveries d
+                   JOIN alert_notification_channels c ON c.id = d.channel_id
+                   WHERE d.id = ? AND d.organization_id = ?""",
+                (delivery_id, principal.organization_id),
+            ).fetchone()
+        payload = self._alert_delivery_payload(updated)
+        self.audit(principal, "alert_delivery.deliver" if delivered else "alert_delivery.retry", "alert_delivery", delivery_id, {
+            "status": payload["status"], "attempt_count": attempts, "response_status": response_status,
+        })
+        return payload
+
     def create_alert_rule(self, principal: Principal, payload: dict[str, Any]) -> dict[str, Any]:
         name = str(payload.get("name") or "").strip()
         alert_type = str(payload.get("alert_type") or "").strip().lower()
@@ -1741,7 +1924,7 @@ class CommercialStore:
         return row
 
     def _record_alert_event(
-        self, principal: Principal, rule: sqlite3.Row, observation: dict[str, Any], dedupe_key: str,
+        self, principal: Principal, rule: dict[str, Any], observation: dict[str, Any], dedupe_key: str,
     ) -> tuple[dict[str, Any], bool]:
         with self._connect() as conn:
             row = conn.execute(
@@ -1773,6 +1956,7 @@ class CommercialStore:
         self.audit(principal, "alert_event.trigger", "alert_event", event_id, {
             "rule_id": payload["rule_id"], "alert_type": payload["alert_type"], "dedupe_key": dedupe_key,
         })
+        self._queue_alert_deliveries(principal, payload, rule)
         return payload, True
 
     def _resolve_alert_event(self, principal: Principal, rule_id: str, dedupe_key: str, *, reason: str) -> int:
