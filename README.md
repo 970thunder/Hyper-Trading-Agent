@@ -16,6 +16,13 @@ This repository is maintained as an independent project under `970thunder`.
   - model provider management
   - knowledge bases, documents, URL ingestion, search, and citations
   - audit logs and model usage API surfaces
+- Organization trading and research workspaces:
+  - read-only portfolio connections, retained snapshots, and drawdown history
+  - configurable in-app/Webhook alerts with durable delivery records and retry controls
+  - watchlists, cited market notes, earnings calendars, and event timelines
+  - normalized OKX/Binance funding, open-interest, and basis metrics with provenance
+  - paper-trading ledger with local risk limits and reproducible order replay
+  - live connector workflow protected by mandate, approval, pre-trade checks, kill switch, and action audit
 - Production deployment skeleton with Docker Compose, PostgreSQL + pgvector schema, Redis, API, and worker services.
 
 ## Architecture
@@ -179,6 +186,9 @@ Operations runbooks:
 - `POST /auth/login`
 - `POST /auth/logout`
 - `GET /auth/me`
+- `GET/POST /models/providers`
+- `GET/POST /knowledge-bases`
+- `POST /knowledge-bases/{id}/documents`, `/urls`, and `/search`
 - `GET /organizations/current`
 - `GET /models/providers`
 - `POST /models/providers`
@@ -190,6 +200,11 @@ Operations runbooks:
 - `POST /knowledge-bases/{id}/search`
 - `GET /audit-logs`
 - `GET /usage/model-calls`
+- `GET/POST /portfolio/connections`
+- `GET/POST /alerts/rules`, `GET/POST /alerts/channels`, `GET /alerts/deliveries`
+- `GET/POST /research/watchlists`, `/research/notes`, `/research/events`
+- `GET /market-data/crypto-derivatives`
+- `GET/PUT /paper-trading/policy`, `GET/POST /paper-trading/orders`
 - `GET /metrics`
 
 ## Current Limits
@@ -197,6 +212,9 @@ Operations runbooks:
 - Runtime jobs have a SQLite durable store and a Redis/Postgres queue contract. The worker can consume queued envelopes and update job state, but full Agent run, web crawl, and long-backtest executors still need to be moved onto that worker path.
 - RAG supports PostgreSQL lifecycle storage, pgvector retrieval, local fallback, embedding status, ingestion lifecycle, and hybrid retrieval surfaces. Configurable reranking and formal RAG evaluation datasets remain follow-up work.
 - CSRF protection, enterprise SSO, quota enforcement, and deeper observability hardening are still pending.
+- Instrument metadata still needs authoritative corporate-action histories and exchange holiday calendars.
+- Market-data quality still needs session-calendar enforcement, adjustment modes, gap annotations, and a freshness SLA.
+- Webhook alert retries are durable and operator-dispatchable; production deployments should also schedule retry dispatch independently of request traffic.
 
 ## Verification
 

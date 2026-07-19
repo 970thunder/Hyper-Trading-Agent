@@ -1,22 +1,23 @@
 # Hyper Trading Agent
 
-Hyper Trading Agent 是一个面向商业化交付的金融投研 Agent 平台，目标是支持企业内部投研、知识库问答、模型配置、回测分析和审计治理。
+Hyper Trading Agent 是面向商业金融研究的 Agent 平台，提供对话、市场研究、回测、知识库、组织治理和交易风险控制能力。
 
-本仓库是 `970thunder` 维护的独立项目。
+本仓库由 `970thunder` 维护。
 
 ## 当前能力
 
-- Agent 对话 API，支持会话和流式事件。
-- 金融投研工具、市场数据、报告生成和回测能力。
-- 支持 SiliconFlow、OpenAI-compatible、OpenRouter、DeepSeek、Qwen/DashScope、Ollama 等模型配置。
-- 本地轻量 RAG：SQLite FTS，适合单机验证。
-- 商业化 MVP：
-  - 邮箱密码登录
-  - 组织与 RBAC 角色
-  - 模型 provider 管理
-  - 知识库、文件入库、网页入库、检索和引用来源
-  - 审计日志和模型调用用量 API
-- Docker Compose 生产部署骨架：API、worker、PostgreSQL + pgvector、Redis。
+- 支持会话和流式事件的 Agent 对话 API。
+- 金融研究工具、市场数据、报告生成和回测。
+- 支持 SiliconFlow、OpenAI 兼容接口、OpenRouter、DeepSeek、Qwen/DashScope、Ollama 等模型配置。
+- 支持轻量本地 RAG（SQLite FTS）以及生产环境 PostgreSQL + pgvector 路径。
+- 组织与治理：邮箱密码登录、组织、RBAC、模型管理、知识库、审计和用量接口。
+- 组织级研究与交易工作区：
+  - 只读组合连接、风险快照和回撤历史。
+  - 站内/Webhook 告警、持久化投递记录和重试控制。
+  - 自选列表、带引用的市场笔记、财报日历和事件时间线。
+  - 带来源与采集时间的 OKX/Binance 资金费率、持仓量和基差指标。
+  - 带本地风险限额和可复现回放的纸面交易账本。
+  - 真实连接器订单受授权书、审批、预交易风控、熔断和行动审计保护。
 
 ## 本地启动
 
@@ -42,53 +43,51 @@ npm run dev
 
 ```env
 LANGCHAIN_PROVIDER=siliconflow
-LANGCHAIN_MODEL_NAME=deepseek-ai/DeepSeek-V4-Flash
+LANGCHAIN_MODEL_NAME=deepseek-ai/DeepSeek-V3.2
 SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
-SILICONFLOW_API_KEY=你的密钥
+SILICONFLOW_API_KEY=your-api-key
 ```
 
-不要把真实密钥提交到仓库。
+不要将真实密钥提交到仓库。
 
 ## Docker 启动
 
 ```powershell
 copy .env.production.example .env.production
-docker compose -f docker-compose.prod.yml up --build
+docker compose --env-file .env.production -f docker-compose.prod.yml up --build -d
 ```
 
 首次初始化 Owner：
 
 ```powershell
-docker compose -f docker-compose.prod.yml exec api python -m src.commercial.bootstrap --email owner@example.com --password "change-this-password" --organization "Hyper Research" --api-key "$env:SILICONFLOW_API_KEY"
+docker compose --env-file .env.production -f docker-compose.prod.yml exec api python -m src.commercial.bootstrap --email owner@example.com --password "change-this-password" --organization "Hyper Research" --api-key "$env:SILICONFLOW_API_KEY"
 ```
 
 ## 主要 API
 
-- `POST /auth/register`
-- `POST /auth/login`
-- `GET /auth/me`
-- `GET /models/providers`
-- `POST /models/providers`
-- `GET /knowledge-bases`
-- `POST /knowledge-bases`
-- `POST /knowledge-bases/{id}/documents`
-- `POST /knowledge-bases/{id}/urls`
-- `POST /knowledge-bases/{id}/search`
-- `GET /audit-logs`
-- `GET /usage/model-calls`
-- `GET /metrics`
+- `POST /auth/login`、`POST /auth/logout`、`GET /auth/me`
+- `GET/POST /models/providers`、`GET/POST /knowledge-bases`
+- `POST /knowledge-bases/{id}/documents`、`/urls` 和 `/search`
+- `GET/POST /portfolio/connections`
+- `GET/POST /alerts/rules`、`GET/POST /alerts/channels`、`GET /alerts/deliveries`
+- `GET/POST /research/watchlists`、`/research/notes`、`/research/events`
+- `GET /market-data/crypto-derivatives`
+- `GET/PUT /paper-trading/policy`、`GET/POST /paper-trading/orders`
+- `GET /audit-logs`、`GET /usage/model-calls`、`GET /metrics`
 
 ## 当前边界
 
-- 商业运行时存储仍是 SQLite MVP；PostgreSQL + pgvector schema 已提供，runtime adapter 待实现。
-- RAG 当前是 FTS/BM25 风格检索；embedding、向量检索、hybrid ranking 和 rerank 待实现。
-- worker 当前是部署占位；长任务队列待接入 Redis/RQ 或 Celery。
-- 成员邀请、CSRF、SSO、管理员后台、限额治理和完整可观测性仍待完善。
+- 长任务已具备 SQLite 持久化存储和 Redis/Postgres 队列契约；完整 Agent 运行、网页抓取和长回测执行器仍需迁移到 worker 路径。
+- RAG 已支持 PostgreSQL 生命周期存储、pgvector 检索、本地回退、嵌入状态、入库生命周期和混合检索；可配置 rerank 与正式评估数据集仍是后续工作。
+- CSRF、企业 SSO、配额治理和更深入的可观测性加固仍待完成。
+- 标的元数据仍需接入权威公司行为历史和交易所节假日日历。
+- 市场数据质量仍需交易时段校验、复权模式、缺口标注和新鲜度 SLA。
+- Webhook 告警重试已持久化并可由运维接口触发；生产环境还应独立调度重试分发。
 
 ## 验证
 
 ```powershell
-python -m pytest agent\tests\test_commercial_store.py -q
+.\.venv\Scripts\python.exe -m pytest agent\tests\test_alert_rules_api.py agent\tests\test_research_workspace_api.py agent\tests\test_crypto_derivatives.py agent\tests\test_paper_trading_api.py -q
 cd frontend
 npm run build
 ```

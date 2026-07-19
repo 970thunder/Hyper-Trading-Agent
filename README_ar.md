@@ -1,21 +1,27 @@
 # Hyper Trading Agent
 
-Hyper Trading Agent is a commercial financial research Agent platform. It provides agent chat, financial research tools, backtesting, model configuration, a RAG knowledge base, audit logs, and deployment assets.
+Hyper Trading Agent هو نظام Agent للبحوث المالية التجارية، يوفر المحادثة وبحوث السوق والاختبارات التاريخية وقاعدة المعرفة وحوكمة المؤسسات وضوابط مخاطر التداول.
 
-This repository is maintained as an independent project by `970thunder`.
+تتم صيانة هذا المستودع بواسطة `970thunder`.
 
-## Features
+## الميزات الرئيسية
 
-- Streaming Agent chat API.
-- Financial research tools, reports, and backtesting.
-- Model provider configuration for SiliconFlow, OpenAI-compatible APIs, OpenRouter, DeepSeek, Qwen/DashScope, Ollama, and others.
-- Local lightweight RAG with SQLite FTS.
-- Commercial MVP with auth, organizations, RBAC, model providers, knowledge bases, audit logs, and usage APIs.
-- Docker Compose production skeleton with API, worker, PostgreSQL + pgvector, and Redis.
+- واجهة محادثة Agent تدعم الجلسات والأحداث المتدفقة.
+- أدوات البحوث المالية وبيانات السوق وإنشاء التقارير والاختبارات التاريخية.
+- إعداد مزودي النماذج: SiliconFlow وواجهات OpenAI المتوافقة وOpenRouter وDeepSeek وQwen/DashScope وOllama وغيرها.
+- RAG محلي خفيف باستخدام SQLite FTS ومسار PostgreSQL + pgvector للإنتاج.
+- المصادقة والمؤسسات وRBAC وإدارة النماذج وقواعد المعرفة وواجهات التدقيق والاستخدام.
+- مساحات عمل للبحوث والتداول على مستوى المؤسسة:
+  - اتصالات محافظ للقراءة فقط ولقطات مخاطر وسجل التراجع.
+  - تنبيهات داخل التطبيق وعبر Webhook وسجلات تسليم دائمة والتحكم في إعادة المحاولة.
+  - قوائم مراقبة وملاحظات سوقية مع مراجع وتقويم أرباح وخط زمني للأحداث.
+  - معدلات التمويل والفائدة المفتوحة والأساس من OKX/Binance مع المصدر ووقت الجمع.
+  - دفتر تداول ورقي بحدود مخاطر محلية وإعادة تشغيل أوامر قابلة للتكرار.
+  - أوامر الموصلات الحية محمية بالتفويض والموافقة وفحوصات المخاطر المسبقة ومفتاح الإيقاف والتدقيق.
 
-## Local Run
+## التشغيل المحلي
 
-Backend:
+الخلفية:
 
 ```powershell
 cd agent
@@ -23,7 +29,7 @@ copy .env.example .env
 python -m cli serve --port 8899
 ```
 
-Frontend:
+الواجهة الأمامية:
 
 ```powershell
 cd frontend
@@ -33,41 +39,55 @@ npm run dev
 
 ## SiliconFlow
 
-Configure `agent/.env`:
+اضبط `agent/.env`:
 
 ```env
 LANGCHAIN_PROVIDER=siliconflow
-LANGCHAIN_MODEL_NAME=deepseek-ai/DeepSeek-V4-Flash
+LANGCHAIN_MODEL_NAME=deepseek-ai/DeepSeek-V3.2
 SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
 SILICONFLOW_API_KEY=your-api-key
 ```
 
-Do not commit real API keys.
+لا تلتزم بمفاتيح API الحقيقية في المستودع.
 
 ## Docker
 
 ```powershell
 copy .env.production.example .env.production
-docker compose -f docker-compose.prod.yml up --build
+docker compose --env-file .env.production -f docker-compose.prod.yml up --build -d
 ```
 
-Initialize the first owner:
+إنشاء أول Owner:
 
 ```powershell
-docker compose -f docker-compose.prod.yml exec api python -m src.commercial.bootstrap --email owner@example.com --password "change-this-password" --organization "Hyper Research" --api-key "$env:SILICONFLOW_API_KEY"
+docker compose --env-file .env.production -f docker-compose.prod.yml exec api python -m src.commercial.bootstrap --email owner@example.com --password "change-this-password" --organization "Hyper Research" --api-key "$env:SILICONFLOW_API_KEY"
 ```
 
-## Current Limits
+## واجهات API الرئيسية
 
-- Commercial runtime storage is still SQLite for the MVP.
-- PostgreSQL + pgvector schema exists, but the runtime adapter is not complete.
-- RAG uses FTS/BM25-style search; embeddings and hybrid retrieval are planned.
-- Worker is a deployment placeholder; async jobs are planned.
+- `POST /auth/login` و`POST /auth/logout` و`GET /auth/me`
+- `GET/POST /models/providers` و`GET/POST /knowledge-bases`
+- `POST /knowledge-bases/{id}/documents` و`/urls` و`/search`
+- `GET/POST /portfolio/connections`
+- `GET/POST /alerts/rules` و`GET/POST /alerts/channels` و`GET /alerts/deliveries`
+- `GET/POST /research/watchlists` و`/research/notes` و`/research/events`
+- `GET /market-data/crypto-derivatives`
+- `GET/PUT /paper-trading/policy` و`GET/POST /paper-trading/orders`
+- `GET /audit-logs` و`GET /usage/model-calls` و`GET /metrics`
 
-## Verification
+## القيود الحالية
+
+- تحتوي المهام طويلة الأمد على مخزن SQLite دائم وعقد طابور Redis/Postgres. ما زال يلزم نقل تنفيذ Agent الكامل وزحف الويب والاختبارات التاريخية الطويلة إلى مسار العامل.
+- يدعم RAG تخزين دورة الحياة في PostgreSQL واسترجاع pgvector والبديل المحلي وحالة التضمين ودورة الاستيعاب والاسترجاع الهجين. يبقى rerank القابل للضبط ومجموعات التقييم الرسمية عملا لاحقا.
+- لا تزال حماية CSRF وSSO للمؤسسات وفرض الحصص وتعزيز قابلية المراقبة المتقدمة غير مكتملة.
+- ما زالت بيانات تعريف الأدوات تحتاج إلى سجل موثوق لإجراءات الشركات وتقويمات عطل البورصات.
+- ما زالت جودة بيانات السوق تحتاج إلى تقاويم الجلسات وأوضاع التعديل وتعليقات الفجوات واتفاقية مستوى حداثة البيانات.
+- إعادة محاولة تنبيهات Webhook دائمة ويمكن تشغيلها من واجهة العمليات؛ ويحتاج الإنتاج أيضا إلى مجدول مستقل لإعادة المحاولة.
+
+## التحقق
 
 ```powershell
-python -m pytest agent\tests\test_commercial_store.py -q
+.\.venv\Scripts\python.exe -m pytest agent\tests\test_alert_rules_api.py agent\tests\test_research_workspace_api.py agent\tests\test_crypto_derivatives.py agent\tests\test_paper_trading_api.py -q
 cd frontend
 npm run build
 ```
