@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Response, status
+from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
 from src.commercial.store import CommercialStore, Principal, embedding_backend_status as get_embedding_backend_status
@@ -1582,13 +1582,17 @@ def register_commercial_routes(app: FastAPI) -> None:
     @app.post("/alerts/evaluate")
     async def evaluate_alerts(
         payload: AlertEvaluationRequest,
+        background_tasks: BackgroundTasks,
         principal: Principal = Depends(_require_role("owner", "admin")),
     ):
         try:
-            return _store().evaluate_alert_observations(
+            store = _store()
+            result = store.evaluate_alert_observations(
                 principal,
                 [observation.model_dump() for observation in payload.observations],
             )
+            background_tasks.add_task(_dispatch_alert_deliveries, store, principal, limit=50, retry_failed=False)
+            return result
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
