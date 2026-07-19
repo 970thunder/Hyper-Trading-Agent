@@ -814,6 +814,56 @@ class CommercialStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_alert_deliveries_dispatch
                     ON alert_deliveries(organization_id, status, next_attempt_at, created_at DESC);
+                CREATE TABLE IF NOT EXISTS research_watchlists (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(organization_id, name)
+                );
+                CREATE TABLE IF NOT EXISTS research_watchlist_items (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    watchlist_id TEXT NOT NULL REFERENCES research_watchlists(id) ON DELETE CASCADE,
+                    symbol TEXT NOT NULL,
+                    note TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    UNIQUE(watchlist_id, symbol)
+                );
+                CREATE INDEX IF NOT EXISTS idx_research_watchlist_items
+                    ON research_watchlist_items(organization_id, watchlist_id, created_at DESC);
+                CREATE TABLE IF NOT EXISTS research_market_notes (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    symbol TEXT NOT NULL DEFAULT '',
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    citations_json TEXT NOT NULL DEFAULT '[]',
+                    created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_research_market_notes
+                    ON research_market_notes(organization_id, updated_at DESC);
+                CREATE TABLE IF NOT EXISTS research_market_events (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    event_type TEXT NOT NULL CHECK(event_type IN ('earnings', 'corporate_action', 'macro', 'other')),
+                    symbol TEXT NOT NULL DEFAULT '',
+                    title TEXT NOT NULL,
+                    occurs_at TEXT NOT NULL,
+                    source_url TEXT NOT NULL DEFAULT '',
+                    source_name TEXT NOT NULL DEFAULT '',
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_research_market_events
+                    ON research_market_events(organization_id, occurs_at ASC);
                 CREATE TABLE IF NOT EXISTS portfolio_connections (
                     id TEXT PRIMARY KEY,
                     organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -2043,6 +2093,146 @@ class CommercialStore:
             return event
         self._resolve_alert_event(principal, event["rule_id"], event["dedupe_key"], reason="manual_resolution")
         return self._alert_event_payload(self._find_alert_event(principal, event_id))
+
+    # --- Organization research workspace ---
+
+    def create_research_watchlist(self, principal: Principal, payload: dict[str, Any]) -> dict[str, Any]:
+        name = str(payload.get("name") or "").strip()
+        description = str(payload.get("description") or "").strip()
+        if not name or len(name) > 160 or len(description) > 2000:
+            raise ValueError("watchlist name is required and description must be at most 2000 characters")
+        watchlist_id, now = _new_id("rwl"), utcnow()
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    """INSERT INTO research_watchlists(id, organization_id, name, description, created_by_user_id, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (watchlist_id, principal.organization_id, name, description, principal.user_id, now, now),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("watchlist name already exists") from exc
+        result = {"id": watchlist_id, "name": name, "description": description, "item_count": 0, "created_at": now, "updated_at": now}
+        self.audit(principal, "research.watchlist.create", "research_watchlist", watchlist_id, {})
+        return result
+
+    def list_research_watchlists(self, principal: Principal) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT w.*, COUNT(i.id) AS item_count FROM research_watchlists w
+                   LEFT JOIN research_watchlist_items i ON i.watchlist_id = w.id AND i.organization_id = w.organization_id
+                   WHERE w.organization_id = ? GROUP BY w.id ORDER BY w.updated_at DESC, w.name ASC""",
+                (principal.organization_id,),
+            ).fetchall()
+        return [{"id": str(row["id"]), "name": str(row["name"]), "description": str(row["description"]), "item_count": int(row["item_count"]), "created_at": str(row["created_at"]), "updated_at": str(row["updated_at"])} for row in rows]
+
+    def add_research_watchlist_item(self, principal: Principal, watchlist_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        symbol = str(payload.get("symbol") or "").strip().upper()
+        note = str(payload.get("note") or "").strip()
+        if not symbol or len(symbol) > 64 or len(note) > 2000:
+            raise ValueError("watchlist item symbol is required and note must be at most 2000 characters")
+        item_id, now = _new_id("rwi"), utcnow()
+        with self._connect() as conn:
+            watchlist = conn.execute(
+                "SELECT id FROM research_watchlists WHERE id = ? AND organization_id = ?",
+                (watchlist_id, principal.organization_id),
+            ).fetchone()
+            if watchlist is None:
+                raise KeyError(watchlist_id)
+            try:
+                conn.execute(
+                    """INSERT INTO research_watchlist_items(id, organization_id, watchlist_id, symbol, note, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (item_id, principal.organization_id, watchlist_id, symbol, note, now),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("symbol already exists in this watchlist") from exc
+            conn.execute("UPDATE research_watchlists SET updated_at = ? WHERE id = ? AND organization_id = ?", (now, watchlist_id, principal.organization_id))
+        result = {"id": item_id, "watchlist_id": watchlist_id, "symbol": symbol, "note": note, "created_at": now}
+        self.audit(principal, "research.watchlist.item.create", "research_watchlist", watchlist_id, {"symbol": symbol})
+        return result
+
+    def list_research_watchlist_items(self, principal: Principal, watchlist_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            exists = conn.execute("SELECT 1 FROM research_watchlists WHERE id = ? AND organization_id = ?", (watchlist_id, principal.organization_id)).fetchone()
+            if exists is None:
+                raise KeyError(watchlist_id)
+            rows = conn.execute(
+                "SELECT * FROM research_watchlist_items WHERE organization_id = ? AND watchlist_id = ? ORDER BY created_at DESC",
+                (principal.organization_id, watchlist_id),
+            ).fetchall()
+        return [{"id": str(row["id"]), "watchlist_id": str(row["watchlist_id"]), "symbol": str(row["symbol"]), "note": str(row["note"]), "created_at": str(row["created_at"])} for row in rows]
+
+    @staticmethod
+    def _research_citations(value: Any) -> list[dict[str, str]]:
+        if not isinstance(value, list) or len(value) > 20:
+            raise ValueError("citations must be a list of at most 20 references")
+        citations: list[dict[str, str]] = []
+        for item in value:
+            if not isinstance(item, dict):
+                raise ValueError("each citation must be an object")
+            title, url = str(item.get("title") or "").strip(), str(item.get("url") or "").strip()
+            if not title or not url or len(title) > 300 or len(url) > 2048:
+                raise ValueError("each citation requires title and url")
+            citations.append({"title": title, "url": url})
+        return citations
+
+    def create_research_market_note(self, principal: Principal, payload: dict[str, Any]) -> dict[str, Any]:
+        symbol = str(payload.get("symbol") or "").strip().upper()
+        title, content = str(payload.get("title") or "").strip(), str(payload.get("content") or "").strip()
+        citations = self._research_citations(payload.get("citations", []))
+        if not title or not content or len(title) > 300 or len(content) > 20000 or len(symbol) > 64:
+            raise ValueError("note title and content are required within size limits")
+        note_id, now = _new_id("rno"), utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO research_market_notes(id, organization_id, symbol, title, content, citations_json, created_by_user_id, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (note_id, principal.organization_id, symbol, title, content, json.dumps(citations, ensure_ascii=False), principal.user_id, now, now),
+            )
+        result = {"id": note_id, "symbol": symbol, "title": title, "content": content, "citations": citations, "created_at": now, "updated_at": now}
+        self.audit(principal, "research.note.create", "research_market_note", note_id, {"citation_count": len(citations), "symbol": symbol})
+        return result
+
+    def list_research_market_notes(self, principal: Principal, limit: int = 100) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM research_market_notes WHERE organization_id = ? ORDER BY updated_at DESC LIMIT ?", (principal.organization_id, max(1, min(limit, 500)))).fetchall()
+        return [{"id": str(row["id"]), "symbol": str(row["symbol"]), "title": str(row["title"]), "content": str(row["content"]), "citations": json.loads(str(row["citations_json"])), "created_at": str(row["created_at"]), "updated_at": str(row["updated_at"])} for row in rows]
+
+    def create_research_market_event(self, principal: Principal, payload: dict[str, Any]) -> dict[str, Any]:
+        event_type = str(payload.get("event_type") or "").strip().lower()
+        symbol = str(payload.get("symbol") or "").strip().upper()
+        title = str(payload.get("title") or "").strip()
+        occurs_at = str(payload.get("occurs_at") or "").strip()
+        source_url, source_name = str(payload.get("source_url") or "").strip(), str(payload.get("source_name") or "").strip()
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        if event_type not in {"earnings", "corporate_action", "macro", "other"} or not title or not occurs_at:
+            raise ValueError("event type, title, and occurs_at are required")
+        try:
+            datetime.fromisoformat(occurs_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("event occurs_at must be an ISO-8601 timestamp") from exc
+        if len(symbol) > 64 or len(title) > 300 or len(source_url) > 2048 or len(source_name) > 300:
+            raise ValueError("event fields exceed size limits")
+        event_id, now = _new_id("rev"), utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO research_market_events(id, organization_id, event_type, symbol, title, occurs_at, source_url, source_name, metadata_json, created_by_user_id, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (event_id, principal.organization_id, event_type, symbol, title, occurs_at, source_url, source_name, json.dumps(metadata, ensure_ascii=False), principal.user_id, now, now),
+            )
+        result = {"id": event_id, "event_type": event_type, "symbol": symbol, "title": title, "occurs_at": occurs_at, "source_url": source_url, "source_name": source_name, "metadata": metadata, "created_at": now, "updated_at": now}
+        self.audit(principal, "research.event.create", "research_market_event", event_id, {"event_type": event_type, "symbol": symbol, "source_name": source_name})
+        return result
+
+    def list_research_market_events(self, principal: Principal, limit: int = 100, event_type: str = "") -> list[dict[str, Any]]:
+        where, params = ["organization_id = ?"], [principal.organization_id]
+        if event_type:
+            where.append("event_type = ?")
+            params.append(event_type)
+        params.append(max(1, min(limit, 500)))
+        with self._connect() as conn:
+            rows = conn.execute(f"SELECT * FROM research_market_events WHERE {' AND '.join(where)} ORDER BY occurs_at ASC LIMIT ?", tuple(params)).fetchall()
+        return [{"id": str(row["id"]), "event_type": str(row["event_type"]), "symbol": str(row["symbol"]), "title": str(row["title"]), "occurs_at": str(row["occurs_at"]), "source_url": str(row["source_url"]), "source_name": str(row["source_name"]), "metadata": _json_object(row["metadata_json"]), "created_at": str(row["created_at"]), "updated_at": str(row["updated_at"])} for row in rows]
 
     def get_portfolio_connection(self, principal: Principal, connection_id: str) -> dict[str, Any]:
         with self._connect() as conn:

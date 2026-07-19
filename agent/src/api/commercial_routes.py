@@ -221,6 +221,33 @@ class AlertDeliveryDispatchRequest(BaseModel):
     retry_failed: bool = False
 
 
+class ResearchWatchlistCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=160)
+    description: str = Field("", max_length=2000)
+
+
+class ResearchWatchlistItemCreateRequest(BaseModel):
+    symbol: str = Field(..., min_length=1, max_length=64)
+    note: str = Field("", max_length=2000)
+
+
+class ResearchMarketNoteCreateRequest(BaseModel):
+    symbol: str = Field("", max_length=64)
+    title: str = Field(..., min_length=1, max_length=300)
+    content: str = Field(..., min_length=1, max_length=20000)
+    citations: list[dict[str, str]] = Field(default_factory=list, max_length=20)
+
+
+class ResearchMarketEventCreateRequest(BaseModel):
+    event_type: str = Field(..., max_length=32)
+    symbol: str = Field("", max_length=64)
+    title: str = Field(..., min_length=1, max_length=300)
+    occurs_at: str = Field(..., min_length=10, max_length=64)
+    source_url: str = Field("", max_length=2048)
+    source_name: str = Field("", max_length=300)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class FeedbackCreateRequest(BaseModel):
     target_type: str
     target_id: str
@@ -1572,6 +1599,72 @@ def register_commercial_routes(app: FastAPI) -> None:
             return _store().resolve_alert_event(principal, event_id)
         except KeyError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="alert event not found") from exc
+
+    @app.get("/research/watchlists")
+    async def list_research_watchlists(principal: Principal = Depends(_principal_from_cookie)):
+        return {"watchlists": _store().list_research_watchlists(principal)}
+
+    @app.post("/research/watchlists", status_code=status.HTTP_201_CREATED)
+    async def create_research_watchlist(
+        payload: ResearchWatchlistCreateRequest,
+        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+    ):
+        try:
+            return _store().create_research_watchlist(principal, payload.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get("/research/watchlists/{watchlist_id}/items")
+    async def list_research_watchlist_items(watchlist_id: str, principal: Principal = Depends(_principal_from_cookie)):
+        try:
+            return {"items": _store().list_research_watchlist_items(principal, watchlist_id)}
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="watchlist not found") from exc
+
+    @app.post("/research/watchlists/{watchlist_id}/items", status_code=status.HTTP_201_CREATED)
+    async def add_research_watchlist_item(
+        watchlist_id: str,
+        payload: ResearchWatchlistItemCreateRequest,
+        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+    ):
+        try:
+            return _store().add_research_watchlist_item(principal, watchlist_id, payload.model_dump())
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="watchlist not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get("/research/notes")
+    async def list_research_notes(limit: int = 100, principal: Principal = Depends(_principal_from_cookie)):
+        return {"notes": _store().list_research_market_notes(principal, limit=limit)}
+
+    @app.post("/research/notes", status_code=status.HTTP_201_CREATED)
+    async def create_research_note(
+        payload: ResearchMarketNoteCreateRequest,
+        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+    ):
+        try:
+            return _store().create_research_market_note(principal, payload.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get("/research/events")
+    async def list_research_events(
+        limit: int = 100,
+        event_type: str = "",
+        principal: Principal = Depends(_principal_from_cookie),
+    ):
+        return {"events": _store().list_research_market_events(principal, limit=limit, event_type=event_type)}
+
+    @app.post("/research/events", status_code=status.HTTP_201_CREATED)
+    async def create_research_event(
+        payload: ResearchMarketEventCreateRequest,
+        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+    ):
+        try:
+            return _store().create_research_market_event(principal, payload.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     @app.get("/usage/policy")
     async def usage_policy(principal: Principal = Depends(_require_role("owner", "admin"))):
