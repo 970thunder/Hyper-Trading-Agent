@@ -20,6 +20,7 @@ feature changes state, and link the implementation and verification evidence.
 | Research | Organization-scoped watchlists, cited market notes, earnings calendar, and event timeline | `/research`, `test_research_workspace_api.py` |
 | Crypto | Cross-exchange funding, open interest, basis, liquidation, and on-chain metric contract with source/freshness disclosure | `/market-data/crypto-derivatives`, `test_crypto_derivatives.py` |
 | Simulation | Organization-scoped paper trading, local risk limits, and reproducible order replay | `/paper-trading`, `test_paper_trading_api.py` |
+| Live trading | Connector order workflow with mandate, pre-trade checks, approvals, kill switch, and post-trade audit | `src/trading/service.py`, `src/live/sdk_order_gate.py`, `test_mandate_enforcement.py` |
 
 ## In Progress
 
@@ -32,7 +33,6 @@ feature changes state, and link the implementation and verification evidence.
 
 | Priority | Area | Capability | Definition of done |
 | --- | --- | --- | --- |
-| P2 | Live trading | Connector order workflow | Explicit mandate, pre-trade risk checks, approval, kill switch, and post-trade audit are mandatory. |
 
 ## Engineering Rules
 
