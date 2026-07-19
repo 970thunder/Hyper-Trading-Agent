@@ -12,6 +12,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 
 from src.market_data import MARKET_DATA_MAX_ROWS, MARKET_DATA_MAX_SYMBOLS, fetch_market_data_snapshot, list_market_data_sources, prewarm_market_data_cache
+from src.crypto_derivatives import fetch_crypto_derivatives_snapshot
 
 _SYMBOL_SEARCH_TTL_SECONDS = 900
 _symbol_search_cache: dict[tuple[str, int], tuple[float, dict]] = {}
@@ -79,6 +80,19 @@ def _symbols(raw: str) -> list[str]:
 def _audit_fetch(principal, payload: dict) -> None:
     if principal is None:
         return
+    try:
+        from src.commercial.store import CommercialStore
+
+        CommercialStore().audit(
+            principal,
+            str(payload.get("action") or "market_data.history.fetch"),
+            "market_data_query",
+            ",".join(payload.get("symbols") or []),
+            payload,
+        )
+    except Exception:
+        # Query provenance must never fail because the optional audit backend is unavailable.
+        return
 
 
 def search_market_symbols(query: str, limit: int) -> dict:
@@ -109,19 +123,6 @@ def search_market_symbols(query: str, limit: int) -> dict:
     with _symbol_search_lock:
         _symbol_search_cache[key] = (now, dict(result))
     return result
-    try:
-        from src.commercial.store import CommercialStore
-
-        CommercialStore().audit(
-            principal,
-            str(payload.get("action") or "market_data.history.fetch"),
-            "market_data_query",
-            ",".join(payload["symbols"]),
-            payload,
-        )
-    except Exception:
-        # Query provenance must never fail because the optional audit backend is unavailable.
-        return
 
 
 def register_market_data_routes(app: FastAPI) -> None:
@@ -189,4 +190,18 @@ def register_market_data_routes(app: FastAPI) -> None:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         _audit_fetch(principal, {"symbols": [], "query": q.strip(), "result_count": result.get("count", 0), "action": "market_data.symbol.search"})
+        return result
+
+    @app.get("/market-data/crypto-derivatives", dependencies=[Depends(require_writer)])
+    async def crypto_derivatives(
+        symbol: Annotated[str, Query(min_length=3, max_length=64)],
+        exchanges: Annotated[str, Query(max_length=64)] = "okx,binance",
+        principal=Depends(require_writer),
+    ):
+        requested = [item.strip().lower() for item in exchanges.split(",") if item.strip()]
+        try:
+            result = await run_in_threadpool(fetch_crypto_derivatives_snapshot, symbol, requested)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _audit_fetch(principal, {"symbols": [symbol.strip().upper()], "exchanges": requested, "action": "market_data.crypto_derivatives.fetch"})
         return result

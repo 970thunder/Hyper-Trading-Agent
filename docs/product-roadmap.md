@@ -18,6 +18,7 @@ feature changes state, and link the implementation and verification evidence.
 | Portfolio | Organization-scoped read-only connections, external credential references, retained risk snapshots, and drawdown history | `/portfolio/connections`, `test_portfolio_organization_snapshots.py` |
 | Alerts | Organization-scoped rules, event lifecycle, and notification delivery queue | `/alerts`, `test_alert_rules_api.py` |
 | Research | Organization-scoped watchlists, cited market notes, earnings calendar, and event timeline | `/research`, `test_research_workspace_api.py` |
+| Crypto | Cross-exchange funding, open interest, basis, liquidation, and on-chain metric contract with source/freshness disclosure | `/market-data/crypto-derivatives`, `test_crypto_derivatives.py` |
 
 ## In Progress
 
@@ -30,7 +31,6 @@ feature changes state, and link the implementation and verification evidence.
 
 | Priority | Area | Capability | Definition of done |
 | --- | --- | --- | --- |
-| P1 | Crypto | Funding, open interest, basis, liquidations, and on-chain metrics | Cross-exchange normalization and source/freshness disclosure are present. |
 | P1 | Simulation | Paper trading and order replay | Orders never reach a broker, fills are reproducible, and risk controls mirror live rules. |
 | P2 | Live trading | Connector order workflow | Explicit mandate, pre-trade risk checks, approval, kill switch, and post-trade audit are mandatory. |
 
