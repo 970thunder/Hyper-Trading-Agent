@@ -4,6 +4,7 @@ import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
 import {
   Activity,
   BarChart3,
+  BriefcaseBusiness,
   Bot,
   ChevronsLeft,
   ChevronsRight,
@@ -173,6 +174,7 @@ export function Layout() {
           { to: "/alpha-zoo", icon: Layers, label: t("layout.alphaZoo") },
           { to: "/correlation", icon: BarChart3, label: t("layout.correlation"), roles: ["owner", "admin", "member"] },
           { to: "/market-data", icon: LineChart, label: t("marketData.navigation"), roles: ["owner", "admin", "member"] },
+          { to: "/portfolio", icon: BriefcaseBusiness, label: t("portfolio.navigation") },
         ],
       },
       {

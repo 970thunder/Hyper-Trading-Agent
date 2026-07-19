@@ -190,6 +190,14 @@ class UsagePolicyUpdateRequest(BaseModel):
     monthly_cost_hard_limit: float | None = Field(None, ge=0)
 
 
+class AlertRuleCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=160)
+    alert_type: str = Field(..., max_length=32)
+    target: str = Field("", max_length=256)
+    condition: dict[str, Any] = Field(default_factory=dict)
+    channels: list[str] = Field(default_factory=list, max_length=20)
+
+
 class FeedbackCreateRequest(BaseModel):
     target_type: str
     target_id: str
@@ -1414,6 +1422,24 @@ def register_commercial_routes(app: FastAPI) -> None:
             return _store().acknowledge_usage_alert(principal, alert_id)
         except KeyError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="usage alert not found") from exc
+
+    @app.get("/alerts/rules")
+    async def list_alert_rules(principal: Principal = Depends(_require_role("owner", "admin"))):
+        return {"rules": _store().list_alert_rules(principal)}
+
+    @app.post("/alerts/rules", status_code=status.HTTP_201_CREATED)
+    async def create_alert_rule(
+        payload: AlertRuleCreateRequest,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        try:
+            return _store().create_alert_rule(principal, payload.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get("/alerts/events")
+    async def list_alert_events(limit: int = 100, principal: Principal = Depends(_require_role("owner", "admin"))):
+        return {"events": _store().list_alert_events(principal, limit=limit)}
 
     @app.get("/usage/policy")
     async def usage_policy(principal: Principal = Depends(_require_role("owner", "admin"))):

@@ -359,3 +359,11 @@ def test_symbol_search_cache_reuses_shared_result(monkeypatch) -> None:
     assert first["query_cache"]["status"] == "miss"
     assert second["query_cache"]["status"] == "hit"
     assert first["candidates"][0]["timezone"] == "America/New_York"
+    candidate = first["candidates"][0]
+    assert candidate["asset_class"] == "equity"
+    assert candidate["currency"] == "USD"
+    assert candidate["trading_calendar"] == {
+        "id": "XNYS", "timezone": "America/New_York", "session": "09:30-16:00",
+        "holiday_source": "exchange_official_calendar",
+    }
+    assert candidate["corporate_actions"]["status"] == "not_loaded"

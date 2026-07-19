@@ -17,12 +17,50 @@ _SYMBOL_SEARCH_TTL_SECONDS = 900
 _symbol_search_cache: dict[tuple[str, int], tuple[float, dict]] = {}
 _symbol_search_lock = threading.Lock()
 _MARKET_METADATA = {
-    "cn": {"exchange": "China mainland", "timezone": "Asia/Shanghai", "session": "09:30-11:30, 13:00-15:00"},
-    "hk": {"exchange": "Hong Kong Exchange", "timezone": "Asia/Hong_Kong", "session": "09:30-12:00, 13:00-16:00"},
-    "us": {"exchange": "United States", "timezone": "America/New_York", "session": "09:30-16:00"},
-    "crypto": {"exchange": "Global crypto", "timezone": "UTC", "session": "24/7"},
-    "forex": {"exchange": "Global FX", "timezone": "UTC", "session": "24/5"},
+    "cn": {"exchange": "China mainland", "timezone": "Asia/Shanghai", "session": "09:30-11:30, 13:00-15:00", "currency": "CNY", "calendar": "XSHG"},
+    "hk": {"exchange": "Hong Kong Exchange", "timezone": "Asia/Hong_Kong", "session": "09:30-12:00, 13:00-16:00", "currency": "HKD", "calendar": "XHKG"},
+    "us": {"exchange": "United States", "timezone": "America/New_York", "session": "09:30-16:00", "currency": "USD", "calendar": "XNYS"},
+    "crypto": {"exchange": "Global crypto", "timezone": "UTC", "session": "24/7", "currency": "USD", "calendar": "CRYPTO_24_7"},
+    "forex": {"exchange": "Global FX", "timezone": "UTC", "session": "24/5", "currency": "USD", "calendar": "FX_24_5"},
 }
+
+
+def _asset_class(candidate: dict) -> str:
+    value = str(candidate.get("type") or "").lower()
+    if any(token in value for token in ("crypto", "cryptocurrency")):
+        return "crypto"
+    if any(token in value for token in ("currency", "forex")):
+        return "forex"
+    if "etf" in value or "fund" in value:
+        return "fund"
+    if "index" in value:
+        return "index"
+    if "future" in value:
+        return "future"
+    return "equity" if str(candidate.get("market") or "").lower() in {"cn", "hk", "us"} else "other"
+
+
+def _instrument_metadata(candidate: dict) -> dict:
+    """Normalize authoritative market conventions without inventing events."""
+    market = str(candidate.get("market") or "").lower()
+    base = dict(_MARKET_METADATA.get(market, {"exchange": "Global", "timezone": "UTC", "session": "provider_defined", "currency": None, "calendar": "provider_defined"}))
+    asset_class = _asset_class(candidate)
+    symbol = str(candidate.get("symbol") or "").upper()
+    if asset_class == "crypto" and "-" in symbol:
+        base["currency"] = symbol.rsplit("-", 1)[-1]
+    elif asset_class == "forex" and symbol.endswith("=X") and len(symbol) >= 7:
+        base["currency"] = symbol[-3 - len("=X"):-len("=X")] or base["currency"]
+    return {
+        **base,
+        "asset_class": asset_class,
+        "metadata_authority": "exchange_convention",
+        "corporate_actions": {
+            "status": "not_loaded",
+            "source": "sec_edgar" if candidate.get("cik") else "provider_required",
+            "reason": "symbol search does not establish a complete corporate-action history",
+        },
+        "trading_calendar": {"id": base.pop("calendar"), "timezone": base["timezone"], "session": base["session"], "holiday_source": "exchange_official_calendar"},
+    }
 
 
 def _host():
@@ -63,7 +101,7 @@ def search_market_symbols(query: str, limit: int) -> dict:
     candidates = result.get("candidates")
     if isinstance(candidates, list):
         result["candidates"] = [
-            {**candidate, **_MARKET_METADATA.get(str(candidate.get("market") or "").lower(), {})}
+            {**candidate, **_instrument_metadata(candidate)}
             for candidate in candidates
             if isinstance(candidate, dict)
         ]

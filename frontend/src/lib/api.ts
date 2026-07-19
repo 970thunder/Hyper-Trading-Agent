@@ -204,6 +204,13 @@ export const api = {
   searchMarketSymbols: (query: string, limit = 8) => request<MarketSymbolSearchResponse>(`/market-data/symbol-search?q=${encodeURIComponent(query)}&limit=${limit}`),
   listPortfolioProfiles: () => request<PortfolioProfilesResponse>("/portfolio/profiles"),
   getPortfolioSnapshot: (profileId?: string) => request<PortfolioSnapshot>(`/portfolio/snapshot${profileId ? `?profile_id=${encodeURIComponent(profileId)}` : ""}`),
+  listOrganizationPortfolioConnections: () => request<PortfolioConnectionsResponse>("/portfolio/connections"),
+  createOrganizationPortfolioConnection: (body: PortfolioConnectionCreateRequest) => request<PortfolioConnection>("/portfolio/connections", {
+    method: "POST", body: JSON.stringify(body),
+  }),
+  getOrganizationPortfolioSnapshot: (connectionId: string) => request<OrganizationPortfolioSnapshot>(`/portfolio/connections/${encodeURIComponent(connectionId)}/snapshot`),
+  refreshOrganizationPortfolioSnapshot: (connectionId: string) => request<OrganizationPortfolioSnapshot>(`/portfolio/connections/${encodeURIComponent(connectionId)}/refresh`, { method: "POST" }),
+  getOrganizationPortfolioHistory: (connectionId: string, limit = 100) => request<PortfolioSnapshotHistoryResponse>(`/portfolio/connections/${encodeURIComponent(connectionId)}/snapshots?limit=${limit}`),
   getMarketDataHistory: (params: MarketDataHistoryQuery) => {
     const query = new URLSearchParams({
       symbols: params.symbols.join(","),
@@ -736,6 +743,11 @@ export interface MarketSymbolCandidate {
   exchange?: string;
   timezone?: string;
   session?: string;
+  currency?: string | null;
+  asset_class?: "equity" | "fund" | "index" | "future" | "crypto" | "forex" | "other";
+  metadata_authority?: string;
+  corporate_actions?: { status: "not_loaded"; source: string; reason: string };
+  trading_calendar?: { id: string; timezone: string; session: string; holiday_source: string };
 }
 
 export interface MarketSymbolSearchResponse {
@@ -782,6 +794,59 @@ export interface PortfolioSnapshot {
   positions: PortfolioPosition[];
   drawdown: { available: boolean; value: number | null; reason?: string };
 }
+
+export interface PortfolioConnection {
+  id: string;
+  organization_id: string;
+  label: string;
+  connector: string;
+  profile_id: string;
+  environment: "paper" | "live";
+  credentials_configured: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PortfolioConnectionsResponse { connections: PortfolioConnection[]; }
+
+export interface PortfolioConnectionCreateRequest {
+  label: string;
+  connector: string;
+  profile_id?: string;
+  environment?: "paper" | "live";
+  credential_reference?: string;
+}
+
+export interface PortfolioDrawdown {
+  available: boolean;
+  value: number | null;
+  max_drawdown?: number | null;
+  peak_equity?: number;
+  sample_count?: number;
+  reason?: string;
+}
+
+export interface OrganizationPortfolioSnapshot {
+  id: string;
+  connection_id: string;
+  as_of: string;
+  summary: PortfolioSnapshot["summary"];
+  positions: PortfolioPosition[];
+  connection: PortfolioConnection;
+  drawdown: PortfolioDrawdown;
+  created_at: string;
+}
+
+export interface PortfolioSnapshotHistoryItem {
+  id: string;
+  connection_id: string;
+  as_of: string;
+  equity: number | null;
+  summary: PortfolioSnapshot["summary"];
+  created_at: string;
+}
+
+export interface PortfolioSnapshotHistoryResponse { snapshots: PortfolioSnapshotHistoryItem[]; }
 
 export interface KnowledgeStats {
   status: string;

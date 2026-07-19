@@ -751,6 +751,61 @@ class CommercialStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_usage_alert_events_organization
                     ON usage_alert_events(organization_id, status, created_at DESC);
+                CREATE TABLE IF NOT EXISTS alert_rules (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    name TEXT NOT NULL,
+                    alert_type TEXT NOT NULL CHECK(alert_type IN ('price','volatility','technical','portfolio_risk','data_quality')),
+                    target TEXT NOT NULL DEFAULT '',
+                    condition_json TEXT NOT NULL DEFAULT '{}',
+                    channels_json TEXT NOT NULL DEFAULT '[]',
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_alert_rules_organization ON alert_rules(organization_id, enabled, updated_at DESC);
+                CREATE TABLE IF NOT EXISTS alert_events (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    rule_id TEXT NOT NULL REFERENCES alert_rules(id) ON DELETE CASCADE,
+                    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','acknowledged','resolved')),
+                    observed_value REAL,
+                    threshold_value REAL,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    acknowledged_at TEXT NOT NULL DEFAULT '',
+                    acknowledged_by_user_id TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_alert_events_organization ON alert_events(organization_id, status, created_at DESC);
+                CREATE TABLE IF NOT EXISTS portfolio_connections (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    label TEXT NOT NULL,
+                    connector TEXT NOT NULL,
+                    profile_id TEXT NOT NULL DEFAULT '',
+                    environment TEXT NOT NULL DEFAULT 'paper',
+                    credential_reference TEXT NOT NULL DEFAULT '',
+                    created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(organization_id, label)
+                );
+                CREATE INDEX IF NOT EXISTS idx_portfolio_connections_organization
+                    ON portfolio_connections(organization_id, updated_at DESC);
+                CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    connection_id TEXT NOT NULL REFERENCES portfolio_connections(id) ON DELETE CASCADE,
+                    as_of TEXT NOT NULL,
+                    equity REAL,
+                    summary_json TEXT NOT NULL,
+                    positions_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(connection_id, as_of)
+                );
+                CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_connection
+                    ON portfolio_snapshots(organization_id, connection_id, as_of DESC);
                 CREATE TABLE IF NOT EXISTS knowledge_bases (
                     id TEXT PRIMARY KEY,
                     organization_id TEXT NOT NULL,
@@ -1526,6 +1581,219 @@ class CommercialStore:
                 (storage_key, principal.organization_id),
             ).fetchone()
         return row is not None
+
+    # --- Organization portfolio connections and retained risk snapshots ---
+
+    @staticmethod
+    def _portfolio_connection_payload(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+        """Return connection metadata without exposing its credential reference."""
+        item = dict(row)
+        item.pop("credential_reference", None)
+        item.pop("created_by_user_id", None)
+        item["credentials_configured"] = bool(dict(row).get("credential_reference"))
+        return item
+
+    def create_portfolio_connection(self, principal: Principal, payload: dict[str, Any]) -> dict[str, Any]:
+        label = str(payload.get("label") or "").strip()
+        connector = str(payload.get("connector") or "").strip().lower()
+        profile_id = str(payload.get("profile_id") or "").strip().lower()
+        environment = str(payload.get("environment") or "paper").strip().lower()
+        credential_reference = str(payload.get("credential_reference") or "").strip()
+        if not label or len(label) > 160:
+            raise ValueError("connection label is required and must be at most 160 characters")
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", connector):
+            raise ValueError("connector identity is invalid")
+        if environment not in {"paper", "live"}:
+            raise ValueError("connection environment must be paper or live")
+        # Credential material must stay in the deployment secret manager. The
+        # database retains only a reference, and response serializers omit it.
+        if credential_reference and not re.fullmatch(r"(?:secret|vault|env)://[^\s]{1,480}", credential_reference):
+            raise ValueError("credential_reference must be an external secret reference")
+        connection_id = _new_id("pcn")
+        now = utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO portfolio_connections(
+                    id, organization_id, label, connector, profile_id, environment,
+                    credential_reference, created_by_user_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (connection_id, principal.organization_id, label, connector, profile_id, environment,
+                 credential_reference, principal.user_id, now, now),
+            )
+            row = conn.execute(
+                "SELECT * FROM portfolio_connections WHERE id = ? AND organization_id = ?",
+                (connection_id, principal.organization_id),
+            ).fetchone()
+        result = self._portfolio_connection_payload(row)
+        self.audit(principal, "portfolio.connection.create", "portfolio_connection", connection_id, {
+            "connector": connector, "environment": environment, "profile_configured": bool(profile_id),
+            "credentials_configured": bool(credential_reference),
+        })
+        return result
+
+    def list_portfolio_connections(self, principal: Principal) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM portfolio_connections WHERE organization_id = ? ORDER BY updated_at DESC, label ASC",
+                (principal.organization_id,),
+            ).fetchall()
+        return [self._portfolio_connection_payload(row) for row in rows]
+
+    # --- Organization alert rules ---
+
+    def create_alert_rule(self, principal: Principal, payload: dict[str, Any]) -> dict[str, Any]:
+        name = str(payload.get("name") or "").strip()
+        alert_type = str(payload.get("alert_type") or "").strip().lower()
+        target = str(payload.get("target") or "").strip()
+        condition = payload.get("condition") if isinstance(payload.get("condition"), dict) else {}
+        channels = payload.get("channels") if isinstance(payload.get("channels"), list) else []
+        if not name or len(name) > 160:
+            raise ValueError("alert rule name is required and must be at most 160 characters")
+        if alert_type not in {"price", "volatility", "technical", "portfolio_risk", "data_quality"}:
+            raise ValueError("unsupported alert type")
+        if len(channels) > 20 or not all(isinstance(item, str) and item.strip() for item in channels):
+            raise ValueError("alert channels must be a list of at most 20 channel references")
+        rule_id, now = _new_id("arl"), utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO alert_rules(id, organization_id, name, alert_type, target, condition_json, channels_json, enabled, created_by_user_id, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)""",
+                (rule_id, principal.organization_id, name, alert_type, target, json.dumps(condition, ensure_ascii=False),
+                 json.dumps(channels, ensure_ascii=False), principal.user_id, now, now),
+            )
+        result = {"id": rule_id, "name": name, "alert_type": alert_type, "target": target, "condition": condition, "channels": channels, "enabled": True, "created_at": now, "updated_at": now}
+        self.audit(principal, "alert_rule.create", "alert_rule", rule_id, {"alert_type": alert_type, "target": target, "channel_count": len(channels)})
+        return result
+
+    def list_alert_rules(self, principal: Principal) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM alert_rules WHERE organization_id = ? ORDER BY updated_at DESC", (principal.organization_id,)).fetchall()
+        return [{"id": str(row["id"]), "name": str(row["name"]), "alert_type": str(row["alert_type"]), "target": str(row["target"]), "condition": _json_object(row["condition_json"]), "channels": json.loads(str(row["channels_json"])), "enabled": bool(row["enabled"]), "created_at": str(row["created_at"]), "updated_at": str(row["updated_at"])} for row in rows]
+
+    def list_alert_events(self, principal: Principal, limit: int = 100) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("""SELECT e.*, r.name AS rule_name, r.alert_type FROM alert_events e JOIN alert_rules r ON r.id = e.rule_id
+                WHERE e.organization_id = ? ORDER BY e.created_at DESC LIMIT ?""", (principal.organization_id, max(1, min(limit, 500)))).fetchall()
+        return [{"id": str(row["id"]), "rule_id": str(row["rule_id"]), "rule_name": str(row["rule_name"]), "alert_type": str(row["alert_type"]), "status": str(row["status"]), "observed_value": row["observed_value"], "threshold_value": row["threshold_value"], "metadata": _json_object(row["metadata_json"]), "created_at": str(row["created_at"])} for row in rows]
+
+    def get_portfolio_connection(self, principal: Principal, connection_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM portfolio_connections WHERE id = ? AND organization_id = ?",
+                (connection_id, principal.organization_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError(connection_id)
+        return dict(row)
+
+    def record_portfolio_snapshot(
+        self,
+        principal: Principal,
+        connection_id: str,
+        *,
+        as_of: str,
+        summary: dict[str, Any],
+        positions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        self.get_portfolio_connection(principal, connection_id)
+        try:
+            datetime.fromisoformat(as_of.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("snapshot as_of must be an ISO-8601 timestamp") from exc
+        equity = summary.get("equity")
+        try:
+            equity_value = float(equity) if equity is not None else None
+        except (TypeError, ValueError) as exc:
+            raise ValueError("snapshot equity must be numeric") from exc
+        if equity_value is not None and (not math.isfinite(equity_value) or equity_value < 0):
+            raise ValueError("snapshot equity must be a finite non-negative value")
+        snapshot_id = _new_id("psn")
+        now = utcnow()
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO portfolio_snapshots(
+                        id, organization_id, connection_id, as_of, equity, summary_json, positions_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (snapshot_id, principal.organization_id, connection_id, as_of, equity_value,
+                     json.dumps(summary, ensure_ascii=False, allow_nan=False),
+                     json.dumps(positions, ensure_ascii=False, allow_nan=False), now),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("a snapshot already exists at this timestamp") from exc
+        self.audit(principal, "portfolio.snapshot.capture", "portfolio_connection", connection_id, {
+            "snapshot_id": snapshot_id, "as_of": as_of, "position_count": len(positions), "equity": equity_value,
+        })
+        return self.get_portfolio_snapshot(principal, connection_id, snapshot_id=snapshot_id)
+
+    def get_portfolio_snapshot(
+        self,
+        principal: Principal,
+        connection_id: str,
+        *,
+        snapshot_id: str = "",
+    ) -> dict[str, Any]:
+        with self._connect() as conn:
+            if snapshot_id:
+                row = conn.execute(
+                    """SELECT * FROM portfolio_snapshots
+                       WHERE id = ? AND connection_id = ? AND organization_id = ?""",
+                    (snapshot_id, connection_id, principal.organization_id),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """SELECT * FROM portfolio_snapshots
+                       WHERE connection_id = ? AND organization_id = ? ORDER BY as_of DESC LIMIT 1""",
+                    (connection_id, principal.organization_id),
+                ).fetchone()
+        if row is None:
+            raise KeyError(connection_id)
+        return {
+            "id": str(row["id"]), "connection_id": str(row["connection_id"]), "as_of": str(row["as_of"]),
+            "summary": _json_object(row["summary_json"]), "positions": json.loads(str(row["positions_json"])),
+            "created_at": str(row["created_at"]),
+        }
+
+    def list_portfolio_snapshots(self, principal: Principal, connection_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        self.get_portfolio_connection(principal, connection_id)
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT id, connection_id, as_of, equity, summary_json, created_at FROM portfolio_snapshots
+                   WHERE connection_id = ? AND organization_id = ? ORDER BY as_of DESC LIMIT ?""",
+                (connection_id, principal.organization_id, max(1, min(limit, 1000))),
+            ).fetchall()
+        return [{
+            "id": str(row["id"]), "connection_id": str(row["connection_id"]), "as_of": str(row["as_of"]),
+            "equity": row["equity"], "summary": _json_object(row["summary_json"]), "created_at": str(row["created_at"]),
+        } for row in rows]
+
+    def portfolio_drawdown(self, principal: Principal, connection_id: str) -> dict[str, Any]:
+        self.get_portfolio_connection(principal, connection_id)
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT as_of, equity FROM portfolio_snapshots
+                   WHERE connection_id = ? AND organization_id = ? AND equity > 0 ORDER BY as_of ASC""",
+                (connection_id, principal.organization_id),
+            ).fetchall()
+        if len(rows) < 2:
+            return {"available": False, "value": None, "max_drawdown": None, "sample_count": len(rows), "reason": "snapshot_history_required"}
+        peak = 0.0
+        current_drawdown = 0.0
+        max_drawdown = 0.0
+        for row in rows:
+            equity = float(row["equity"])
+            peak = max(peak, equity)
+            drawdown = (equity - peak) / peak if peak else 0.0
+            current_drawdown = drawdown
+            max_drawdown = min(max_drawdown, drawdown)
+        return {
+            "available": True, "value": current_drawdown, "max_drawdown": max_drawdown,
+            "peak_equity": peak, "sample_count": len(rows), "as_of": str(rows[-1]["as_of"]),
+        }
 
     def list_organization_members(self, principal: Principal) -> list[dict[str, Any]]:
         with self._connect() as conn:

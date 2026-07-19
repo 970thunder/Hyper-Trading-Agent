@@ -88,7 +88,7 @@ export const router = createBrowserRouter([
       { path: "/compare", element: requireRole(Compare) },
       { path: "/correlation", element: requireRole(Correlation, ["owner", "admin", "member"]) },
       { path: "/market-data", element: requireRole(MarketData, ["owner", "admin", "member"]) },
-      { path: "/portfolio", element: <RequirePlatformAdmin>{wrap(Portfolio)}</RequirePlatformAdmin> },
+      { path: "/portfolio", element: requireRole(Portfolio) },
       { path: "/alpha-zoo", element: requireRole(AlphaZoo) },
       { path: "/alpha-zoo/bench", element: requireRole(AlphaZoo) },
       { path: "/alpha-zoo/compare", element: requireRole(AlphaZoo) },
