@@ -198,6 +198,17 @@ class AlertRuleCreateRequest(BaseModel):
     channels: list[str] = Field(default_factory=list, max_length=20)
 
 
+class AlertObservationRequest(BaseModel):
+    alert_type: str = Field(..., max_length=32)
+    target: str = Field("", max_length=256)
+    value: bool | float
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AlertEvaluationRequest(BaseModel):
+    observations: list[AlertObservationRequest] = Field(..., min_length=1, max_length=500)
+
+
 class FeedbackCreateRequest(BaseModel):
     target_type: str
     target_id: str
@@ -1440,6 +1451,41 @@ def register_commercial_routes(app: FastAPI) -> None:
     @app.get("/alerts/events")
     async def list_alert_events(limit: int = 100, principal: Principal = Depends(_require_role("owner", "admin"))):
         return {"events": _store().list_alert_events(principal, limit=limit)}
+
+    @app.post("/alerts/evaluate")
+    async def evaluate_alerts(
+        payload: AlertEvaluationRequest,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        try:
+            return _store().evaluate_alert_observations(
+                principal,
+                [observation.model_dump() for observation in payload.observations],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.post("/alerts/events/{event_id}/acknowledge")
+    async def acknowledge_alert_event(
+        event_id: str,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        try:
+            return _store().acknowledge_alert_event(principal, event_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="alert event not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    @app.post("/alerts/events/{event_id}/resolve")
+    async def resolve_alert_event(
+        event_id: str,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        try:
+            return _store().resolve_alert_event(principal, event_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="alert event not found") from exc
 
     @app.get("/usage/policy")
     async def usage_policy(principal: Principal = Depends(_require_role("owner", "admin"))):

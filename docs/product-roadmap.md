@@ -23,12 +23,12 @@ feature changes state, and link the implementation and verification evidence.
 | --- | --- | --- |
 | Market data | Instrument metadata | Add authoritative asset-class, currency, corporate-action, and holiday-calendar metadata to symbol-search results. |
 | Market data | Data quality | Add session calendars, adjustment mode, gap annotation, and source freshness SLA. |
+| Alerts | Organization-scoped rule evaluation and event lifecycle | Configure notification channels, delivery retries, and delivery audit records. |
 
 ## Planned
 
 | Priority | Area | Capability | Definition of done |
 | --- | --- | --- | --- |
-| P0 | Alerts | Price, volatility, technical, portfolio-risk, and data-quality alerts | Rules persist per organization, notify through configured channels, and create audit events. |
 | P1 | Research | Watchlists, market notes, earnings calendar, and event timeline | Saved lists and notes are organization-scoped and support citations. |
 | P1 | Crypto | Funding, open interest, basis, liquidations, and on-chain metrics | Cross-exchange normalization and source/freshness disclosure are present. |
 | P1 | Simulation | Paper trading and order replay | Orders never reach a broker, fills are reproducible, and risk controls mirror live rules. |

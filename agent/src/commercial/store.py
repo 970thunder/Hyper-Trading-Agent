@@ -39,6 +39,8 @@ USAGE_POLICY_FIELDS = {
     "monthly_cost_soft_limit",
     "monthly_cost_hard_limit",
 }
+ALERT_TYPES = {"price", "volatility", "technical", "portfolio_risk", "data_quality"}
+ALERT_OPERATORS = {"gt", "gte", "lt", "lte", "eq", "ne"}
 EMBEDDING_DIMENSIONS = int(os.getenv("VIBE_TRADING_LOCAL_EMBEDDING_DIMENSIONS", "64"))
 EMBEDDING_FAILURE_BACKOFF_SECONDS = 60.0
 _embedding_provider_retry_after = 0.0
@@ -772,10 +774,13 @@ class CommercialStore:
                     status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','acknowledged','resolved')),
                     observed_value REAL,
                     threshold_value REAL,
+                    dedupe_key TEXT NOT NULL DEFAULT '',
                     metadata_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL,
                     acknowledged_at TEXT NOT NULL DEFAULT '',
-                    acknowledged_by_user_id TEXT NOT NULL DEFAULT ''
+                    acknowledged_by_user_id TEXT NOT NULL DEFAULT '',
+                    resolved_at TEXT NOT NULL DEFAULT '',
+                    resolved_by_user_id TEXT NOT NULL DEFAULT ''
                 );
                 CREATE INDEX IF NOT EXISTS idx_alert_events_organization ON alert_events(organization_id, status, created_at DESC);
                 CREATE TABLE IF NOT EXISTS portfolio_connections (
@@ -994,6 +999,20 @@ class CommercialStore:
             }
             if "is_active" not in existing_organization_columns:
                 conn.execute("ALTER TABLE organizations ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+            existing_alert_event_columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(alert_events)").fetchall()
+            }
+            for column_name in ("dedupe_key", "resolved_at", "resolved_by_user_id"):
+                if column_name not in existing_alert_event_columns:
+                    if column_name == "dedupe_key":
+                        conn.execute("ALTER TABLE alert_events ADD COLUMN dedupe_key TEXT NOT NULL DEFAULT ''")
+                    else:
+                        conn.execute(f"ALTER TABLE alert_events ADD COLUMN {column_name} TEXT NOT NULL DEFAULT ''")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_alert_events_active_dedupe "
+                "ON alert_events(organization_id, rule_id, dedupe_key, status)"
+            )
 
     def _sync_primary_identity_from_sqlite(self) -> None:
         """Synchronously mirror the staged identity domain to PostgreSQL."""
@@ -1651,8 +1670,21 @@ class CommercialStore:
         channels = payload.get("channels") if isinstance(payload.get("channels"), list) else []
         if not name or len(name) > 160:
             raise ValueError("alert rule name is required and must be at most 160 characters")
-        if alert_type not in {"price", "volatility", "technical", "portfolio_risk", "data_quality"}:
+        if alert_type not in ALERT_TYPES:
             raise ValueError("unsupported alert type")
+        operator = str(condition.get("operator") or "").strip().lower()
+        threshold = condition.get("value")
+        if operator not in ALERT_OPERATORS or threshold is None:
+            raise ValueError("alert condition requires a supported operator and value")
+        if isinstance(threshold, bool):
+            if operator not in {"eq", "ne"}:
+                raise ValueError("boolean alert conditions only support eq and ne")
+        else:
+            try:
+                if not math.isfinite(float(threshold)):
+                    raise ValueError
+            except (TypeError, ValueError) as exc:
+                raise ValueError("alert condition value must be a finite number or boolean") from exc
         if len(channels) > 20 or not all(isinstance(item, str) and item.strip() for item in channels):
             raise ValueError("alert channels must be a list of at most 20 channel references")
         rule_id, now = _new_id("arl"), utcnow()
@@ -1672,11 +1704,161 @@ class CommercialStore:
             rows = conn.execute("SELECT * FROM alert_rules WHERE organization_id = ? ORDER BY updated_at DESC", (principal.organization_id,)).fetchall()
         return [{"id": str(row["id"]), "name": str(row["name"]), "alert_type": str(row["alert_type"]), "target": str(row["target"]), "condition": _json_object(row["condition_json"]), "channels": json.loads(str(row["channels_json"])), "enabled": bool(row["enabled"]), "created_at": str(row["created_at"]), "updated_at": str(row["updated_at"])} for row in rows]
 
+    @staticmethod
+    def _alert_event_payload(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": str(row["id"]), "rule_id": str(row["rule_id"]), "rule_name": str(row["rule_name"]),
+            "alert_type": str(row["alert_type"]), "status": str(row["status"]),
+            "observed_value": row["observed_value"], "threshold_value": row["threshold_value"],
+            "dedupe_key": str(row["dedupe_key"]), "metadata": _json_object(row["metadata_json"]),
+            "created_at": str(row["created_at"]), "acknowledged_at": str(row["acknowledged_at"]),
+            "acknowledged_by_user_id": str(row["acknowledged_by_user_id"]), "resolved_at": str(row["resolved_at"]),
+            "resolved_by_user_id": str(row["resolved_by_user_id"]),
+        }
+
+    @staticmethod
+    def _alert_condition_matches(condition: dict[str, Any], observed: float | bool) -> bool:
+        operator = str(condition["operator"]).lower()
+        threshold = condition["value"]
+        if isinstance(threshold, bool):
+            return bool(observed) is bool(threshold) if operator == "eq" else bool(observed) is not bool(threshold)
+        value, expected = float(observed), float(threshold)
+        return {
+            "gt": value > expected, "gte": value >= expected, "lt": value < expected,
+            "lte": value <= expected, "eq": value == expected, "ne": value != expected,
+        }[operator]
+
+    def _find_alert_event(self, principal: Principal, event_id: str) -> sqlite3.Row:
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT e.*, r.name AS rule_name, r.alert_type FROM alert_events e
+                   JOIN alert_rules r ON r.id = e.rule_id
+                   WHERE e.id = ? AND e.organization_id = ?""",
+                (event_id, principal.organization_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError(event_id)
+        return row
+
+    def _record_alert_event(
+        self, principal: Principal, rule: sqlite3.Row, observation: dict[str, Any], dedupe_key: str,
+    ) -> tuple[dict[str, Any], bool]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT e.*, r.name AS rule_name, r.alert_type FROM alert_events e
+                   JOIN alert_rules r ON r.id = e.rule_id
+                   WHERE e.organization_id = ? AND e.rule_id = ? AND e.dedupe_key = ?
+                     AND e.status IN ('open', 'acknowledged')
+                   ORDER BY e.created_at DESC LIMIT 1""",
+                (principal.organization_id, rule["id"], dedupe_key),
+            ).fetchone()
+            if row is not None:
+                return self._alert_event_payload(row), False
+            event_id, now = _new_id("ale"), utcnow()
+            observed = observation["value"]
+            observed_value = float(observed) if not isinstance(observed, bool) else float(observed)
+            threshold = rule["condition"] .get("value")
+            threshold_value = float(threshold) if not isinstance(threshold, bool) else float(threshold)
+            metadata = {"target": observation["target"], **observation.get("metadata", {})}
+            conn.execute(
+                """INSERT INTO alert_events(
+                    id, organization_id, rule_id, status, observed_value, threshold_value,
+                    dedupe_key, metadata_json, created_at, acknowledged_at, acknowledged_by_user_id, resolved_at, resolved_by_user_id
+                ) VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, '', '', '', '')""",
+                (event_id, principal.organization_id, rule["id"], observed_value, threshold_value,
+                 dedupe_key, json.dumps(metadata, ensure_ascii=False), now),
+            )
+        event = self._find_alert_event(principal, event_id)
+        payload = self._alert_event_payload(event)
+        self.audit(principal, "alert_event.trigger", "alert_event", event_id, {
+            "rule_id": payload["rule_id"], "alert_type": payload["alert_type"], "dedupe_key": dedupe_key,
+        })
+        return payload, True
+
+    def _resolve_alert_event(self, principal: Principal, rule_id: str, dedupe_key: str, *, reason: str) -> int:
+        now = utcnow()
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT id FROM alert_events WHERE organization_id = ? AND rule_id = ? AND dedupe_key = ?
+                   AND status IN ('open', 'acknowledged')""",
+                (principal.organization_id, rule_id, dedupe_key),
+            ).fetchall()
+            if rows:
+                conn.execute(
+                    """UPDATE alert_events SET status = 'resolved', resolved_at = ?, resolved_by_user_id = ?
+                       WHERE organization_id = ? AND rule_id = ? AND dedupe_key = ? AND status IN ('open', 'acknowledged')""",
+                    (now, principal.user_id, principal.organization_id, rule_id, dedupe_key),
+                )
+        for row in rows:
+            self.audit(principal, "alert_event.resolve", "alert_event", str(row["id"]), {"reason": reason})
+        return len(rows)
+
+    def evaluate_alert_observations(self, principal: Principal, observations: list[dict[str, Any]]) -> dict[str, Any]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM alert_rules WHERE organization_id = ? AND enabled = 1 ORDER BY created_at ASC",
+                (principal.organization_id,),
+            ).fetchall()
+        rules = [dict(row) | {"condition": _json_object(row["condition_json"])} for row in rows]
+        results: list[dict[str, Any]] = []
+        for observation in observations:
+            alert_type = str(observation.get("alert_type") or "").strip().lower()
+            target = str(observation.get("target") or "").strip()
+            value = observation.get("value")
+            if alert_type not in ALERT_TYPES or value is None:
+                raise ValueError("each observation requires a supported alert_type and value")
+            if not isinstance(value, bool):
+                try:
+                    value = float(value)
+                    if not math.isfinite(value):
+                        raise ValueError
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("observation value must be a finite number or boolean") from exc
+            metadata = observation.get("metadata") if isinstance(observation.get("metadata"), dict) else {}
+            normalized = {"target": target, "value": value, "metadata": metadata}
+            dedupe_key = f"{alert_type}:{target.upper() or '*'}"
+            for rule in rules:
+                if rule["alert_type"] != alert_type or (rule["target"] and rule["target"].casefold() != target.casefold()):
+                    continue
+                if self._alert_condition_matches(rule["condition"], value):
+                    event, created = self._record_alert_event(principal, rule, normalized, dedupe_key)
+                    results.append({"rule_id": rule["id"], "triggered": True, "created": created, "event": event})
+                else:
+                    resolved = self._resolve_alert_event(principal, rule["id"], dedupe_key, reason="condition_recovered")
+                    results.append({"rule_id": rule["id"], "triggered": False, "resolved": resolved})
+        return {"results": results}
+
     def list_alert_events(self, principal: Principal, limit: int = 100) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute("""SELECT e.*, r.name AS rule_name, r.alert_type FROM alert_events e JOIN alert_rules r ON r.id = e.rule_id
                 WHERE e.organization_id = ? ORDER BY e.created_at DESC LIMIT ?""", (principal.organization_id, max(1, min(limit, 500)))).fetchall()
-        return [{"id": str(row["id"]), "rule_id": str(row["rule_id"]), "rule_name": str(row["rule_name"]), "alert_type": str(row["alert_type"]), "status": str(row["status"]), "observed_value": row["observed_value"], "threshold_value": row["threshold_value"], "metadata": _json_object(row["metadata_json"]), "created_at": str(row["created_at"])} for row in rows]
+        return [self._alert_event_payload(row) for row in rows]
+
+    def acknowledge_alert_event(self, principal: Principal, event_id: str) -> dict[str, Any]:
+        row = self._find_alert_event(principal, event_id)
+        if str(row["status"]) == "resolved":
+            raise ValueError("resolved alert events cannot be acknowledged")
+        acknowledged_now = False
+        if str(row["status"]) == "open":
+            now = utcnow()
+            with self._connect() as conn:
+                conn.execute(
+                    """UPDATE alert_events SET status = 'acknowledged', acknowledged_at = ?, acknowledged_by_user_id = ?
+                       WHERE id = ? AND organization_id = ? AND status = 'open'""",
+                    (now, principal.user_id, event_id, principal.organization_id),
+                )
+            acknowledged_now = True
+        event = self._alert_event_payload(self._find_alert_event(principal, event_id))
+        if acknowledged_now:
+            self.audit(principal, "alert_event.acknowledge", "alert_event", event_id, {"rule_id": event["rule_id"]})
+        return event
+
+    def resolve_alert_event(self, principal: Principal, event_id: str) -> dict[str, Any]:
+        event = self._alert_event_payload(self._find_alert_event(principal, event_id))
+        if event["status"] == "resolved":
+            return event
+        self._resolve_alert_event(principal, event["rule_id"], event["dedupe_key"], reason="manual_resolution")
+        return self._alert_event_payload(self._find_alert_event(principal, event_id))
 
     def get_portfolio_connection(self, principal: Principal, connection_id: str) -> dict[str, Any]:
         with self._connect() as conn:
