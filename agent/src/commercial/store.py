@@ -864,6 +864,42 @@ class CommercialStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_research_market_events
                     ON research_market_events(organization_id, occurs_at ASC);
+                CREATE TABLE IF NOT EXISTS paper_trading_policies (
+                    organization_id TEXT PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+                    max_order_notional REAL NOT NULL DEFAULT 1000000,
+                    max_total_exposure REAL NOT NULL DEFAULT 5000000,
+                    max_trades_per_day INTEGER NOT NULL DEFAULT 100,
+                    updated_by_user_id TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS paper_trading_orders (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    symbol TEXT NOT NULL,
+                    side TEXT NOT NULL CHECK(side IN ('buy', 'sell')),
+                    quantity REAL NOT NULL,
+                    execution_price REAL NOT NULL,
+                    notional REAL NOT NULL,
+                    fee REAL NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'filled' CHECK(status IN ('filled', 'rejected')),
+                    risk_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    replay_hash TEXT NOT NULL,
+                    created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_paper_trading_orders
+                    ON paper_trading_orders(organization_id, created_at DESC);
+                CREATE TABLE IF NOT EXISTS paper_trading_replays (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    order_id TEXT NOT NULL REFERENCES paper_trading_orders(id) ON DELETE CASCADE,
+                    input_hash TEXT NOT NULL,
+                    result_json TEXT NOT NULL,
+                    created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_paper_trading_replays
+                    ON paper_trading_replays(organization_id, order_id, created_at DESC);
                 CREATE TABLE IF NOT EXISTS portfolio_connections (
                     id TEXT PRIMARY KEY,
                     organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -2233,6 +2269,98 @@ class CommercialStore:
         with self._connect() as conn:
             rows = conn.execute(f"SELECT * FROM research_market_events WHERE {' AND '.join(where)} ORDER BY occurs_at ASC LIMIT ?", tuple(params)).fetchall()
         return [{"id": str(row["id"]), "event_type": str(row["event_type"]), "symbol": str(row["symbol"]), "title": str(row["title"]), "occurs_at": str(row["occurs_at"]), "source_url": str(row["source_url"]), "source_name": str(row["source_name"]), "metadata": _json_object(row["metadata_json"]), "created_at": str(row["created_at"]), "updated_at": str(row["updated_at"])} for row in rows]
+
+    # --- Paper trading: isolated simulation ledger, never a broker path ---
+
+    def get_paper_trading_policy(self, principal: Principal) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM paper_trading_policies WHERE organization_id = ?", (principal.organization_id,)).fetchone()
+            if row is None:
+                now = utcnow()
+                conn.execute(
+                    """INSERT INTO paper_trading_policies(organization_id, updated_by_user_id, updated_at)
+                       VALUES (?, ?, ?)""",
+                    (principal.organization_id, principal.user_id, now),
+                )
+                row = conn.execute("SELECT * FROM paper_trading_policies WHERE organization_id = ?", (principal.organization_id,)).fetchone()
+        return {"max_order_notional": float(row["max_order_notional"]), "max_total_exposure": float(row["max_total_exposure"]), "max_trades_per_day": int(row["max_trades_per_day"]), "updated_at": str(row["updated_at"])}
+
+    def update_paper_trading_policy(self, principal: Principal, payload: dict[str, Any]) -> dict[str, Any]:
+        current = self.get_paper_trading_policy(principal)
+        values: dict[str, Any] = {key: payload.get(key, current[key]) for key in ("max_order_notional", "max_total_exposure", "max_trades_per_day")}
+        try:
+            values["max_order_notional"] = float(values["max_order_notional"])
+            values["max_total_exposure"] = float(values["max_total_exposure"])
+            values["max_trades_per_day"] = int(values["max_trades_per_day"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("paper trading policy values must be numeric") from exc
+        if values["max_order_notional"] <= 0 or values["max_total_exposure"] <= 0 or values["max_trades_per_day"] < 1:
+            raise ValueError("paper trading policy limits must be positive")
+        now = utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE paper_trading_policies SET max_order_notional = ?, max_total_exposure = ?, max_trades_per_day = ?,
+                   updated_by_user_id = ?, updated_at = ? WHERE organization_id = ?""",
+                (values["max_order_notional"], values["max_total_exposure"], values["max_trades_per_day"], principal.user_id, now, principal.organization_id),
+            )
+        result = self.get_paper_trading_policy(principal)
+        self.audit(principal, "paper_trading.policy.update", "paper_trading_policy", principal.organization_id, result)
+        return result
+
+    def submit_paper_trading_order(self, principal: Principal, payload: dict[str, Any]) -> dict[str, Any]:
+        symbol, side = str(payload.get("symbol") or "").strip().upper(), str(payload.get("side") or "").strip().lower()
+        try:
+            quantity, price, fee_rate = float(payload.get("quantity")), float(payload.get("execution_price")), float(payload.get("fee_rate") or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("paper order quantity and execution_price must be numeric") from exc
+        if not symbol or len(symbol) > 64 or side not in {"buy", "sell"} or quantity <= 0 or price <= 0 or fee_rate < 0:
+            raise ValueError("invalid paper order")
+        notional, fee = quantity * price, quantity * price * fee_rate
+        policy = self.get_paper_trading_policy(principal)
+        today = datetime.now(timezone.utc).date().isoformat()
+        with self._connect() as conn:
+            trade_count = int(conn.execute("SELECT COUNT(*) AS count FROM paper_trading_orders WHERE organization_id = ? AND created_at LIKE ?", (principal.organization_id, f"{today}%")).fetchone()["count"])
+            gross = float(conn.execute("SELECT COALESCE(SUM(ABS(notional)), 0) AS gross FROM paper_trading_orders WHERE organization_id = ? AND status = 'filled'", (principal.organization_id,)).fetchone()["gross"])
+        violations = []
+        if notional > policy["max_order_notional"]:
+            violations.append("max_order_notional")
+        if gross + notional > policy["max_total_exposure"]:
+            violations.append("max_total_exposure")
+        if trade_count >= policy["max_trades_per_day"]:
+            violations.append("max_trades_per_day")
+        if violations:
+            raise ValueError("paper order rejected by risk policy: " + ", ".join(violations))
+        order_id, now = _new_id("por"), utcnow()
+        risk_snapshot = {**policy, "gross_exposure_before": gross, "trades_today_before": trade_count, "broker_execution": False}
+        replay_input = {"symbol": symbol, "side": side, "quantity": quantity, "execution_price": price, "fee_rate": fee_rate, "risk_snapshot": risk_snapshot}
+        replay_hash = hashlib.sha256(json.dumps(replay_input, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO paper_trading_orders(id, organization_id, symbol, side, quantity, execution_price, notional, fee, status, risk_snapshot_json, replay_hash, created_by_user_id, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'filled', ?, ?, ?, ?)""",
+                (order_id, principal.organization_id, symbol, side, quantity, price, notional, fee, json.dumps(risk_snapshot, ensure_ascii=False), replay_hash, principal.user_id, now),
+            )
+        result = {"id": order_id, **replay_input, "notional": notional, "fee": fee, "status": "filled", "replay_hash": replay_hash, "broker_execution": False, "created_at": now}
+        self.audit(principal, "paper_trading.order.fill", "paper_trading_order", order_id, {"symbol": symbol, "side": side, "notional": notional, "broker_execution": False})
+        return result
+
+    def list_paper_trading_orders(self, principal: Principal, limit: int = 100) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM paper_trading_orders WHERE organization_id = ? ORDER BY created_at DESC LIMIT ?", (principal.organization_id, max(1, min(limit, 500)))).fetchall()
+        return [{"id": str(row["id"]), "symbol": str(row["symbol"]), "side": str(row["side"]), "quantity": float(row["quantity"]), "execution_price": float(row["execution_price"]), "notional": float(row["notional"]), "fee": float(row["fee"]), "status": str(row["status"]), "risk_snapshot": _json_object(row["risk_snapshot_json"]), "replay_hash": str(row["replay_hash"]), "created_at": str(row["created_at"])} for row in rows]
+
+    def replay_paper_trading_order(self, principal: Principal, order_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM paper_trading_orders WHERE id = ? AND organization_id = ?", (order_id, principal.organization_id)).fetchone()
+            if row is None:
+                raise KeyError(order_id)
+            result = {"order_id": str(row["id"]), "status": str(row["status"]), "execution_price": float(row["execution_price"]), "quantity": float(row["quantity"]), "notional": float(row["notional"]), "fee": float(row["fee"]), "replay_hash": str(row["replay_hash"]), "broker_execution": False}
+            replay_id, now = _new_id("prp"), utcnow()
+            conn.execute("INSERT INTO paper_trading_replays(id, organization_id, order_id, input_hash, result_json, created_by_user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", (replay_id, principal.organization_id, order_id, result["replay_hash"], json.dumps(result, ensure_ascii=False), principal.user_id, now))
+        result["id"] = replay_id
+        result["created_at"] = now
+        self.audit(principal, "paper_trading.order.replay", "paper_trading_order", order_id, {"replay_id": replay_id, "broker_execution": False})
+        return result
 
     def get_portfolio_connection(self, principal: Principal, connection_id: str) -> dict[str, Any]:
         with self._connect() as conn:

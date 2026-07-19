@@ -248,6 +248,20 @@ class ResearchMarketEventCreateRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class PaperTradingPolicyUpdateRequest(BaseModel):
+    max_order_notional: float | None = Field(None, gt=0)
+    max_total_exposure: float | None = Field(None, gt=0)
+    max_trades_per_day: int | None = Field(None, ge=1)
+
+
+class PaperTradingOrderCreateRequest(BaseModel):
+    symbol: str = Field(..., min_length=1, max_length=64)
+    side: str = Field(..., max_length=8)
+    quantity: float = Field(..., gt=0)
+    execution_price: float = Field(..., gt=0)
+    fee_rate: float = Field(0, ge=0, le=1)
+
+
 class FeedbackCreateRequest(BaseModel):
     target_type: str
     target_id: str
@@ -1665,6 +1679,44 @@ def register_commercial_routes(app: FastAPI) -> None:
             return _store().create_research_market_event(principal, payload.model_dump())
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get("/paper-trading/policy")
+    async def paper_trading_policy(principal: Principal = Depends(_principal_from_cookie)):
+        return _store().get_paper_trading_policy(principal)
+
+    @app.put("/paper-trading/policy")
+    async def update_paper_trading_policy(
+        payload: PaperTradingPolicyUpdateRequest,
+        principal: Principal = Depends(_require_role("owner", "admin")),
+    ):
+        try:
+            return _store().update_paper_trading_policy(principal, payload.model_dump(exclude_none=True))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get("/paper-trading/orders")
+    async def list_paper_trading_orders(limit: int = 100, principal: Principal = Depends(_principal_from_cookie)):
+        return {"orders": _store().list_paper_trading_orders(principal, limit=limit)}
+
+    @app.post("/paper-trading/orders", status_code=status.HTTP_201_CREATED)
+    async def create_paper_trading_order(
+        payload: PaperTradingOrderCreateRequest,
+        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+    ):
+        try:
+            return _store().submit_paper_trading_order(principal, payload.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    @app.post("/paper-trading/orders/{order_id}/replay", status_code=status.HTTP_201_CREATED)
+    async def replay_paper_trading_order(
+        order_id: str,
+        principal: Principal = Depends(_require_role("owner", "admin", "member")),
+    ):
+        try:
+            return _store().replay_paper_trading_order(principal, order_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="paper order not found") from exc
 
     @app.get("/usage/policy")
     async def usage_policy(principal: Principal = Depends(_require_role("owner", "admin"))):
