@@ -296,7 +296,7 @@ def test_quality_contract_annotates_sessions_gaps_freshness_and_adjustment() -> 
         generated_at="2026-01-05T00:01:00+00:00",
     )
     assert equity["gap_annotations"] == {
-        "expected_sessions": 2, "missing_count": 0, "sample": [], "calendar_precision": "weekday_convention",
+        "expected_sessions": 2, "missing_count": 0, "sample": [], "calendar_precision": "exchange_calendar_library",
     }
     assert equity["freshness"] == {
         "observed_at": "2026-01-05T00:00:00", "evaluated_at": "2026-01-05T00:01:00+00:00",
@@ -317,6 +317,24 @@ def test_quality_contract_annotates_sessions_gaps_freshness_and_adjustment() -> 
     )
     assert crypto["gap_annotations"]["sample"] == ["2026-01-02"]
     assert crypto["gap_annotations"]["calendar_precision"] == "continuous"
+
+
+def test_exchange_calendar_excludes_us_new_year_holiday_from_gap_annotations() -> None:
+    quality = quality_contract(
+        symbol="AAPL.US",
+        timestamps=["2026-01-02T00:00:00"],
+        source_bars=1,
+        returned_bars=1,
+        start_date="2026-01-01",
+        end_date="2026-01-02",
+        truncated=False,
+        adjustment="raw",
+        generated_at="2026-01-02T00:01:00+00:00",
+    )
+    assert quality["gap_annotations"] == {
+        "expected_sessions": 1, "missing_count": 0, "sample": [], "calendar_precision": "exchange_calendar_library",
+    }
+    assert quality["trading_calendar"]["schedule_status"] == "exchange_calendar_library"
 
 
 def test_snapshot_marks_unresolved_symbols_when_loader_returns_no_frames() -> None:

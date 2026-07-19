@@ -80,8 +80,8 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec api py
 - 长任务已具备 SQLite 持久化存储和 Redis/Postgres 队列契约；完整 Agent 运行、网页抓取和长回测执行器仍需迁移到 worker 路径。
 - RAG 已支持 PostgreSQL 生命周期存储、pgvector 检索、本地回退、嵌入状态、入库生命周期和混合检索；可配置 rerank 与正式评估数据集仍是后续工作。
 - CSRF、企业 SSO、配额治理和更深入的可观测性加固仍待完成。
-- 标的元数据仍需接入权威公司行为历史和交易所节假日日历。
-- 市场数据质量仍需交易时段校验、复权模式、缺口标注和新鲜度 SLA。
+- 标的元数据已提供服务商公司行为和交易所会话日历；权威公司行为历史仍需接入官方数据源。
+- 市场数据质量已对 XNYS、XHKG 和 XSHG 交易日历执行校验，提供缺口标注和新鲜度 SLA，并明确归一化加载器仅实际应用原始价格，前复权和后复权暂不支持。
 - Webhook 告警重试已持久化并可由运维接口触发；生产环境还应独立调度重试分发。
 
 ## 验证

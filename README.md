@@ -212,8 +212,8 @@ Operations runbooks:
 - Runtime jobs have a SQLite durable store and a Redis/Postgres queue contract. The worker can consume queued envelopes and update job state, but full Agent run, web crawl, and long-backtest executors still need to be moved onto that worker path.
 - RAG supports PostgreSQL lifecycle storage, pgvector retrieval, local fallback, embedding status, ingestion lifecycle, and hybrid retrieval surfaces. Configurable reranking and formal RAG evaluation datasets remain follow-up work.
 - CSRF protection, enterprise SSO, quota enforcement, and deeper observability hardening are still pending.
-- Instrument metadata still needs authoritative corporate-action histories and exchange holiday calendars.
-- Market-data quality still needs session-calendar enforcement, adjustment modes, gap annotations, and a freshness SLA.
+- Instrument metadata exposes provider-sourced corporate actions and exchange session calendars; authoritative corporate-action histories still require an official provider.
+- Market-data quality enforces XNYS, XHKG, and XSHG session calendars, exposes gap annotations and a freshness SLA, and discloses that normalized loaders apply raw prices only; forward and backward adjustments remain unsupported.
 - Webhook alert retries are durable and operator-dispatchable; production deployments should also schedule retry dispatch independently of request traffic.
 
 ## Verification

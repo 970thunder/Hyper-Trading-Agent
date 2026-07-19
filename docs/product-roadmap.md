@@ -13,6 +13,7 @@ feature changes state, and link the implementation and verification evidence.
 | Market data | Shared on-disk request snapshots, per-key single-flight, and background prewarm | `src/market_data.py` |
 | Market data | Query-cache observability with hit/miss, saved time, TTL, and prewarm origin | `MarketData.tsx`, `/market-data/history` |
 | Market data | Symbol search with normalized exchange, timezone, and trading-session metadata plus shared 15-minute cache | `/market-data/symbol-search`, `search_symbol` tool |
+| Market data | Exchange session calendar enforcement, gap annotations, raw-price adjustment disclosure, and freshness SLA | `src/market_quality.py`, `test_market_data.py` |
 | Governance | Organization audit records for market-data queries | `market_data.history.fetch` audit event |
 | Admin | Conversation, token, cache, and model-call audit workspace | `/admin/audit` |
 | Portfolio | Organization-scoped read-only connections, external credential references, retained risk snapshots, and drawdown history | `/portfolio/connections`, `test_portfolio_organization_snapshots.py` |
@@ -26,8 +27,7 @@ feature changes state, and link the implementation and verification evidence.
 
 | Area | Capability | Next acceptance criteria |
 | --- | --- | --- |
-| Market data | Instrument metadata | Add authoritative asset-class, currency, corporate-action, and holiday-calendar metadata to symbol-search results. |
-| Market data | Data quality | Add session calendars, adjustment mode, gap annotation, and source freshness SLA. |
+| Market data | Instrument metadata | Replace provider-sourced corporate-action events with an authoritative historical corporate-action source. |
 
 ## Planned
 

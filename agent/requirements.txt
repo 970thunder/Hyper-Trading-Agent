@@ -17,6 +17,7 @@ boto3>=1.34.0,<2
 
 # Data & Computation
 pandas>=2.0.0,<3.0.0
+exchange-calendars>=4.13.2,<5
 numpy>=1.24.0
 scipy>=1.10.0
 duckdb>=1.2.0

@@ -31,12 +31,31 @@ def market_for_symbol(symbol: str) -> str:
 
 
 def calendar_metadata(symbol: str) -> dict[str, str]:
-    return dict(MARKET_CALENDARS.get(market_for_symbol(symbol), MARKET_CALENDARS["us"]))
+    metadata = dict(MARKET_CALENDARS.get(market_for_symbol(symbol), MARKET_CALENDARS["us"]))
+    if metadata["id"] in {"XNYS", "XHKG", "XSHG"}:
+        try:
+            import exchange_calendars as xc
+
+            xc.get_calendar(metadata["id"])
+            metadata["schedule_status"] = "exchange_calendar_library"
+        except Exception:
+            pass
+    return metadata
 
 
 def _expected_dates(start_date: str, end_date: str, *, market: str) -> tuple[list[date], str]:
     start = datetime.fromisoformat(start_date[:10]).date()
     end = datetime.fromisoformat(end_date[:10]).date()
+    calendar_id = MARKET_CALENDARS.get(market, {}).get("id")
+    if calendar_id in {"XNYS", "XHKG", "XSHG"}:
+        try:
+            import exchange_calendars as xc
+
+            sessions = xc.get_calendar(calendar_id).sessions_in_range(start, end)
+            return [item.date() for item in sessions], "exchange_calendar_library"
+        except Exception:
+            # Fall through to the explicitly labeled convention-only calendar.
+            pass
     days: list[date] = []
     current = start
     while current <= end:
