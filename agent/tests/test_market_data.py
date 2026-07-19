@@ -26,6 +26,7 @@ from src.market_data import (
     fetch_market_data_snapshot,
     get_loader,
 )
+from src.market_quality import quality_contract
 
 
 # --------------------------------------------------------------------------
@@ -276,6 +277,46 @@ def test_snapshot_exposes_provenance_and_quality_metadata() -> None:
     assert series["quality"]["first_bar"] == "2026-01-01T00:00:00"
     assert series["quality"]["last_bar"] == "2026-01-02T00:00:00"
     assert series["quality"]["status"] == "complete"
+    assert series["quality"]["trading_calendar"]["id"] == "XNYS"
+    assert series["quality"]["adjustment"] == {
+        "requested": "raw", "applied": "raw", "status": "applied",
+    }
+
+
+def test_quality_contract_annotates_sessions_gaps_freshness_and_adjustment() -> None:
+    equity = quality_contract(
+        symbol="AAPL.US",
+        timestamps=["2026-01-02T00:00:00", "2026-01-05T00:00:00"],
+        source_bars=2,
+        returned_bars=2,
+        start_date="2026-01-02",
+        end_date="2026-01-05",
+        truncated=False,
+        adjustment="forward",
+        generated_at="2026-01-05T00:01:00+00:00",
+    )
+    assert equity["gap_annotations"] == {
+        "expected_sessions": 2, "missing_count": 0, "sample": [], "calendar_precision": "weekday_convention",
+    }
+    assert equity["freshness"] == {
+        "observed_at": "2026-01-05T00:00:00", "evaluated_at": "2026-01-05T00:01:00+00:00",
+        "age_seconds": 60, "sla_seconds": None, "status": "historical",
+    }
+    assert equity["adjustment"]["status"] == "not_supported_by_normalized_loader"
+
+    crypto = quality_contract(
+        symbol="BTC-USDT",
+        timestamps=["2026-01-01T00:00:00", "2026-01-03T00:00:00"],
+        source_bars=2,
+        returned_bars=2,
+        start_date="2026-01-01",
+        end_date="2026-01-03",
+        truncated=False,
+        adjustment="raw",
+        generated_at="2026-01-03T00:01:00+00:00",
+    )
+    assert crypto["gap_annotations"]["sample"] == ["2026-01-02"]
+    assert crypto["gap_annotations"]["calendar_precision"] == "continuous"
 
 
 def test_snapshot_marks_unresolved_symbols_when_loader_returns_no_frames() -> None:
@@ -366,4 +407,32 @@ def test_symbol_search_cache_reuses_shared_result(monkeypatch) -> None:
         "id": "XNYS", "timezone": "America/New_York", "session": "09:30-16:00",
         "holiday_source": "exchange_official_calendar",
     }
-    assert candidate["corporate_actions"]["status"] == "not_loaded"
+    assert candidate["corporate_actions"]["status"] == "available_on_demand"
+
+
+def test_yahoo_corporate_action_parser_normalizes_dividends_and_splits() -> None:
+    from backtest.loaders.yahoo_client import _parse_corporate_actions
+
+    actions = _parse_corporate_actions({
+        "chart": {"result": [{"events": {
+            "dividends": {"1767225600": {"date": 1767225600, "amount": 0.25}},
+            "splits": {"1764547200": {"date": 1764547200, "numerator": 4, "denominator": 1}},
+        }}]},
+    }, "AAPL")
+    assert actions[0] == {"type": "dividend", "occurred_at": "2026-01-01T00:00:00+00:00", "amount": 0.25}
+    assert actions[1]["ratio"] == "4:1"
+
+
+def test_instrument_metadata_loads_provider_events_and_discloses_unsupported_markets(monkeypatch) -> None:
+    from src.api import market_data_routes
+    from backtest.loaders import yahoo_client
+
+    monkeypatch.setattr(yahoo_client, "get_corporate_actions", lambda *_args, **_kwargs: [{"type": "split", "ratio": "4:1"}])
+    us = market_data_routes.instrument_metadata("AAPL.US", "2026-01-01", "2026-01-02")
+    assert us["trading_calendar"]["id"] == "XNYS"
+    assert us["corporate_actions"] == {
+        "status": "loaded", "source": "yahoo_finance_events", "authority": "market_data_provider",
+        "start": "2026-01-01", "end": "2026-01-02", "events": [{"type": "split", "ratio": "4:1"}],
+    }
+    crypto = market_data_routes.instrument_metadata("BTC-USDT")
+    assert crypto["corporate_actions"]["status"] == "not_supported"

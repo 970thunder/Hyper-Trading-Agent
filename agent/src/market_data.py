@@ -14,6 +14,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from src.market_quality import quality_contract
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_ROWS = 250
@@ -214,6 +216,7 @@ def _fetch_market_data_snapshot_uncached(
     end_date: str,
     source: str = "auto",
     interval: str = "1D",
+    adjustment: str = "raw",
     max_rows: int = MARKET_DATA_MAX_ROWS,
     loader_resolver: Callable[[str], type] = get_loader,
 ) -> dict[str, Any]:
@@ -231,6 +234,8 @@ def _fetch_market_data_snapshot_uncached(
         raise ValueError(f"Maximum {MARKET_DATA_MAX_SYMBOLS} symbols per request")
     if max_rows < 1 or max_rows > MARKET_DATA_MAX_ROWS:
         raise ValueError(f"max_rows must be between 1 and {MARKET_DATA_MAX_ROWS}")
+    if adjustment not in {"raw", "forward", "backward"}:
+        raise ValueError("adjustment must be raw, forward, or backward")
 
     from backtest.loaders.base import loader_cache_enabled, loader_cache_get, validate_date_range
 
@@ -244,6 +249,7 @@ def _fetch_market_data_snapshot_uncached(
 
     series: list[dict[str, Any]] = []
     unresolved: list[str] = []
+    generated_at = datetime.now(timezone.utc).isoformat()
     for requested_source, group_codes in groups.items():
         try:
             loader_cls = loader_resolver(requested_source)
@@ -292,13 +298,16 @@ def _fetch_market_data_snapshot_uncached(
                 "interval": interval,
                 "cache_hit": cache_hits[code],
                 "bars": records,
-                "quality": _quality_summary(
+                "quality": quality_contract(
+                    symbol=code,
                     timestamps=timestamps,
                     source_bars=source_bars,
                     returned_bars=len(records),
                     start_date=start_date,
                     end_date=end_date,
                     truncated=truncated,
+                    adjustment=adjustment,
+                    generated_at=generated_at,
                 ),
             })
 
@@ -309,10 +318,11 @@ def _fetch_market_data_snapshot_uncached(
             "end_date": end_date,
             "source": source,
             "interval": interval,
+            "adjustment": adjustment,
         },
         "series": series,
         "unresolved": list(dict.fromkeys(unresolved)),
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": generated_at,
         "cache": list_market_data_sources()["cache"],
     }
 
@@ -336,8 +346,8 @@ def market_data_live_ttl_seconds() -> int:
         return 300
 
 
-def _snapshot_cache_key(*, codes: list[str], start_date: str, end_date: str, source: str, interval: str, max_rows: int) -> str:
-    payload = {"codes": codes, "start": start_date, "end": end_date, "source": source, "interval": interval, "max_rows": max_rows, "version": 1}
+def _snapshot_cache_key(*, codes: list[str], start_date: str, end_date: str, source: str, interval: str, adjustment: str, max_rows: int) -> str:
+    payload = {"codes": codes, "start": start_date, "end": end_date, "source": source, "interval": interval, "adjustment": adjustment, "max_rows": max_rows, "version": 2}
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
@@ -392,13 +402,14 @@ def fetch_market_data_snapshot(
     end_date: str,
     source: str = "auto",
     interval: str = "1D",
+    adjustment: str = "raw",
     max_rows: int = MARKET_DATA_MAX_ROWS,
     loader_resolver: Callable[[str], type] = get_loader,
     cache_origin: str = "query",
 ) -> dict[str, Any]:
     """Return a shared cached market-data snapshot, fetching only on a miss."""
     normalized_codes = list(dict.fromkeys(code.strip().upper() for code in codes if code.strip()))
-    key = _snapshot_cache_key(codes=normalized_codes, start_date=start_date, end_date=end_date, source=source, interval=interval, max_rows=max_rows)
+    key = _snapshot_cache_key(codes=normalized_codes, start_date=start_date, end_date=end_date, source=source, interval=interval, adjustment=adjustment, max_rows=max_rows)
     ttl_seconds = _snapshot_ttl(end_date)
     # Injected resolvers are used by tests and callers with ephemeral data;
     # they must not read or write the production-wide snapshot store.
@@ -412,7 +423,7 @@ def fetch_market_data_snapshot(
         cached = _read_snapshot_cache(key, ttl_seconds) if cache_allowed else None
         if cached is not None:
             return cached
-        result = _fetch_market_data_snapshot_uncached(codes=normalized_codes, start_date=start_date, end_date=end_date, source=source, interval=interval, max_rows=max_rows, loader_resolver=loader_resolver)
+        result = _fetch_market_data_snapshot_uncached(codes=normalized_codes, start_date=start_date, end_date=end_date, source=source, interval=interval, adjustment=adjustment, max_rows=max_rows, loader_resolver=loader_resolver)
         result["query_cache"] = {"status": "miss", "saved_at": result["generated_at"], "ttl_seconds": ttl_seconds, "origin": cache_origin}
         if cache_allowed:
             _write_snapshot_cache(key, result, origin=cache_origin)

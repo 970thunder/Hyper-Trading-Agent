@@ -6,6 +6,7 @@ import sys as _sys
 import json
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -13,6 +14,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from src.market_data import MARKET_DATA_MAX_ROWS, MARKET_DATA_MAX_SYMBOLS, fetch_market_data_snapshot, list_market_data_sources, prewarm_market_data_cache
 from src.crypto_derivatives import fetch_crypto_derivatives_snapshot
+from src.market_quality import calendar_metadata, market_for_symbol
 
 _SYMBOL_SEARCH_TTL_SECONDS = 900
 _symbol_search_cache: dict[tuple[str, int], tuple[float, dict]] = {}
@@ -56,9 +58,9 @@ def _instrument_metadata(candidate: dict) -> dict:
         "asset_class": asset_class,
         "metadata_authority": "exchange_convention",
         "corporate_actions": {
-            "status": "not_loaded",
-            "source": "sec_edgar" if candidate.get("cik") else "provider_required",
-            "reason": "symbol search does not establish a complete corporate-action history",
+            "status": "available_on_demand" if market in {"us", "hk"} else "not_supported",
+            "source": "yahoo_finance_events" if market in {"us", "hk"} else "provider_required",
+            "reason": "load /market-data/instrument-metadata for event history" if market in {"us", "hk"} else "no corporate-action provider is configured for this market",
         },
         "trading_calendar": {"id": base.pop("calendar"), "timezone": base["timezone"], "session": base["session"], "holiday_source": "exchange_official_calendar"},
     }
@@ -125,6 +127,42 @@ def search_market_symbols(query: str, limit: int) -> dict:
     return result
 
 
+def instrument_metadata(symbol: str, start: str | None = None, end: str | None = None) -> dict:
+    """Load calendar conventions and provider-sourced corporate actions on demand."""
+    normalized = symbol.strip().upper()
+    if not normalized:
+        raise ValueError("a symbol is required")
+    market = market_for_symbol(normalized)
+    now = datetime.now(timezone.utc)
+    start_at = datetime.fromisoformat(start).replace(tzinfo=timezone.utc) if start else now - timedelta(days=3650)
+    end_at = datetime.fromisoformat(end).replace(tzinfo=timezone.utc) if end else now
+    if start_at > end_at:
+        raise ValueError("start must not be after end")
+    corporate_actions: dict[str, object]
+    if market in {"us", "hk"}:
+        try:
+            from backtest.loaders.yahoo_client import get_corporate_actions
+
+            corporate_actions = {
+                "status": "loaded",
+                "source": "yahoo_finance_events",
+                "authority": "market_data_provider",
+                "start": start_at.date().isoformat(),
+                "end": end_at.date().isoformat(),
+                "events": get_corporate_actions(symbol, period1=int(start_at.timestamp()), period2=int(end_at.timestamp())),
+            }
+        except Exception as exc:
+            corporate_actions = {"status": "unavailable", "source": "yahoo_finance_events", "authority": "market_data_provider", "reason": str(exc), "events": []}
+    else:
+        corporate_actions = {"status": "not_supported", "source": "provider_required", "reason": "no corporate-action provider is configured for this market", "events": []}
+    return {
+        "symbol": normalized,
+        "market": market,
+        "trading_calendar": calendar_metadata(normalized),
+        "corporate_actions": corporate_actions,
+    }
+
+
 def register_market_data_routes(app: FastAPI) -> None:
     """Mount user-facing historical data and source-center endpoints."""
     host = _host()
@@ -152,6 +190,7 @@ def register_market_data_routes(app: FastAPI) -> None:
         end: Annotated[str, Query(min_length=10, max_length=32)],
         source: Annotated[str, Query(min_length=1, max_length=32)] = "auto",
         interval: Annotated[str, Query(min_length=1, max_length=16)] = "1D",
+        adjustment: Annotated[str, Query(pattern="^(raw|forward|backward)$")] = "raw",
         max_rows: Annotated[int, Query(ge=1, le=MARKET_DATA_MAX_ROWS)] = 2000,
         principal=Depends(require_writer),
     ):
@@ -164,6 +203,7 @@ def register_market_data_routes(app: FastAPI) -> None:
                 end_date=end,
                 source=source,
                 interval=interval,
+                adjustment=adjustment,
                 max_rows=max_rows,
             )
         except ValueError as exc:
@@ -174,6 +214,7 @@ def register_market_data_routes(app: FastAPI) -> None:
             "end": end,
             "source": source,
             "interval": interval,
+            "adjustment": adjustment,
             "series_count": len(result["series"]),
             "unresolved": result["unresolved"],
         })
@@ -190,6 +231,20 @@ def register_market_data_routes(app: FastAPI) -> None:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         _audit_fetch(principal, {"symbols": [], "query": q.strip(), "result_count": result.get("count", 0), "action": "market_data.symbol.search"})
+        return result
+
+    @app.get("/market-data/instrument-metadata", dependencies=[Depends(require_user)])
+    async def market_data_instrument_metadata(
+        symbol: Annotated[str, Query(min_length=1, max_length=64)],
+        start: Annotated[str | None, Query(min_length=10, max_length=32)] = None,
+        end: Annotated[str | None, Query(min_length=10, max_length=32)] = None,
+        principal=Depends(require_user),
+    ):
+        try:
+            result = await run_in_threadpool(instrument_metadata, symbol, start, end)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _audit_fetch(principal, {"symbols": [symbol.strip().upper()], "action": "market_data.instrument_metadata.fetch"})
         return result
 
     @app.get("/market-data/crypto-derivatives", dependencies=[Depends(require_writer)])

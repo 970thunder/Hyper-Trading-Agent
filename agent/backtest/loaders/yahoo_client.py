@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import datetime as dt
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -198,6 +199,28 @@ def get_chart(
     return _parse_chart(payload, yahoo_symbol)
 
 
+def get_corporate_actions(
+    symbol: str,
+    *,
+    period1: Optional[int] = None,
+    period2: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Fetch Yahoo dividend and split events for a normalized US/HK symbol."""
+    yahoo_symbol = map_symbol(symbol)
+    params: Dict[str, Any] = {"interval": "1d", "events": "div,splits"}
+    if period1 is not None:
+        params["period1"] = int(period1)
+    if period2 is not None:
+        params["period2"] = int(period2)
+    payload = throttled_get_json(
+        f"{_CHART_BASE}/{yahoo_symbol}",
+        host_key=HOST_KEY,
+        min_interval=_min_interval(),
+        params=params,
+    )
+    return _parse_corporate_actions(payload, yahoo_symbol)
+
+
 def _parse_chart(payload: Any, yahoo_symbol: str) -> List[Dict[str, Any]]:
     """Convert a v8 chart payload into ascending OHLCV row dicts."""
     chart = (payload or {}).get("chart") or {}
@@ -224,6 +247,33 @@ def _parse_chart(payload: Any, yahoo_symbol: str) -> List[Dict[str, Any]]:
         row.update({field: _to_float(values[field]) for field in _QUOTE_FIELDS})
         rows.append(row)
     return rows
+
+
+def _parse_corporate_actions(payload: Any, yahoo_symbol: str) -> List[Dict[str, Any]]:
+    chart = (payload or {}).get("chart") or {}
+    error = chart.get("error")
+    if error:
+        description = error.get("description") if isinstance(error, dict) else error
+        raise ValueError(f"Yahoo chart error for {yahoo_symbol}: {description}")
+    results = chart.get("result") or []
+    events = (results[0] or {}).get("events") if results else {}
+    actions: List[Dict[str, Any]] = []
+    for key, event in (events.get("dividends") or {}).items() if isinstance(events, dict) else []:
+        timestamp = event.get("date", key) if isinstance(event, dict) else key
+        actions.append({"type": "dividend", "occurred_at": _event_timestamp(timestamp), "amount": _to_float(event.get("amount") if isinstance(event, dict) else None)})
+    for key, event in (events.get("splits") or {}).items() if isinstance(events, dict) else []:
+        timestamp = event.get("date", key) if isinstance(event, dict) else key
+        numerator = _to_float(event.get("numerator") if isinstance(event, dict) else None)
+        denominator = _to_float(event.get("denominator") if isinstance(event, dict) else None)
+        actions.append({"type": "split", "occurred_at": _event_timestamp(timestamp), "numerator": numerator, "denominator": denominator, "ratio": f"{numerator:g}:{denominator:g}" if numerator and denominator else None})
+    return sorted(actions, key=lambda item: str(item.get("occurred_at") or ""), reverse=True)
+
+
+def _event_timestamp(value: Any) -> str | None:
+    try:
+        return dt.datetime.fromtimestamp(int(value), tz=dt.timezone.utc).isoformat()
+    except (TypeError, ValueError, OSError):
+        return None
 
 
 def _at(series: Any, index: int) -> Any:
