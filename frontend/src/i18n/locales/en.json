@@ -2149,6 +2149,7 @@
     }
   },
   "marketData": {
+    "latestPrice": "Latest available price",
     "prewarmed": "Prewarmed at startup.",
     "navigation": "Market data", "title": "Historical prices and asset comparison", "subtitle": "Query standardized OHLCV for equities and crypto, with source provenance, cache status, and completeness details.", "query": "Market query", "queryDescription": "Separate symbols with commas, spaces, or semicolons. Examples: BTC-USDT, AAPL.US, 600519.SH.", "symbols": "Symbols", "start": "Start", "end": "End", "source": "Source", "searchSources": "Search sources", "auto": "Auto select", "autoDescription": "Choose the preferred source per market and fall back when unavailable", "general": "General", "available": "Available", "setupNeeded": "Setup needed", "unavailable": "Unavailable", "loading": "Loading", "load": "Load data", "history": "History", "compare": "Compare", "sources": "Sources", "noQuery": "No market query yet", "noQueryDescription": "Enter assets and a date range to load historical prices.", "twoAssets": "Two assets are required", "twoAssetsDescription": "Load two or more symbols to compare normalized performance.",
     "errors": { "sources": "Unable to load the data source catalog.", "noSymbols": "Enter at least one asset symbol.", "invalidDates": "The start date must not be after the end date.", "noData": "No usable bars were returned. Check the symbols or source configuration.", "request": "Market data request failed." },

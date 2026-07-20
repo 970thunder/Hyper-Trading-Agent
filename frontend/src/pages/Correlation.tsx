@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/Button";
 import { Metric, Panel, SectionHeader } from "@/components/ui/Panel";
 import { StatusIndicator } from "@/components/ui/Status";
 import { CorrelationMatrix } from "@/components/charts/CorrelationMatrix";
+import { SymbolMultiSelect } from "@/components/market/SymbolMultiSelect";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const WINDOWS = [30, 60, 90, 180, 365] as const;
@@ -30,7 +32,7 @@ export function Correlation() {
     setError(null);
     setLoading(true);
     try {
-      const result = await request<{ labels: string[]; matrix: number[][] }>(`/correlation?codes=${encodeURIComponent(normalizedCodes.join(","))}&days=${days}&method=${method}`);
+      const result = await api.getCorrelation({ codes: normalizedCodes, days, method });
       setLabels(Array.isArray(result.labels) ? result.labels : []);
       setMatrix(Array.isArray(result.matrix) ? result.matrix : []);
     } catch (cause) {
@@ -56,7 +58,7 @@ export function Correlation() {
           <div className="grid gap-5 border-t border-[hsl(var(--border-subtle))] bg-surface-2/45 px-4 py-4 sm:px-5">
             <label className="grid gap-1.5">
               <span className="text-sm font-medium text-ink-strong">{t("correlation.assetCodes")}</span>
-              <input value={codes} onChange={(event) => setCodes(event.target.value)} placeholder={t("correlation.placeholder")} className="h-10 w-full rounded-md border border-border bg-surface-1 px-3 text-sm text-ink-strong shadow-xs outline-none transition-[color,background-color,border-color,box-shadow] duration-fast placeholder:text-ink-disabled hover:border-ink-disabled focus:border-primary/60 focus:ring-2 focus:ring-primary/20" />
+              <SymbolMultiSelect value={codes} onChange={setCodes} placeholder={t("correlation.placeholder")} ariaLabel={t("correlation.assetCodes")} />
               <span className="text-xs leading-5 text-ink-muted">{t("correlation.assetCodesHint")}</span>
             </label>
 
@@ -97,20 +99,4 @@ function SegmentedControl({ label, options, value, onChange }: { label: string; 
   return (
     <div className="grid gap-1.5"><span className="text-sm font-medium text-ink-strong">{label}</span><div className="flex flex-wrap gap-1 rounded-lg border border-[hsl(var(--border-subtle))] bg-surface-2 p-1">{options.map((option) => <button key={option.value} type="button" onClick={() => onChange(option.value)} className={cn("min-h-8 rounded-md px-3 text-xs font-medium transition-[color,background-color,box-shadow] duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30", value === option.value ? "bg-surface-1 text-primary shadow-xs" : "text-ink-muted hover:bg-surface-1/70 hover:text-ink-strong")}>{option.label}</button>)}</div></div>
   );
-}
-
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(path, { headers: { "Content-Type": "application/json", ...options?.headers }, ...options });
-  if (!response.ok) {
-    let detail = `HTTP ${response.status}`;
-    try {
-      const body = await response.json();
-      detail = body.detail || body.message || detail;
-    } catch {
-      // Keep the status fallback when an error body cannot be parsed.
-    }
-    throw new Error(detail);
-  }
-  const text = await response.text();
-  return text ? JSON.parse(text) : ({} as T);
 }

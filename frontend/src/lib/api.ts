@@ -222,6 +222,10 @@ export const api = {
     if (params.max_rows) query.set("max_rows", String(params.max_rows));
     return request<MarketDataHistoryResponse>(`/market-data/history?${query.toString()}`);
   },
+  getCorrelation: (params: { codes: string[]; days: number; method: "pearson" | "spearman" }) => {
+    const query = new URLSearchParams({ codes: params.codes.join(","), days: String(params.days), method: params.method });
+    return request<{ labels: string[]; matrix: number[][] }>(`/correlation?${query.toString()}`);
+  },
   getKnowledgeStats: () => request<KnowledgeStats>("/knowledge/stats"),
   listKnowledgeDocuments: () => request<KnowledgeDocument[]>("/knowledge/documents"),
   addKnowledgeDocument: (body: AddKnowledgeDocumentRequest) =>
