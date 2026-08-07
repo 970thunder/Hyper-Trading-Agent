@@ -13,6 +13,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 
 from src.market_data import MARKET_DATA_MAX_ROWS, MARKET_DATA_MAX_SYMBOLS, fetch_market_data_snapshot, list_market_data_sources, prewarm_market_data_cache
+from src.market_regime import analyze_market_regime
 from src.crypto_derivatives import fetch_crypto_derivatives_snapshot
 from src.market_quality import calendar_metadata, market_for_symbol
 
@@ -219,6 +220,61 @@ def register_market_data_routes(app: FastAPI) -> None:
             "unresolved": result["unresolved"],
         })
         return result
+
+    @app.get("/market-data/regime", dependencies=[Depends(require_writer)])
+    async def market_data_regime(
+        symbol: Annotated[str, Query(min_length=1, max_length=64)],
+        lookback: Annotated[int, Query(ge=120, le=2520)] = 252,
+        source: Annotated[str, Query(min_length=1, max_length=32)] = "auto",
+        principal=Depends(require_writer),
+    ):
+        normalized_symbol = symbol.strip().upper()
+        end_date = datetime.now(timezone.utc).date().isoformat()
+        # Request additional bars so the analysis can use a full lookback even
+        # where exchange sessions, weekends, or provider gaps are present.
+        start_date = (datetime.now(timezone.utc).date() - timedelta(days=max(lookback * 3, 365))).isoformat()
+        try:
+            snapshot = await run_in_threadpool(
+                fetch_market_data_snapshot,
+                codes=[normalized_symbol],
+                start_date=start_date,
+                end_date=end_date,
+                source=source,
+                interval="1D",
+                adjustment="raw",
+                max_rows=min(lookback * 3, MARKET_DATA_MAX_ROWS),
+            )
+            series = snapshot["series"][0] if snapshot["series"] else None
+            if series is None:
+                raise ValueError(f"no usable market bars were returned for {normalized_symbol}")
+            analysis = await run_in_threadpool(
+                analyze_market_regime,
+                series["bars"],
+                symbol=normalized_symbol,
+                source=series["source"],
+                interval=series["interval"],
+                lookback=lookback,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _audit_fetch(principal, {
+            "symbols": [normalized_symbol],
+            "source": source,
+            "lookback": lookback,
+            "action": "market_data.regime.fetch",
+        })
+        return {
+            **analysis,
+            "series": {
+                "requested_source": series["requested_source"],
+                "source": series["source"],
+                "interval": series["interval"],
+                "cache_hit": series["cache_hit"],
+                "quality": series["quality"],
+            },
+            "query": snapshot["query"],
+            "query_cache": snapshot.get("query_cache"),
+        }
 
     @app.get("/market-data/symbol-search", dependencies=[Depends(require_user)])
     async def market_data_symbol_search(

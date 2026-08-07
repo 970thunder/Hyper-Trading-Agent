@@ -91,3 +91,8 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec api py
 cd frontend
 npm run build
 ```
+
+
+## 市场状态与风险环境分析
+
+行情工作台新增 `GET /market-data/regime`，可对股票、基金、指数、虚拟货币或外汇标的生成基于规则的研究视图。结果包含均线排列、20/60 日动量、已实现波动率分位数、当前回撤、保守风险预算倍数，以及趋势跟随、均值回归和防御策略的研究适配度。响应同时披露观察 K 线日期、实际数据源、缓存状态和数据质量契约。该功能只提供研究和风险环境参考，不是下单信号、收益预测或投资建议。

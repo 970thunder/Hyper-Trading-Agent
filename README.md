@@ -231,3 +231,8 @@ npm run build
 3. Add rerank/evaluation loops for RAG and investment report quality.
 4. Add enterprise SSO, quota enforcement, and stronger observability hardening.
 5. Package private deployment runbooks, backup drills, and security review gates for commercial delivery.
+
+
+## Market regime and risk context
+
+The Market data workspace includes `GET /market-data/regime`, a rule-based research view for one selected stock, fund, index, crypto, or FX symbol. It reports moving-average alignment, 20/60-day momentum, realized volatility percentile, current drawdown, a conservative risk-budget multiplier, and research-fit context for trend-following, mean-reversion, and defensive approaches. Responses include the observed bar date, resolved provider, cache state, and data-quality contract. This is research and risk context only, not an order signal, return forecast, or investment advice.

@@ -91,3 +91,8 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec api py
 cd frontend
 npm run build
 ```
+
+
+## 시장 국면 및 위험 환경 분석
+
+시장 데이터 작업공간에 `GET /market-data/regime`을 추가했습니다. 주식, 펀드, 지수, 가상자산, 외환 종목에 대해 이동평균 정렬, 20/60일 모멘텀, 실현 변동성 백분위, 현재 낙폭, 보수적 위험 예산 배수와 추세 추종·평균 회귀·방어 전략의 연구 적합성을 확인합니다. 관측 바 날짜, 실제 데이터 소스, 캐시 상태, 데이터 품질 계약도 함께 반환합니다. 주문 신호나 수익 예측, 투자 조언이 아니라 연구 및 위험 관리 참고 정보입니다.

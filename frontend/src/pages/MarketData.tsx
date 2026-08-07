@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { BarChart3, Database, History, LineChart, RefreshCw, ServerCog, ShieldCheck } from "lucide-react";
+import { Activity, BarChart3, Database, Gauge, History, LineChart, RefreshCw, ServerCog, ShieldCheck } from "lucide-react";
 import { CandlestickChart } from "@/components/charts/CandlestickChart";
 import { Skeleton } from "@/components/common/Skeleton";
 import { SymbolMultiSelect } from "@/components/market/SymbolMultiSelect";
@@ -11,12 +11,12 @@ import { Select, type SelectOption } from "@/components/ui/Select";
 import { StatusIndicator } from "@/components/ui/Status";
 import { Tab, TabList, TabPanel, Tabs } from "@/components/ui/Tabs";
 import { useDarkMode } from "@/hooks/useDarkMode";
-import { api, type MarketDataBar, type MarketDataHistoryResponse, type MarketDataSeries, type MarketDataSource, type PriceBar } from "@/lib/api";
+import { api, type MarketDataBar, type MarketDataHistoryResponse, type MarketDataSeries, type MarketDataSource, type MarketRegimeResponse, type PriceBar } from "@/lib/api";
 import { getChartTheme } from "@/lib/chart-theme";
 import { echarts } from "@/lib/echarts";
 import { cn } from "@/lib/utils";
 
-type WorkspaceView = "history" | "compare" | "sources";
+type WorkspaceView = "history" | "compare" | "regime" | "sources";
 const DEFAULT_SYMBOLS = "BTC-USDT,AAPL.US,600519.SH";
 
 function isoDate(date: Date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
@@ -45,6 +45,8 @@ export function MarketData() {
   const [fallbackChains, setFallbackChains] = useState<Record<string, string[]>>({});
   const [cachePolicy, setCachePolicy] = useState("");
   const [sourcesLoading, setSourcesLoading] = useState(true);
+  const [regime, setRegime] = useState<MarketRegimeResponse | null>(null);
+  const [regimeLoading, setRegimeLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
@@ -86,6 +88,16 @@ export function MarketData() {
     finally { if (id === requestId.current) setLoading(false); }
   };
 
+  const fetchRegime = async () => {
+    const target = selectedSymbol || symbolList[0];
+    if (!target) { setError(t("marketData.errors.noSymbols")); return; }
+    setRegimeLoading(true); setError(null);
+    try {
+      setRegime(await api.getMarketRegime({ symbol: target, lookback: 252, source }));
+    } catch { setError(t("marketData.errors.regimeRequest")); }
+    finally { setRegimeLoading(false); }
+  };
+
   const loadedSeries = response?.series || [];
   const loadedSources = new Set(loadedSeries.map((item) => item.source));
   return <div data-page-enter className="min-h-full bg-canvas px-4 py-5 sm:px-6 sm:py-6 lg:px-8"><div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
@@ -98,9 +110,10 @@ export function MarketData() {
       <Button variant="primary" onClick={() => void fetchHistory()} loading={loading} loadingLabel={t("marketData.loading")} leftIcon={loading ? undefined : <RefreshCw className="h-4 w-4" />}>{t("marketData.load")}</Button>
     </div></Panel>
     {error ? <MarketDataError message={error} canRetry={Boolean(response)} onRetry={() => void fetchHistory()} /> : null}
-    <Tabs value={view} onValueChange={(value) => setView(value as WorkspaceView)}><TabList className="w-fit max-w-full"><Tab value="history"><History className="h-3.5 w-3.5" />{t("marketData.history")}</Tab><Tab value="compare"><BarChart3 className="h-3.5 w-3.5" />{t("marketData.compare")}</Tab><Tab value="sources"><ServerCog className="h-3.5 w-3.5" />{t("marketData.sources")}</Tab></TabList>
+    <Tabs value={view} onValueChange={(value) => setView(value as WorkspaceView)}><TabList className="w-fit max-w-full"><Tab value="history"><History className="h-3.5 w-3.5" />{t("marketData.history")}</Tab><Tab value="compare"><BarChart3 className="h-3.5 w-3.5" />{t("marketData.compare")}</Tab><Tab value="regime"><Activity className="h-3.5 w-3.5" />{t("marketData.regime")}</Tab><Tab value="sources"><ServerCog className="h-3.5 w-3.5" />{t("marketData.sources")}</Tab></TabList>
       <TabPanel value="history" className="mt-4">{loading ? <ChartLoading /> : activeSeries ? <HistoryWorkspace series={activeSeries} options={seriesOptions} selectedSymbol={activeSeries.symbol} onSelectedSymbol={setSelectedSymbol} bars={priceBars} queryCache={response?.query_cache} /> : <MarketDataEmpty title={t("marketData.noQuery")} description={t("marketData.noQueryDescription")} />}</TabPanel>
       <TabPanel value="compare" className="mt-4">{loading ? <ChartLoading /> : loadedSeries.length >= 2 ? <ComparisonWorkspace series={loadedSeries} dark={dark} /> : <MarketDataEmpty title={t("marketData.twoAssets")} description={t("marketData.twoAssetsDescription")} />}</TabPanel>
+      <TabPanel value="regime" className="mt-4"><RegimeWorkspace result={regime} loading={regimeLoading} onAnalyze={() => void fetchRegime()} /></TabPanel>
       <TabPanel value="sources" className="mt-4"><SourcesWorkspace sources={sources} fallbackChains={fallbackChains} cachePolicy={cachePolicy} loading={sourcesLoading} loadedSources={loadedSources} onRefresh={() => void loadSources()} /></TabPanel>
     </Tabs>
   </div></div>;
@@ -111,6 +124,22 @@ function HistoryWorkspace({ series, options, selectedSymbol, onSelectedSymbol, b
 function QualityPanel({ series }: { series: MarketDataSeries }) { const { t } = useTranslation(); const { quality } = series; const latest = series.bars[series.bars.length - 1]; const latestValue = typeof latest?.close === "number" ? `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 8 }).format(latest.close)}${latest?.trade_date ? ` | ${latest.trade_date.slice(0, 10)}` : ""}` : "-"; return <Panel padding="none" className="overflow-hidden shadow-xs"><div className="px-4 py-4"><SectionHeader title={t("marketData.dataQuality")} actions={<StatusIndicator label={quality.status === "complete" ? t("marketData.complete") : t("marketData.partial")} tone={quality.status === "complete" ? "success" : "warning"} dot />} /></div><div className="grid grid-cols-2 border-t border-[hsl(var(--border-subtle))]"><Metric label={t("marketData.sourceBars")} value={String(quality.source_bars)} className="border-b border-r border-[hsl(var(--border-subtle))] px-4 py-3" /><Metric label={t("marketData.cache")} value={series.cache_hit ? t("marketData.hit") : t("marketData.live")} className="border-b border-[hsl(var(--border-subtle))] px-4 py-3" /><Metric label={t("marketData.latestPrice")} value={latestValue} className="border-b border-r border-[hsl(var(--border-subtle))] px-4 py-3" /><Metric label={t("marketData.firstBar")} value={quality.first_bar?.slice(0, 10) || "-"} className="border-b border-[hsl(var(--border-subtle))] px-4 py-3" /><Metric label={t("marketData.maxGap")} value={t("marketData.days", { count: quality.max_gap_days })} className="px-4 py-3" /></div>{quality.truncated ? <p className="border-t border-warning/20 bg-warning/5 px-4 py-3 text-xs leading-5 text-warning">{t("marketData.truncated")}</p> : null}</Panel>; }
 
 function ComparisonWorkspace({ series, dark }: { series: MarketDataSeries[]; dark: boolean }) { const { t } = useTranslation(); return <div className="grid gap-5"><Panel padding="none" className="overflow-hidden shadow-xs"><div className="px-4 py-4 sm:px-5"><SectionHeader title={t("marketData.normalizedPerformance")} description={t("marketData.normalizedDescription")} /></div><div className="border-t border-[hsl(var(--border-subtle))] p-2 sm:p-4"><NormalizedPerformanceChart series={series} dark={dark} /></div></Panel><Panel padding="none" className="overflow-hidden shadow-xs"><div className="px-4 py-4 sm:px-5"><SectionHeader title={t("marketData.comparisonSummary")} /></div><div className="overflow-x-auto border-t border-[hsl(var(--border-subtle))]"><table className="w-full min-w-[680px] text-sm"><thead><tr className="bg-surface-2/55 text-xs text-ink-muted"><th className="px-5 py-2.5 text-left font-medium">{t("marketData.asset")}</th><th className="px-4 py-2.5 text-left font-medium">{t("marketData.actualSource")}</th><th className="px-4 py-2.5 text-right font-medium">{t("marketData.return")}</th><th className="px-4 py-2.5 text-right font-medium">{t("marketData.bars")}</th><th className="px-5 py-2.5 text-right font-medium">{t("marketData.cache")}</th></tr></thead><tbody className="divide-y divide-[hsl(var(--border-subtle))]">{series.map((item) => { const value = returnsFor(item); return <tr key={item.symbol} className="hover:bg-surface-2/45"><td className="px-5 py-3 font-medium text-ink-strong">{item.symbol}</td><td className="px-4 py-3 text-ink-muted">{item.source}{item.requested_source !== item.source ? ` (${t("marketData.requested")} ${item.requested_source})` : ""}</td><td className={cn("px-4 py-3 text-right font-mono font-semibold tabular-nums", (value || 0) >= 0 ? "text-success" : "text-danger")}>{formatPercent(value)}</td><td className="px-4 py-3 text-right font-mono tabular-nums text-ink">{item.quality.source_bars}</td><td className="px-5 py-3 text-right text-ink-muted">{item.cache_hit ? t("marketData.hit") : t("marketData.live")}</td></tr>; })}</tbody></table></div></Panel></div>; }
+
+function RegimeWorkspace({ result, loading, onAnalyze }: { result: MarketRegimeResponse | null; loading: boolean; onAnalyze: () => void }) {
+  const { t, i18n } = useTranslation();
+  if (loading) return <div className="grid gap-4"><Skeleton className="h-36" /><Skeleton className="h-64" /></div>;
+  if (!result) return <Panel className="py-12 text-center shadow-xs"><Gauge className="mx-auto h-8 w-8 text-primary" /><h2 className="mt-3 text-sm font-semibold text-ink-strong">{t("marketData.regimeEmpty")}</h2><p className="mx-auto mt-1 max-w-lg text-sm leading-6 text-ink-muted">{t("marketData.regimeEmptyDescription")}</p><Button className="mt-4" variant="primary" onClick={onAnalyze}>{t("marketData.analyzeRegime")}</Button></Panel>;
+  const { analysis, series } = result;
+  const metric = (value: number | null, suffix = "") => value === null ? "-" : `${value.toFixed(2)}${suffix}`;
+  const trendLabel = t(`marketData.trends.${analysis.market_state.trend}`);
+  const volatilityLabel = t(`marketData.volatilityStates.${analysis.market_state.volatility}`);
+  const postureLabel = t(`marketData.postures.${analysis.risk_budget.posture}`);
+  const rationaleLabels: Record<string, string> = {
+    trend_trend_up: t("marketData.rationale.trend_trend_up"), trend_trend_down: t("marketData.rationale.trend_trend_down"), trend_range_or_uncertain: t("marketData.rationale.trend_range_or_uncertain"),
+    volatility_calm: t("marketData.rationale.volatility_calm"), volatility_normal: t("marketData.rationale.volatility_normal"), volatility_elevated: t("marketData.rationale.volatility_elevated"), drawdown_material: t("marketData.rationale.drawdown_material"),
+  };
+  return <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]"><div className="grid gap-5"><Panel padding="none" className="overflow-hidden shadow-xs"><div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5"><SectionHeader title={result.symbol} description={`${t("marketData.observedAt")}: ${new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium" }).format(new Date(result.observed_at))}`} /><Button variant="outline" size="sm" onClick={onAnalyze} leftIcon={<RefreshCw className="h-3.5 w-3.5" />}>{t("marketData.refreshAnalysis")}</Button></div><div className="grid grid-cols-1 border-t border-[hsl(var(--border-subtle))] sm:grid-cols-3"><Metric label={t("marketData.regime")} value={trendLabel} className="border-b px-4 py-4 sm:border-b-0 sm:border-r" /><Metric label={t("marketData.volatility")} value={volatilityLabel} className="border-b px-4 py-4 sm:border-b-0 sm:border-r" /><Metric label={t("marketData.riskBudget")} value={`${Math.round(analysis.risk_budget.multiplier * 100)}%`} className="px-4 py-4" /></div></Panel><Panel padding="none" className="overflow-hidden shadow-xs"><div className="px-4 py-4 sm:px-5"><SectionHeader title={t("marketData.regimeMetrics")} description={t("marketData.regimeMetricsDescription")} /></div><div className="grid grid-cols-2 border-t border-[hsl(var(--border-subtle))] sm:grid-cols-3"><Metric label={t("marketData.latestPrice")} value={metric(analysis.metrics.last_price)} className="border-b border-r px-4 py-3" /><Metric label={t("marketData.return20d")} value={metric(analysis.metrics.return_20d_pct, "%")} className="border-b px-4 py-3 sm:border-r" /><Metric label={t("marketData.return60d")} value={metric(analysis.metrics.return_60d_pct, "%")} className="border-b border-r px-4 py-3" /><Metric label={t("marketData.realizedVolatility")} value={metric(analysis.metrics.realized_volatility_pct, "%")} className="border-b px-4 py-3 sm:border-r" /><Metric label={t("marketData.volatilityPercentile")} value={metric(analysis.metrics.volatility_percentile, "%")} className="border-b border-r px-4 py-3" /><Metric label={t("marketData.drawdown")} value={metric(analysis.metrics.current_drawdown_pct, "%")} className="border-b px-4 py-3" /></div></Panel><Panel padding="md"><SectionHeader title={t("marketData.strategyContext")} description={t("marketData.strategyContextDescription")} /><div className="mt-4 grid gap-2 sm:grid-cols-3">{analysis.strategy_context.map((item) => <div key={item.id} className="rounded-md border border-[hsl(var(--border-subtle))] px-3 py-2"><div className="text-sm font-medium text-ink-strong">{t(`marketData.strategies.${item.id}`)}</div><div className="mt-1 text-xs text-ink-muted">{t(`marketData.strategyFit.${item.fit}`)}</div></div>)}</div></Panel></div><div className="grid content-start gap-3"><Panel padding="md"><div className="text-sm font-medium text-ink-strong">{t("marketData.riskPosture")}</div><div className="mt-2 text-2xl font-semibold text-primary">{postureLabel}</div><p className="mt-2 text-sm leading-5 text-ink-muted">{t("marketData.riskRationale")}</p><ul className="mt-3 space-y-1 text-xs text-ink-muted">{analysis.risk_budget.rationale.map((item) => <li key={item}>{rationaleLabels[item] || item}</li>)}</ul></Panel><Panel padding="md"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><p className="text-xs leading-5 text-ink-muted">{t("marketData.regimeDisclosure")}</p></div><div className="mt-3 text-xs text-ink-muted">{t("marketData.actualSource")}: {series.source} | {series.cache_hit ? t("marketData.hit") : t("marketData.live")}</div></Panel></div></div>;
+}
 
 function NormalizedPerformanceChart({ series, dark }: { series: MarketDataSeries[]; dark: boolean }) { const { t } = useTranslation(); const ref = useRef<HTMLDivElement>(null); useEffect(() => { if (!ref.current) return; const chart = echarts.init(ref.current); const theme = getChartTheme(); const dates = Array.from(new Set(series.flatMap((item) => toPriceBars(item).map((bar) => bar.time)))).sort(); chart.setOption({ backgroundColor: "transparent", color: ["#0f8b8d", "#c65d3b", "#4361ee", "#7c3aed", "#2f855a", "#b45309"], tooltip: { trigger: "axis", backgroundColor: theme.tooltipBg, borderColor: theme.tooltipBorder, textStyle: { color: theme.tooltipText, fontSize: 11 } }, legend: { data: series.map((item) => item.symbol), top: 4, type: "scroll", textStyle: { color: theme.textColor, fontSize: 11 } }, grid: { left: 8, right: 12, top: 38, bottom: 42, containLabel: true }, xAxis: { type: "category", data: dates, boundaryGap: false, axisLine: { lineStyle: { color: theme.axisColor } }, axisLabel: { color: theme.textColor, fontSize: 10 } }, yAxis: { type: "value", scale: true, axisLabel: { color: theme.textColor, fontSize: 10 }, splitLine: { lineStyle: { color: theme.gridColor } } }, dataZoom: [{ type: "inside" }, { type: "slider", bottom: 4, height: 20 }], series: series.map((item) => { const bars = toPriceBars(item); const first = bars[0]?.close || 1; const values = new Map(bars.map((bar) => [bar.time, (bar.close / first) * 100])); return { name: item.symbol, type: "line", data: dates.map((date) => values.get(date) ?? null), symbol: "none", connectNulls: true, lineStyle: { width: 2 } }; }) }); const observer = new ResizeObserver(() => chart.resize()); observer.observe(ref.current); return () => { observer.disconnect(); chart.dispose(); }; }, [dark, series]); return <div ref={ref} className="h-[440px] w-full" aria-label={t("marketData.normalizedChartLabel")} />; }
 

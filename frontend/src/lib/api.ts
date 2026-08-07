@@ -222,6 +222,10 @@ export const api = {
     if (params.max_rows) query.set("max_rows", String(params.max_rows));
     return request<MarketDataHistoryResponse>(`/market-data/history?${query.toString()}`);
   },
+  getMarketRegime: (params: { symbol: string; lookback?: number; source?: string }) => {
+    const query = new URLSearchParams({ symbol: params.symbol, lookback: String(params.lookback || 252), source: params.source || "auto" });
+    return request<MarketRegimeResponse>(`/market-data/regime?${query.toString()}`);
+  },
   getCorrelation: (params: { codes: string[]; days: number; method: "pearson" | "spearman" }) => {
     const query = new URLSearchParams({ codes: params.codes.join(","), days: String(params.days), method: params.method });
     return request<{ labels: string[]; matrix: number[][] }>(`/correlation?${query.toString()}`);
@@ -705,6 +709,28 @@ export interface MarketDataHistoryResponse {
   unresolved: string[];
   generated_at: string;
   cache: MarketDataCache;
+  query_cache?: MarketDataQueryCache;
+}
+
+export interface MarketRegimeResponse {
+  symbol: string;
+  observed_at: string;
+  analysis: {
+    lookback_requested: number;
+    bars_analyzed: number;
+    bars_per_year: number;
+    market_state: { trend: "trend_up" | "trend_down" | "range_or_uncertain"; volatility: "calm" | "normal" | "elevated" };
+    risk_budget: { multiplier: number; posture: "standard" | "reduced" | "defensive"; rationale: string[] };
+    strategy_context: Array<{ id: "trend_following" | "mean_reversion" | "defensive"; fit: "favorable" | "neutral" | "cautious" }>;
+    metrics: {
+      last_price: number | null; ma20: number | null; ma60: number | null; ma120: number | null; ma20_slope_pct: number | null;
+      return_20d_pct: number | null; return_60d_pct: number | null; realized_volatility_pct: number | null; volatility_percentile: number | null;
+      current_drawdown_pct: number | null; max_drawdown_60d_pct: number | null;
+    };
+  };
+  disclosure: { purpose: string; not_investment_advice: boolean; not_a_return_forecast: boolean; rules_version: number };
+  series: { requested_source: string; source: string; interval: string; cache_hit: boolean; quality: MarketDataQuality & { freshness?: { observed_at: string; status: string }; trading_calendar?: Record<string, unknown> } };
+  query: MarketDataHistoryQuery;
   query_cache?: MarketDataQueryCache;
 }
 
